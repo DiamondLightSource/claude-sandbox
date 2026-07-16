@@ -37,6 +37,37 @@ covered in [Configure the network egress jail](network-egress-jail.md);
 for the full key reference see
 [Configuration](../reference/configuration.md).
 
+A path may be a directory, a file, or a unix socket.
+
+## Reach a rootless podman/docker socket
+
+Rootless engines put their socket under `$XDG_RUNTIME_DIR` — typically
+`/run/user/<uid>/podman/podman.sock` or `/run/user/<uid>/docker.sock`. The
+sandbox masks `/run/user` with a tmpfs, because that directory is also
+where the host's ssh-agent, gpg-agent, dbus and keyring sockets live.
+
+`allow-write` re-exposes a single path *through* that mask, so name the
+socket itself rather than lifting the mask off the whole directory:
+
+```ini
+# The engine socket, and nothing else under /run/user.
+allow-write = /run/user/1000/podman/podman.sock
+```
+
+Use the uid of the account running the engine (`id -u`). Since the conf is
+host-global, a hardcoded uid is fine — it describes one machine.
+
+Making the socket reachable is only half the job: the sandbox scrubs the
+environment, so `DOCKER_HOST` does not survive into the session and the
+client still has to be pointed at the socket explicitly.
+
+Prefer the socket path over the enclosing directory: `allow-write =
+/run/user/1000` would work, but it unmasks the agent and keyring sockets
+next to it, handing a compromised session your ssh credentials.
+
+The engine socket is a unix socket, not a network connection, so the
+[egress jail](network-egress-jail.md) does not stand in its way.
+
 ## Applying the change
 
 `install.sh` copies the clone's `.devcontainer/claude-sandbox.conf` to the
