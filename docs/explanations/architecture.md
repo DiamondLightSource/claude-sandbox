@@ -279,12 +279,12 @@ run. The full guard mechanics are in [integrity guard](integrity-guard.md).
 
 ## 5. Config trust flow
 
-The sandbox config (`workspace-root`, `no-forge`, `allow-write`, `egress-jail`,
-`allow-ip`) follows the same `/etc`-not-the-workspace discipline as the guard,
-and for the same reason. You edit the conf in the clone; `install.sh` copies it
-to `/etc`; the shadow reads it from `/etc` at launch — never from `$PWD`. Like
-`allow-write`, the `allow-ip` device allowlist is read only from `/etc`, so a
-session cannot widen its own network reach.
+The sandbox config (`workspace-root`, `no-forge`, `allow-write`, `pass-env`,
+`egress-jail`, `allow-ip`) follows the same `/etc`-not-the-workspace discipline
+as the guard, and for the same reason. You edit the conf in the clone;
+`install.sh` copies it to `/etc`; the shadow reads it from `/etc` at launch —
+never from `$PWD`. Like `allow-write`, the `allow-ip` device allowlist is read
+only from `/etc`, so a session cannot widen its own network reach.
 
 ```{mermaid}
 graph LR

@@ -264,6 +264,63 @@ ARGV10c="$(HOME="$TMPHOME" CLAUDE_SANDBOX_ALLOW_WRITE="/nonexistent/path" \
     bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
 assert_not_contains scenario10-absent "$ARGV10c" "/nonexistent/path"
 
+# --- Scenario 10e: CLAUDE_SANDBOX_PASS_ENV forwards named vars ---
+# Values come from the launching env, never from the name list.
+ARGV10p="$(HOME="$TMPHOME" CLAUDE_SANDBOX_PASS_ENV="DOCKER_HOST" \
+    DOCKER_HOST="unix:///run/user/1000/podman/podman.sock" \
+    CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
+    bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+assert_contains scenario10p-name "$ARGV10p" "DOCKER_HOST"
+assert_contains scenario10p-value "$ARGV10p" "unix:///run/user/1000/podman/podman.sock"
+assert_pair scenario10p-pair "$ARGV10p" "--setenv" "DOCKER_HOST"
+
+# Comma-, space- and newline-separated name lists all split.
+ARGV10q="$(HOME="$TMPHOME" CLAUDE_SANDBOX_PASS_ENV="FOO_A, FOO_B
+FOO_C" FOO_A=a FOO_B=b FOO_C=c \
+    CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
+    bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+assert_contains scenario10q-comma "$ARGV10q" "FOO_A"
+assert_contains scenario10q-space "$ARGV10q" "FOO_B"
+assert_contains scenario10q-newline "$ARGV10q" "FOO_C"
+
+# A named-but-unset var emits nothing (no empty --setenv).
+ARGV10r="$(HOME="$TMPHOME" CLAUDE_SANDBOX_PASS_ENV="DEFINITELY_UNSET_VAR" \
+    CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
+    bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+assert_not_contains scenario10r-unset "$ARGV10r" "DEFINITELY_UNSET_VAR"
+
+# Deny-list: pass-env must never override what the sandbox sets itself,
+# nor the loader/shell hooks. The sandbox's own value has to survive.
+ARGV10s="$(HOME="$TMPHOME" \
+    CLAUDE_SANDBOX_PASS_ENV="PATH,HOME,USER,IS_SANDBOX,GIT_CONFIG_GLOBAL,GIT_CONFIG_SYSTEM,LD_PRELOAD,BASH_ENV,SHELLOPTS" \
+    PATH="/evil/bin" IS_SANDBOX="0" LD_PRELOAD="/evil/x.so" BASH_ENV="/evil/rc" \
+    GIT_CONFIG_SYSTEM="/evil/gitconfig" \
+    CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
+    bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+assert_not_contains scenario10s-path "$ARGV10s" "/evil/bin"
+assert_not_contains scenario10s-preload "$ARGV10s" "LD_PRELOAD"
+assert_not_contains scenario10s-preload-val "$ARGV10s" "/evil/x.so"
+assert_not_contains scenario10s-bashenv "$ARGV10s" "BASH_ENV"
+assert_not_contains scenario10s-shellopts "$ARGV10s" "SHELLOPTS"
+assert_not_contains scenario10s-gitconfig "$ARGV10s" "/evil/gitconfig"
+# IS_SANDBOX=0 must not reach the sandbox — it would trip the shadow's
+# recursion guard into skipping the jail on a nested spawn.
+assert_not_contains scenario10s-is-sandbox "$ARGV10s" "0"
+# The sandbox's own values survive the attempted override.
+assert_contains scenario10s-real-path "$ARGV10s" "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$TMPHOME/.local/bin"
+assert_contains scenario10s-real-is-sandbox "$ARGV10s" "1"
+assert_contains scenario10s-real-gitconfig "$ARGV10s" "/etc/claude-gitconfig"
+
+# Junk names are skipped rather than emitted as a broken --setenv.
+ARGV10t="$(HOME="$TMPHOME" CLAUDE_SANDBOX_PASS_ENV="9BAD,has-dash,has.dot,ok_name" \
+    ok_name=fine \
+    CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
+    bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+assert_not_contains scenario10t-leading-digit "$ARGV10t" "9BAD"
+assert_not_contains scenario10t-dash "$ARGV10t" "has-dash"
+assert_not_contains scenario10t-dot "$ARGV10t" "has.dot"
+assert_contains scenario10t-valid "$ARGV10t" "ok_name"
+
 # --- Scenario 11: parse_config (data-driven) ---
 # Each case writes a conf fixture, then asserts a predicate in a FRESH
 # shadow-sourced bash so parse_config's exports don't leak between cases.
@@ -305,6 +362,21 @@ parse_case scenario11-allow-write-multi 'allow-write = /path/one\nallow-write = 
     parse_config "$TMPCONF"
     printf "%s\n" "$CLAUDE_SANDBOX_ALLOW_WRITE" | grep -qxF "/path/one" &&
     printf "%s\n" "$CLAUDE_SANDBOX_ALLOW_WRITE" | grep -qxF "/path/two"
+'
+
+parse_case scenario11-pass-env-single 'pass-env = DOCKER_HOST\n' '
+    unset CLAUDE_SANDBOX_PASS_ENV
+    parse_config "$TMPCONF"
+    [ "${CLAUDE_SANDBOX_PASS_ENV:-}" = "DOCKER_HOST" ]
+'
+
+# Repeated keys accumulate; a comma-separated value is passed through intact
+# for the argv builder to split.
+parse_case scenario11-pass-env-multi 'pass-env = A_VAR, B_VAR\npass-env = C_VAR\n' '
+    unset CLAUDE_SANDBOX_PASS_ENV
+    parse_config "$TMPCONF"
+    printf "%s\n" "$CLAUDE_SANDBOX_PASS_ENV" | grep -qxF "A_VAR, B_VAR" &&
+    printf "%s\n" "$CLAUDE_SANDBOX_PASS_ENV" | grep -qxF "C_VAR"
 '
 
 # egress-jail ON by default (ADR 0015): absent from conf + unset env => enabled
