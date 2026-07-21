@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+# claude-container — sandboxed Claude Code from the published image, for
+# hosts WITHOUT a devcontainer workflow. Requirements: rootless podman
+# (or docker) and /dev/net/tun on the host. Copy this script onto your
+# PATH, cd into a project, run `claude-container`.
+#
+# One NAMED container per project directory: created on first run,
+# restarted on later runs. gh/glab logins made inside it therefore live
+# for the container's lifetime — the same container-scoped credential
+# model as a devcontainer (re-authenticate after --recreate), never a
+# host-credential mount.
+#
+# Usage: claude-container [OPTIONS] [CLAUDE_ARGS...]
+#   --recreate      remove and recreate the project container (e.g. after
+#                   a `podman pull`); forge auth must be re-done after
+#   --host-net      create with --network=host (EPICS CA broadcast, X11)
+#   --mount PATH    bind PATH read-write into the container AND the
+#                   sandbox (repeatable; becomes an allow-write entry)
+#   -h | --help     this text
+#
+# Environment (all optional):
+#   CLAUDE_SANDBOX_IMAGE          image ref
+#                                 (default ghcr.io/gilesknap/claude-sandbox:latest)
+#   CLAUDE_SANDBOX_ENGINE         podman | docker (default podman)
+#   CLAUDE_SANDBOX_SHARED_CONFIG  host dir mounted at /user-terminal-config to
+#                                 persist Claude login/memory across containers
+#                                 (default ~/.config/terminal-config)
+#   CLAUDE_SANDBOX_CONF           host sandbox conf, mounted READ-ONLY at
+#                                 /etc/claude-sandbox.conf when the file exists
+#                                 (default ~/.config/claude-sandbox.conf)
+#   CLAUDE_SANDBOX_*              any other sandbox variable is passed through
+#                                 at create time (allow-ip, egress-jail, ...)
+set -euo pipefail
+
+IMAGE="${CLAUDE_SANDBOX_IMAGE:-ghcr.io/gilesknap/claude-sandbox:latest}"
+ENGINE="${CLAUDE_SANDBOX_ENGINE:-podman}"
+SHARED="${CLAUDE_SANDBOX_SHARED_CONFIG:-$HOME/.config/terminal-config}"
+CONF="${CLAUDE_SANDBOX_CONF:-$HOME/.config/claude-sandbox.conf}"
+
+usage() {
+    # The header comment above IS the manual; print it (strip the '# ').
+    sed -n '2,33p' "$0" | sed -e 's/^# \{0,1\}//'
+}
+
+recreate=0
+host_net=0
+mounts=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --recreate) recreate=1; shift ;;
+        --host-net) host_net=1; shift ;;
+        --mount)
+            if [ $# -lt 2 ]; then
+                echo "claude-container: --mount needs a PATH" >&2
+                exit 1
+            fi
+            mounts+=( "$(realpath "$2")" )
+            shift 2
+            ;;
+        -h|--help) usage; exit 0 ;;
+        --) shift; break ;;
+        *) break ;;
+    esac
+done
+# Remaining args are claude's (create-time or exec-time).
+
+if ! command -v "$ENGINE" >/dev/null 2>&1; then
+    echo "claude-container: $ENGINE not found (set CLAUDE_SANDBOX_ENGINE=docker?)" >&2
+    exit 1
+fi
+
+# Stable per-project container name: a readable basename slug plus a hash
+# of the full path, so same-named projects under different parents don't
+# collide.
+slug="$(basename "$PWD" | tr -c 'a-zA-Z0-9_.-' '-')"
+slug="${slug%-}"
+path_hash="$(printf '%s' "$PWD" | cksum | awk '{print $1}')"
+NAME="claude-sandbox-${slug}-${path_hash}"
+
+container_exists() {
+    "$ENGINE" container inspect "$NAME" >/dev/null 2>&1
+}
+
+container_running() {
+    [ "$("$ENGINE" container inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null)" = "true" ]
+}
+
+create_container() {
+    mkdir -p "$SHARED"
+    local -a args=(
+        create --name "$NAME" -it
+        # The egress jail (ADR 0015) is fail-closed without /dev/net/tun.
+        --device /dev/net/tun
+        # SELinux hosts (RHEL): don't try to relabel NFS/home mounts.
+        --security-opt label=disable
+        -v "$PWD:$PWD" -w "$PWD"
+        -v "$SHARED:/user-terminal-config"
+        -e "TERM=${TERM:-xterm-256color}"
+    )
+    if [ "$host_net" = 1 ]; then
+        args+=( --network host )
+    fi
+    # Git identity for the shadow's per-launch gitconfig render (ro).
+    if [ -f "$HOME/.gitconfig" ]; then
+        args+=( -v "$HOME/.gitconfig:/root/.gitconfig:ro" )
+    fi
+    # Durable per-user sandbox conf: READ-ONLY at the canonical /etc path
+    # the shadow reads. Invariant 4 holds — the conf stays outside the
+    # sandbox rw set, so a compromised session cannot widen its own
+    # binds. The entrypoint skips re-stamping a mounted conf.
+    if [ -f "$CONF" ]; then
+        args+=( -v "$CONF:/etc/claude-sandbox.conf:ro" )
+    fi
+
+    # Extra rw folders: bind into the container AND tell the sandbox to
+    # bind them rw (allow-write); merged with any caller-set value.
+    local allow="${CLAUDE_SANDBOX_ALLOW_WRITE:-}" m
+    for m in "${mounts[@]+"${mounts[@]}"}"; do
+        args+=( -v "$m:$m" )
+        allow="${allow:+$allow$'\n'}$m"
+    done
+    if [ -n "$allow" ]; then
+        args+=( -e "CLAUDE_SANDBOX_ALLOW_WRITE=$allow" )
+    fi
+
+    # Pass the rest of the CLAUDE_SANDBOX_* env through (allow-ip,
+    # egress-jail, workspace-root, no-forge, ...). Frozen at create time
+    # — use --recreate (or the conf file) to change them later.
+    local v
+    for v in $(compgen -v CLAUDE_SANDBOX_ || true); do
+        case "$v" in
+            CLAUDE_SANDBOX_IMAGE|CLAUDE_SANDBOX_ENGINE) continue ;;
+            CLAUDE_SANDBOX_SHARED_CONFIG|CLAUDE_SANDBOX_CONF) continue ;;
+            CLAUDE_SANDBOX_ALLOW_WRITE) continue ;;
+        esac
+        args+=( -e "$v=${!v}" )
+    done
+
+    args+=( "$IMAGE" claude "$@" )
+    "$ENGINE" "${args[@]}" >/dev/null
+    echo "claude-container: created container $NAME from $IMAGE" >&2
+    echo "claude-container: for forge push access, run inside the container:" >&2
+    echo "    just --justfile /opt/claude-sandbox/justfile gh-auth" >&2
+}
+
+if [ "$recreate" = 1 ] && container_exists; then
+    "$ENGINE" rm -f "$NAME" >/dev/null
+fi
+
+if ! container_exists; then
+    create_container "$@"
+elif [ $# -gt 0 ] && ! container_running; then
+    echo "claude-container: note — $NAME already exists; restarting reuses its" >&2
+    echo "  creation-time arguments (yours are ignored). --recreate to change." >&2
+fi
+
+if container_running; then
+    # Already running (another claude-container in this project): open an
+    # additional sandboxed session in the same container. Fresh args DO
+    # apply on this path.
+    exec "$ENGINE" exec -it "$NAME" claude "$@"
+else
+    exec "$ENGINE" start -ai "$NAME"
+fi
