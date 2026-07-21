@@ -264,6 +264,40 @@ ARGV10c="$(HOME="$TMPHOME" CLAUDE_SANDBOX_ALLOW_WRITE="/nonexistent/path" \
     bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
 assert_not_contains scenario10-absent "$ARGV10c" "/nonexistent/path"
 
+# Non-regular files must be bound, not silently dropped. The guard was
+# `[ -d ] || [ -f ]`, and -f is true only for regular files — so a unix
+# socket failed both tests and `allow-write = <sock>` emitted nothing.
+# Rootless podman/docker expose their engine as a socket under
+# $XDG_RUNTIME_DIR, which is exactly what allow-write is needed for.
+mkfifo "$TMPHOME/extra.fifo"
+ARGV10d="$(HOME="$TMPHOME" CLAUDE_SANDBOX_ALLOW_WRITE="$TMPHOME/extra.fifo" \
+    CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
+    bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+assert_contains scenario10-fifo "$ARGV10d" "$TMPHOME/extra.fifo"
+
+# The real thing, when the host has a perl to mint a socket with. Guarded
+# rather than assumed: the suite is bash + coreutils by policy, so perl is
+# a fixture convenience here, never a runtime dependency of the sandbox.
+if command -v perl >/dev/null 2>&1 && perl -e 'use IO::Socket::UNIX;
+    IO::Socket::UNIX->new(Type => SOCK_STREAM(), Local => $ARGV[0], Listen => 1)
+        or exit 1' "$TMPHOME/podman.sock" 2>/dev/null; then
+    ARGV10e="$(HOME="$TMPHOME" CLAUDE_SANDBOX_ALLOW_WRITE="$TMPHOME/podman.sock" \
+        CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
+        bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+    assert_contains scenario10-socket "$ARGV10e" "$TMPHOME/podman.sock"
+else
+    echo "note: scenario10-socket skipped (no perl to create a unix socket)" >&2
+fi
+
+# Mask-then-bind ordering is load-bearing, not incidental: bwrap applies
+# operations in argv sequence, so allow-write must be emitted after the
+# tmpfs masks for a bind to re-expose a single path through one (e.g. the
+# podman socket under a masked /run/user). Hoisting allow-write above the
+# masks would let a mask clobber the operator's bind silently, so lock the
+# order. The /run masks are host-conditional; the $HOME ones are not, so
+# assert against the last tmpfs the builder emits either way.
+assert_order scenario10-mask-before-bind "$ARGV10d" "--tmpfs" "$TMPHOME/extra.fifo"
+
 # --- Scenario 11: parse_config (data-driven) ---
 # Each case writes a conf fixture, then asserts a predicate in a FRESH
 # shadow-sourced bash so parse_config's exports don't leak between cases.

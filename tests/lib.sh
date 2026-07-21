@@ -49,6 +49,25 @@ assert_pair() {
     fi
 }
 
+# assert_order NAME ARGV BEFORE AFTER — the LAST BEFORE line precedes the
+# first AFTER line. Locks argv sequences bwrap applies in order (mask
+# before bind), which line-presence assertions can't catch.
+assert_order() {
+    local name="$1" argv="$2" before="$3" after="$4"
+    local b_line a_line
+    # `|| true`: callers source the shadow and inherit its `set -e`, and a
+    # missing token (grep exit 1) is a result to report, not a reason to
+    # abort the run — without this the suite dies before its summary on the
+    # very regression this assertion exists to catch.
+    b_line="$(printf '%s\n' "$argv" | grep -nxF -- "$before" | tail -1 | cut -d: -f1 || true)"
+    a_line="$(printf '%s\n' "$argv" | grep -nxF -- "$after" | head -1 | cut -d: -f1 || true)"
+    if [ -n "$b_line" ] && [ -n "$a_line" ] && [ "$b_line" -lt "$a_line" ]; then
+        pass
+    else
+        fail "$name — expected last '$before' (line ${b_line:-none}) before first '$after' (line ${a_line:-none})"
+    fi
+}
+
 # assert_eq NAME EXPECTED ACTUAL — string equality.
 assert_eq() {
     local name="$1" expected="$2" actual="$3"
