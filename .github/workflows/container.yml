@@ -85,10 +85,18 @@ jobs:
 
       - name: "Test: end-to-end sandboxed launch (entrypoint -> shadow -> jail -> bwrap)"
         run: |
+          # Rootless podman is the sandbox's supported runtime, and the one
+          # the egress jail's pasta-attach is validated on. Rootful docker
+          # denies pasta the /proc/<holder>/ns/user open (differing ns/
+          # ptrace semantics), so the e2e runs under the runner's rootless
+          # podman: move the built image across, then launch for real.
+          command -v podman >/dev/null || sudo apt-get install -y -qq podman
+          docker save claude-sandbox:test | podman load
           mkdir -p "$RUNNER_TEMP/terminal-config" "$RUNNER_TEMP/project"
-          docker run --rm -t \
+          podman run --rm -t \
             --security-opt seccomp=unconfined \
             --security-opt apparmor=unconfined \
+            --security-opt label=disable \
             --device /dev/net/tun \
             -v "$RUNNER_TEMP/terminal-config:/user-terminal-config" \
             -v "$RUNNER_TEMP/project:/work" -w /work \

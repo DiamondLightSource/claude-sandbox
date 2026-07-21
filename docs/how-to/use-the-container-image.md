@@ -147,6 +147,13 @@ claude-container --recreate
   still happen outside the container.
 - **Claude's version is the image's.** By design (disabled updater);
   pull + `--recreate` to update.
+- **Rootless podman is the supported engine.** `CLAUDE_SANDBOX_ENGINE=docker`
+  exists, but under *rootful* docker the egress jail's pasta attach is
+  denied (`Couldn't open user namespace ... Permission denied` — differing
+  namespace/ptrace semantics), so `claude` fail-closes at launch. Rootless
+  docker is untested. If you must use such an engine, the jail can be
+  disabled per session (`CLAUDE_SANDBOX_EGRESS_JAIL=0`) — a weaker
+  posture; prefer rootless podman.
 - **Linux only** — the sandbox is built on Linux namespaces. macOS with
   `podman machine` runs the Linux image in a VM and should work, but is
   untested.
