@@ -20,6 +20,16 @@ source /opt/claude-sandbox/.devcontainer/claude-sandbox/install.sh
 link_terminal_config
 ensure_cred_dirs
 
+# First use of an empty share leaves ~/.claude.json as a zero-length
+# file (via link_terminal_config's seed + ensure_cred_dirs' touch), and
+# Claude Code rejects zero-length as corrupted JSON ("Unexpected EOF").
+# Seed the empty object so first launch starts clean; a populated file
+# is left untouched.
+claude_json="${HOME:-/root}/.claude.json"
+if [ ! -s "$claude_json" ]; then
+    echo '{}' > "$claude_json"
+fi
+
 # Re-stamp /etc/claude-sandbox.conf from the baked clone — unless the
 # operator mounted their own conf over it (a read-only bind, which must
 # win and would EROFS the copy anyway). A mounted conf still satisfies

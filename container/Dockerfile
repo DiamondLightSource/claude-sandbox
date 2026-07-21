@@ -15,20 +15,25 @@ FROM ghcr.io/diamondlightsource/ubuntu-devcontainer:noble
 COPY . /opt/claude-sandbox
 WORKDIR /opt/claude-sandbox
 
-# Run install.sh's main() sequence MINUS probe_userns_or_refuse, via the
-# same source-guard seam promote.sh uses. The userns probe is skipped
-# HERE only because a build-time probe proves the BUILDER can nest
-# namespaces, not the host that will run the image (and BuildKit
-# confinement varies by builder); container/entrypoint.sh re-runs the
-# probe at container start, where refusal-on-failure actually protects
-# someone. KEEP THIS LIST IN STEP WITH main() IN install.sh.
+# Run install.sh's main() sequence MINUS two build-time-inappropriate
+# steps, via the same source-guard seam promote.sh uses:
+#   - probe_userns_or_refuse: a build-time probe proves the BUILDER can
+#     nest namespaces, not the host that will run the image (and BuildKit
+#     confinement varies by builder).
+#   - link_terminal_config: the base image ships an EMPTY stub
+#     /user-terminal-config dir, so wiring at build symlinks
+#     ~/.claude.json to a zero-length file — which the official Claude
+#     installer's setup step then rejects as corrupted JSON (build
+#     failure). The share only exists for real as a runtime mount.
+# container/entrypoint.sh runs both at container start, where they act
+# on the actual host / actual mounts. KEEP THIS LIST IN STEP WITH main()
+# IN install.sh.
 RUN bash -c ' \
     set -euo pipefail; \
     source .devcontainer/claude-sandbox/install.sh; \
     probe_or_refuse; \
     install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/claude)"; \
     apt_install; \
-    link_terminal_config; \
     install_claude_binary; \
     ensure_cred_dirs; \
     install_conf; \
