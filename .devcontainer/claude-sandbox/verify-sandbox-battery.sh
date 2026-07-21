@@ -279,6 +279,22 @@ fi
 check_20() {
     local blocked=1 ip subnet gw
     local probes=(10.255.255.254 172.31.255.254 192.168.255.254 100.127.255.254)
+    # A probe counts as "reachable" only when `ip route get` yields a
+    # FORWARDING route (plain unicast toward a peer/gateway). Non-forwarding
+    # results — blackhole / unreachable / prohibit / broadcast / local /
+    # multicast / throw — are NOT lateral egress and must not count. In
+    # particular, a connected subnet's network base address carries a kernel
+    # `broadcast` route in local table 255, so `ip route get <base>` exits 0
+    # even while every real host in the subnet is blackholed; testing exit
+    # status alone false-"resolved" the base and masked a working blackhole.
+    route_forwardable() {
+        local out
+        out="$(ip route get "$1" 2>/dev/null)" || return 1
+        case "$out" in
+            blackhole*|unreachable*|prohibit*|broadcast*|local*|multicast*|throw*) return 1 ;;
+            *) return 0 ;;
+        esac
+    }
     # Connected subnet (host LAN): a blackhole line that is NOT one of the
     # generic ranges the jail always programs. Probe its network base.
     subnet="$(awk '/^blackhole /{print $2}' <<<"$routes" \
@@ -286,10 +302,10 @@ check_20() {
         | head -n1)"
     [ -n "$subnet" ] && probes+=("${subnet%/*}")
     for ip in "${probes[@]}"; do
-        ip route get "$ip" >/dev/null 2>&1 && blocked=0
+        route_forwardable "$ip" && blocked=0
     done
     gw="$(ip route show default 2>/dev/null | awk 'NR==1{for(i=1;i<=NF;i++) if($i=="via"){print $(i+1); exit}}')"
-    [ -n "$gw" ] && ip route get "$gw" >/dev/null 2>&1 && [ "$blocked" = 1 ]
+    [ -n "$gw" ] && route_forwardable "$gw" && [ "$blocked" = 1 ]
 }
 if grep -qE '^blackhole (10\.0\.0\.0/8|172\.16\.0\.0/12|192\.168\.0\.0/16)' <<<"$routes"; then
     if check_20; then
