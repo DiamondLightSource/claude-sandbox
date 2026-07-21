@@ -35,6 +35,16 @@ curl -fsSLO https://raw.githubusercontent.com/gilesknap/claude-sandbox/main/cont
 chmod +x claude-container
 ```
 
+The launcher runs **unsandboxed on your host**, so give it the scrutiny
+that deserves: it is ~150 lines of plain bash — read it before you run
+it. For fixed provenance, replace `main` in the URL with a release tag
+or commit SHA (any ref that contains `container/claude-container`) and
+re-fetch the same pinned ref when you update:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/gilesknap/claude-sandbox/<tag-or-commit>/container/claude-container
+```
+
 Then, from any project directory:
 
 ```bash
@@ -112,7 +122,7 @@ usual rule that the conf must live outside the sandbox's writable set
 still holds: inside the container it is at `/etc` and read-only, so a
 compromised session cannot widen its own binds for the next launch.
 
-```
+```ini
 # ~/.config/claude-sandbox.conf
 allow-ip = 172.23.1.3        # keep this IOC reachable past the blackhole
 ```
@@ -137,6 +147,10 @@ device access for Claude is still granted per-IP with `allow-ip`.
 podman pull ghcr.io/gilesknap/claude-sandbox:latest
 claude-container --recreate
 ```
+
+If you launch with `CLAUDE_SANDBOX_ENGINE=docker`, pull with `docker`
+instead — and set the variable on the `--recreate` run too (the launcher
+reads it on every invocation; it is not remembered).
 
 ## Limitations
 
