@@ -114,3 +114,4 @@ See [`LICENSE`](./LICENSE).
 [threat]: https://gilesknap.github.io/claude-sandbox/explanations/threat-model.html
 [jail]: https://gilesknap.github.io/claude-sandbox/explanations/decisions/0015-network-egress-jail.html
 [contribute]: https://gilesknap.github.io/claude-sandbox/how-to/contribute.html
+[container]: https://gilesknap.github.io/claude-sandbox/how-to/use-the-container-image.html
