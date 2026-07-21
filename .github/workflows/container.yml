@@ -1,8 +1,8 @@
-# Build and publish the claude-sandbox container image (container/
-# Dockerfile) to GHCR — sandboxed Claude Code for hosts without a
-# devcontainer workflow. Mirrors the DiamondLightSource/ubuntu-devcontainer
-# approach: per-arch native builds pushed by digest, merged into one
-# multi-arch manifest.
+# Build and publish the claude-sandbox container image (the
+# `claude-sandbox` stage of the root Dockerfile) to GHCR — sandboxed
+# Claude Code for hosts without a devcontainer workflow. Mirrors the
+# DiamondLightSource/ubuntu-devcontainer approach: per-arch native builds
+# pushed by digest, merged into one multi-arch manifest.
 #
 # The in-image auto-updater is disabled by design (integrity guard), so
 # the baked Claude version is frozen at build time — the weekly cron
@@ -55,7 +55,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: container/Dockerfile
+          target: claude-sandbox
           load: true
           tags: claude-sandbox:test
 
@@ -92,7 +92,16 @@ jobs:
             --device /dev/net/tun \
             -v "$RUNNER_TEMP/terminal-config:/user-terminal-config" \
             -v "$RUNNER_TEMP/project:/work" -w /work \
-            claude-sandbox:test claude --version
+            claude-sandbox:test bash -c '
+              claude --version || {
+                rc=$?
+                echo "=== jail diagnostics (launch failed, rc=$rc) ==="
+                echo "--- /tmp/claude-pasta.log ---"; cat /tmp/claude-pasta.log 2>/dev/null || true
+                echo "--- pasta version ---"; pasta --version 2>&1 | head -2 || true
+                echo "--- /etc/resolv.conf ---"; cat /etc/resolv.conf || true
+                echo "--- ip addr / route ---"; ip -o addr; ip route || true
+                exit "$rc"
+              }'
 
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
@@ -108,7 +117,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: container/Dockerfile
+          target: claude-sandbox
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
 

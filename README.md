@@ -45,6 +45,21 @@ The [getting-started tutorial][tutorial] has the full walkthrough, including the
 `/user-terminal-config` clone location for `python-copier-template`
 devcontainers and how to confirm the install with `/verify-sandbox`.
 
+### Not a devcontainer user? Prebuilt image
+
+A published image (`ghcr.io/gilesknap/claude-sandbox`) ships the whole sandbox
+pre-installed — any Linux host with rootless podman (or docker) can run
+sandboxed Claude Code with no devcontainer and no root access:
+
+```
+curl -fsSLO https://raw.githubusercontent.com/gilesknap/claude-sandbox/main/container/claude-container
+chmod +x claude-container
+cd ~/src/my-project && ./claude-container
+```
+
+See [Use the prebuilt container image][container] for persistence, forge
+auth, and configuration.
+
 ## What you get
 
 - A shadow `claude` that wraps the real binary in `bwrap` (`--ro-bind / /`,

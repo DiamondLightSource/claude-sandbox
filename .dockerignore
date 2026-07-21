@@ -1,6 +1,6 @@
-# Context hygiene for container/Dockerfile's COPY . /opt/claude-sandbox.
-# The devcontainer build (root Dockerfile) has no COPY, so this file does
-# not change its behaviour.
+# Context hygiene for the claude-sandbox stage's COPY . /opt/claude-sandbox.
+# The devcontainer build (target: developer) has no COPY, so this file
+# does not change its behaviour.
 .git
 build
 .venv*
