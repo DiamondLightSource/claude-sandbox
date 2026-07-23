@@ -177,10 +177,25 @@ bwrap_argv_build() {
     if [ -n "$workspace" ] && [ -d "$workspace" ]; then
         argv+=( --bind "$workspace" "$workspace" )
     fi
+    # -e, not -d/-f: a unix socket is neither a directory nor a regular
+    # file, so a -f test silently drops it. Rootless podman/docker expose
+    # their engine as a socket under $XDG_RUNTIME_DIR, which is the main
+    # thing an operator needs allow-write for beyond plain directories.
+    # Dangling symlinks stay skipped (-e is false), which is what we want:
+    # bwrap aborts on a --bind whose source does not resolve.
+    #
+    # Emitted after the /run/{user,secrets} tmpfs masks above, and the
+    # order is load-bearing: bwrap applies operations in argv sequence, so
+    # a bind listed here re-exposes a single path *through* a mask without
+    # lifting it. That is what lets `allow-write = /run/user/1000/podman/
+    # podman.sock` reach the engine while the rest of the runtime dir
+    # (ssh-agent, gpg-agent, dbus, keyring sockets) stays masked. Keep
+    # allow-write after the masks; hoisting it above them would let a mask
+    # clobber the operator's bind silently.
     if [ -n "${CLAUDE_SANDBOX_ALLOW_WRITE:-}" ]; then
         while IFS= read -r extra_path; do
             [ -z "$extra_path" ] && continue
-            if [ -d "$extra_path" ] || [ -f "$extra_path" ]; then
+            if [ -e "$extra_path" ]; then
                 argv+=( --bind "$extra_path" "$extra_path" )
             fi
         done <<< "$CLAUDE_SANDBOX_ALLOW_WRITE"

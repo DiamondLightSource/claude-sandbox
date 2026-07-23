@@ -291,6 +291,21 @@ blackhole several connected subnets; probing the first is sufficient to
 prove the mechanism.) As with check 19, when the jail is disabled (no
 blackhole routes) the check PASSES with a note.
 
+Reachability is classified by **route type**, not merely by `ip route
+get`'s exit status. A destination counts as reachable (a lateral-egress
+leak) only when the FIB returns a *forwarding* route — a plain unicast
+route toward a peer or gateway. Non-forwarding results —
+`blackhole` / `unreachable` / `prohibit` / `broadcast` / `local` /
+`multicast` / `throw` — do not count. This matters specifically for the
+connected-subnet probe: a subnet's network base address carries a
+kernel-installed `broadcast` route in local table 255, so `ip route get
+<base>` exits 0 (resolving to that broadcast route) even while every real
+host in the subnet is blackholed. An earlier version tested exit status
+alone, so the broadcast route false-"resolved" the base address and the
+check FAILed on a fully-working jail. Filtering to forwarding routes
+closes that false positive while still catching a genuine unicast route
+to a non-allow-listed RFC1918 peer.
+
 ## Phase 2 — Adversarial probes (only when 01–20 all PASS)
 
 When the deterministic battery is clean, think of **10 novel breakout
