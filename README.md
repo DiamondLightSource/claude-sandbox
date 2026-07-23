@@ -49,17 +49,21 @@ devcontainers and how to confirm the install with `/verify-sandbox`.
 ### Not a devcontainer user? Prebuilt image
 
 A published image (`ghcr.io/gilesknap/claude-sandbox`) ships the whole sandbox
-pre-installed — any Linux host with rootless podman (or docker) can run
-sandboxed Claude Code with no devcontainer and no root access:
+pre-installed — any Linux host with rootless podman can run sandboxed Claude
+Code with no devcontainer and no root access (docker is untested with the
+egress jail):
 
-```
+```bash
 curl -fsSLO https://raw.githubusercontent.com/gilesknap/claude-sandbox/main/container/claude-container
 chmod +x claude-container
 cd ~/src/my-project && ./claude-container
 ```
 
-See [Use the prebuilt container image][container] for persistence, forge
-auth, and configuration.
+The launcher runs unsandboxed on your host — it is ~200 lines of bash; read it
+before you run it. See [Use the prebuilt container image][container] for
+pinning the fetch to a fixed ref, persistence, forge auth, and configuration;
+each image records the launcher version it was tested with, and
+`claude-container` tells you when your copy is out of date.
 
 ## What you get
 

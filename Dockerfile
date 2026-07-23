@@ -58,6 +58,14 @@ RUN bash -c ' \
     wire_user_statusline; \
     rm -rf /var/lib/apt/lists/*'
 
+# No USER directive, deliberately (the DLS base-image pattern): the
+# supported runtime is a ROOTLESS engine, where in-container root maps
+# to the unprivileged invoking host user via user namespaces — root in
+# here is not root on the host. Under a ROOTFUL engine Claude really
+# would run as host UID 0; that path is unsupported (and the egress
+# jail's pasta attach is denied there anyway — see the how-to's
+# troubleshooting note).
+#
 # The entrypoint re-runs the launch-time installer steps that depend on
 # runtime mounts (shared ~/.claude, /etc conf), probes userns, then execs
 # the command — default: claude, i.e. the shadow on $PATH.
