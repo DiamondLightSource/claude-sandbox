@@ -79,7 +79,8 @@ export CLAUDE_SANDBOX_GITCONFIG_PATH="$GITCONFIG_PATH"
 # BwrapArgvBuilder: pure-function emitting the bwrap argv. Deterministic
 # given (workspace, real_claude, "$@") and ($HOME,
 # $CLAUDE_SANDBOX_GITCONFIG_PATH, $CLAUDE_SANDBOX_NO_FORGE,
-# $CLAUDE_SANDBOX_ALLOW_WRITE). No I/O, no subprocesses — sourced by
+# $CLAUDE_SANDBOX_ALLOW_WRITE, $CLAUDE_SANDBOX_PASS_ENV — plus whatever
+# variables that last one names). No I/O, no subprocesses — sourced by
 # tests/bwrap_argv.sh and called in isolation.
 #
 # Procfs is always `--ro-bind /proc /proc` (no per-launch probe). Trade-
@@ -271,6 +272,49 @@ bwrap_argv_build() {
         fi
     done
 
+    # Operator-configured passthrough (pass-env in claude-sandbox.conf).
+    # The list above is what Claude itself needs; this is for what the
+    # *project* needs — DOCKER_HOST for a container-based test suite, and
+    # the like. Opt-in by name, so --clearenv stays the default and the
+    # sandbox never inherits the surrounding environment wholesale.
+    #
+    # Names only: values are read from the launching environment here, not
+    # from the conf, so pass-env can forward a variable the operator's
+    # shell already has but cannot invent a value of its own.
+    if [ -n "${CLAUDE_SANDBOX_PASS_ENV:-}" ]; then
+        # Split on comma/space/newline so `pass-env = A, B` and repeated
+        # pass-env lines both work. Word splitting is the point here, and
+        # a local IFS keeps it from leaking into the caller.
+        local old_ifs="$IFS"
+        IFS=$', \t\n'
+        # shellcheck disable=SC2206  # deliberate split on IFS
+        local -a pass_names=( $CLAUDE_SANDBOX_PASS_ENV )
+        IFS="$old_ifs"
+        local pass_name
+        for pass_name in "${pass_names[@]+"${pass_names[@]}"}"; do
+            # Not a shell identifier — skip rather than emit a --setenv
+            # bwrap would choke on.
+            case "$pass_name" in
+                ""|[0-9]*|*[!A-Za-z0-9_]*) continue ;;
+            esac
+            # Refuse the variables the sandbox sets itself, plus the
+            # loader/shell hooks. Passing PATH would undo the shadow's
+            # PATH discipline (Invariant 1: plain `claude` must resolve to
+            # /usr/local/bin/claude); IS_SANDBOX would trip the recursion
+            # guard into skipping the jail; LD_PRELOAD and friends execute
+            # attacker-chosen code in every process the session spawns.
+            # An operator asking for these has misunderstood the flag, so
+            # the sandbox's own value wins.
+            case "$pass_name" in
+                PATH|HOME|USER|IS_SANDBOX|GIT_CONFIG_GLOBAL|GIT_CONFIG_SYSTEM) continue ;;
+                LD_*|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|IFS) continue ;;
+            esac
+            if [ -n "${!pass_name:-}" ]; then
+                argv+=( --setenv "$pass_name" "${!pass_name}" )
+            fi
+        done
+    fi
+
     # Disable the Chrome browser-extension RPC channel: strip any
     # user-supplied --chrome so it can't override our --no-chrome
     # injection (see filter_chrome_args). The browser extension's
@@ -365,6 +409,12 @@ parse_config() {
                 CLAUDE_SANDBOX_ALLOW_IP="${CLAUDE_SANDBOX_ALLOW_IP:+${CLAUDE_SANDBOX_ALLOW_IP}
 }${value}"
                 export CLAUDE_SANDBOX_ALLOW_IP
+                ;;
+            pass-env)
+                [ -z "$value" ] && continue
+                CLAUDE_SANDBOX_PASS_ENV="${CLAUDE_SANDBOX_PASS_ENV:+${CLAUDE_SANDBOX_PASS_ENV}
+}${value}"
+                export CLAUDE_SANDBOX_PASS_ENV
                 ;;
         esac
     done < "$conf"
