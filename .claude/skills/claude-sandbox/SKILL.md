@@ -391,6 +391,32 @@ this.
   `INSTALL_PREFIX`/`INSTALL_USER_HOME` tmpdir seams (the suite never
   touches the real `/etc` or `~/.claude`). Keep those seams.
 
+## Third consumer — the published container image (PR #78)
+
+`ghcr.io/gilesknap/claude-sandbox` (built by `.github/workflows/container.yml`
+from the root Dockerfile's `claude-sandbox` stage, `FROM` the `developer`
+stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
+`container/claude-container` launcher. Principles already extended here:
+
+- **Dogfood ≈ guest ≈ image**: the image build *sources* `install.sh` and runs
+  main()'s function sequence — never a parallel install path. Two deliberate
+  build-time skips (both re-run by `container/entrypoint.sh` at start):
+  `probe_userns_or_refuse` (a builder probe proves nothing about the runtime
+  host) and `link_terminal_config` — the DLS base ships an EMPTY
+  `/user-terminal-config` stub, and wiring it at build symlinks
+  `~/.claude.json` to a zero-length file the official installer rejects as
+  corrupted JSON ("Unexpected EOF"). The entrypoint also seeds `{}` into a
+  zero-length `~/.claude.json` (same hazard, first run with a fresh share).
+- **Invariant 2 mapping**: the launcher creates one NAMED container per
+  project dir (`podman create` once, `start -ai` after) so forge PATs are
+  container-scoped without per-launch re-paste; `--recreate` ⇒ re-auth. Refuse
+  a "just mount host ~/.config/gh" convenience swap.
+- **Invariant 4 mapping**: durable user conf = host file ro-mounted at the
+  canonical `/etc/claude-sandbox.conf`; the entrypoint detects the mount
+  (`_is_mount`) and skips re-stamping. Conf stays outside the sandbox rw set.
+- A git tag publishes `ghcr.io/...:<tag>` without touching `:latest`
+  (`latest` is default-branch-only) — beta images are safe to cut anytime.
+
 ## Where things live
 
 | Concern                       | File                                                |
@@ -403,6 +429,8 @@ this.
 | End-to-end install smoke test | `tests/smoke.sh`                                    |
 | Promote smoke test            | `tests/promote.sh`                                  |
 | CI workflow                   | `.github/workflows/ci.yml`                          |
+| Published image build+publish | `.github/workflows/container.yml` (e2e jailed launch runs under rootless podman) |
+| Image stage / entrypoint / launcher | root `Dockerfile` (`claude-sandbox` stage), `container/entrypoint.sh`, `container/claude-container` |
 | Live verification spec (why)  | `.claude/commands/verify-sandbox.md`                |
 | Phase-1 battery script (what) | `.devcontainer/claude-sandbox/verify-sandbox-battery.sh` |
 | Global SessionStart verifier  | `.devcontainer/claude-sandbox/sandbox-verify.sh`    |

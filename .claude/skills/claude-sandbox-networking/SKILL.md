@@ -73,6 +73,22 @@ Docker untested). Consequences that invalidate Docker-shaped designs:
   fails on RO `/proc/self/uid_map` — that's the *jail*, not the container. Run
   the probe from a normal devcontainer terminal.
 
+## Rootful docker cannot host the jail (found via PR #78 CI, 2026-07)
+
+Under **rootful docker** pasta's attach fails: `Couldn't open user namespace
+/proc/<holder>/ns/user: Permission denied` — differing ns/ptrace-access
+semantics vs rootless podman — so the fail-closed jail refuses to launch
+`claude`. Not fixable by seccomp/apparmor-unconfined or the userns sysctl (all
+were lifted when this reproduced). Consequences: rootless podman stays the
+supported runtime; the published-image how-to documents the rootful-docker
+caveat (escape hatch `CLAUDE_SANDBOX_EGRESS_JAIL=0`, weaker posture); and any
+CI that exercises a real jailed launch must run the container under **rootless
+podman** (`docker save | podman load`, then `podman run --device /dev/net/tun
+--security-opt label=disable ...`) — see the e2e test in
+`.github/workflows/container.yml`, which is exactly the skill's throwaway
+bridge-container validation, automated. Don't burn time re-trying cap-adds on
+rootful docker.
+
 ## Threat & cohorts
 
 - **Threat = lateral movement** (issue #31, now folded into #56): a compromised
