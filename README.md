@@ -4,7 +4,8 @@
 # claude-sandbox
 
 bwrap-isolated Claude Code for Debian/Ubuntu devcontainers (rootless Podman is
-the supported runtime; rootless Docker works too). A hostile prompt, file, or
+the supported runtime; rootless Docker likely works but is untested with the
+default egress jail). A hostile prompt, file, or
 tool result cannot reach your host credentials, IDE bridges, or shell
 environment. The protection is launch-time: plain `claude` resolves to a shadow
 that wraps the real binary in `bwrap`, and a global integrity guard fails loud
@@ -44,6 +45,25 @@ installer is idempotent; wire `bash <clone>/install` into your devcontainer's
 The [getting-started tutorial][tutorial] has the full walkthrough, including the
 `/user-terminal-config` clone location for `python-copier-template`
 devcontainers and how to confirm the install with `/verify-sandbox`.
+
+### Not a devcontainer user? Prebuilt image
+
+A published image (`ghcr.io/gilesknap/claude-sandbox`) ships the whole sandbox
+pre-installed — any Linux host with rootless podman can run sandboxed Claude
+Code with no devcontainer and no root access (docker is untested with the
+egress jail):
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/gilesknap/claude-sandbox/main/container/claude-container
+chmod +x claude-container
+cd ~/src/my-project && ./claude-container
+```
+
+The launcher runs unsandboxed on your host — it is ~200 lines of bash; read it
+before you run it. See [Use the prebuilt container image][container] for
+pinning the fetch to a fixed ref, persistence, forge auth, and configuration;
+each image records the launcher version it was tested with, and
+`claude-container` tells you when your copy is out of date.
 
 ## What you get
 
@@ -99,3 +119,4 @@ See [`LICENSE`](./LICENSE).
 [threat]: https://gilesknap.github.io/claude-sandbox/explanations/threat-model.html
 [jail]: https://gilesknap.github.io/claude-sandbox/explanations/decisions/0015-network-egress-jail.html
 [contribute]: https://gilesknap.github.io/claude-sandbox/how-to/contribute.html
+[container]: https://gilesknap.github.io/claude-sandbox/how-to/use-the-container-image.html

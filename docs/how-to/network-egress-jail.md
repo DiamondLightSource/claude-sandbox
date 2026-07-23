@@ -31,6 +31,14 @@ Rebuild the devcontainer for it to take effect. `install.sh` already installs
 jail is on, `claude` **refuses to launch** rather than silently falling back to
 open egress. The error names both the fix and the escape hatch.
 
+**Rootful docker cannot host the jail.** If the refusal is `pasta failed to
+attach to the netns` and the pasta log shows `Couldn't open user namespace
+/proc/<pid>/ns/user: Permission denied`, the container is running under
+*rootful* docker, whose namespace-access semantics deny pasta the attach —
+lifting seccomp/AppArmor confinement does not help. Run the container under
+rootless podman (the supported runtime), or accept the weaker posture of
+disabling the jail for that host (see below).
+
 ## Keep a lab device or internal forge reachable
 
 Device IPs you still need (an EPICS IOC, a PMAC, your internal GitLab) must be

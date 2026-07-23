@@ -1,0 +1,8 @@
+# Context hygiene for the claude-sandbox stage's COPY . /opt/claude-sandbox.
+# The devcontainer build (target: developer) has no COPY, so this file
+# does not change its behaviour.
+.git
+build
+.venv*
+tmp
+node_modules

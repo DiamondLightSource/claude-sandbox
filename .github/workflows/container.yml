@@ -1,0 +1,219 @@
+# Build and publish the claude-sandbox container image (the
+# `claude-sandbox` stage of the root Dockerfile) to GHCR — sandboxed
+# Claude Code for hosts without a devcontainer workflow. Mirrors the
+# DiamondLightSource/ubuntu-devcontainer approach: per-arch native builds
+# pushed by digest, merged into one multi-arch manifest.
+#
+# The in-image auto-updater is disabled by design (integrity guard), so
+# the baked Claude version is frozen at build time — the weekly cron
+# rebuild is what picks up new Claude releases.
+name: Container
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "*"
+  pull_request:
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lowercase image name
+        run: echo "IMAGE=${IMAGE,,}" >> "$GITHUB_ENV"
+
+      # Single source of truth for the launcher version is the script's
+      # own VERSION line; bake it into the image as a label so the
+      # launcher can warn when the user's copy is out of date.
+      - name: Extract launcher version
+        run: |
+          v="$(sed -n 's/^VERSION="\(.*\)"$/\1/p' container/claude-container)"
+          test -n "$v"
+          echo "LAUNCHER_VERSION=$v" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+
+      - name: Build image for testing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: claude-sandbox
+          load: true
+          tags: claude-sandbox:test
+          build-args: |
+            LAUNCHER_VERSION=${{ env.LAUNCHER_VERSION }}
+
+      - name: "Test: baked install is complete"
+        run: |
+          docker run --rm --entrypoint bash claude-sandbox:test -c '
+            set -euo pipefail
+            test -x /usr/local/bin/claude
+            test -x /usr/libexec/claude-sandbox/claude
+            test -x /usr/libexec/claude-sandbox/sandbox-verify.sh
+            test -x /usr/libexec/claude-sandbox/sandbox-gate.sh
+            test -x /usr/libexec/claude-sandbox/verify-sandbox-battery.sh
+            test -f /etc/claude-sandbox.conf
+            jq -e ".hooks.SessionStart and .hooks.UserPromptSubmit
+                   and .autoUpdates == false
+                   and .env.DISABLE_AUTOUPDATER == \"1\"" \
+              /etc/claude-code/managed-settings.json
+            /usr/libexec/claude-sandbox/claude --version
+          '
+
+      - name: "Test: launcher-version label matches the baked script"
+        run: |
+          label="$(docker image inspect \
+            -f '{{index .Config.Labels "io.gilesknap.claude-sandbox.launcher-version"}}' \
+            claude-sandbox:test)"
+          baked="$(docker run --rm --entrypoint sed claude-sandbox:test \
+            -n 's/^VERSION="\(.*\)"$/\1/p' \
+            /opt/claude-sandbox/container/claude-container)"
+          echo "label=$label baked=$baked"
+          test -n "$label"
+          test "$label" = "$baked"
+
+      # In-container bwrap needs unprivileged userns: ubuntu-24.04
+      # runners restrict it (same workaround as ci.yml), and docker's
+      # default seccomp/apparmor confinement must be lifted for the
+      # nested sandbox in the e2e test below.
+      - name: Allow unprivileged userns on Ubuntu 24.04
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      - name: "Test: end-to-end sandboxed launch (entrypoint -> shadow -> jail -> bwrap)"
+        run: |
+          # Rootless podman is the sandbox's supported runtime, and the one
+          # the egress jail's pasta-attach is validated on. Rootful docker
+          # denies pasta the /proc/<holder>/ns/user open (differing ns/
+          # ptrace semantics), so the e2e runs under the runner's rootless
+          # podman: move the built image across, then launch for real.
+          command -v podman >/dev/null || sudo apt-get install -y -qq podman
+          docker save claude-sandbox:test | podman load
+          mkdir -p "$RUNNER_TEMP/terminal-config" "$RUNNER_TEMP/project"
+          podman run --rm -t \
+            --security-opt seccomp=unconfined \
+            --security-opt apparmor=unconfined \
+            --security-opt label=disable \
+            --device /dev/net/tun \
+            -v "$RUNNER_TEMP/terminal-config:/user-terminal-config" \
+            -v "$RUNNER_TEMP/project:/work" -w /work \
+            claude-sandbox:test bash -c '
+              claude --version || {
+                rc=$?
+                echo "=== jail diagnostics (launch failed, rc=$rc) ==="
+                echo "--- /tmp/claude-pasta.log ---"; cat /tmp/claude-pasta.log 2>/dev/null || true
+                echo "--- pasta version ---"; pasta --version 2>&1 | head -2 || true
+                echo "--- /etc/resolv.conf ---"; cat /etc/resolv.conf || true
+                echo "--- ip addr / route ---"; ip -o addr; ip route || true
+                exit "$rc"
+              }'
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        if: github.event_name != 'pull_request'
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: claude-sandbox
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            LAUNCHER_VERSION=${{ env.LAUNCHER_VERSION }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digest
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          digest="${{ steps.push.outputs.digest }}"
+          touch "$RUNNER_TEMP/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Lowercase image name
+        run: echo "IMAGE=${IMAGE,,}" >> "$GITHUB_ENV"
+
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata (tags)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create multi-arch manifest
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "$IMAGE@sha256:%s " *)
+
+      - name: Inspect manifest
+        run: |
+          tag="$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON")"
+          docker buildx imagetools inspect "$tag"
