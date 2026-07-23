@@ -305,6 +305,16 @@ ships a starter conf into a promoted target's `.devcontainer/`, whose own
 **Refuse as regressions:**
 - Any change that reads the conf from `$PWD`, the workspace, or any
   sandbox-rw path. The conf source must stay outside the jail's rw set.
+  **One approved carve-out, not yet implemented — issue #81**: the
+  container *launcher* (host code, runs before any jailed code) may
+  source `$PWD/.claude-sandbox.conf` ONLY with the full gate design —
+  host-side approved-hash store in `~/.config` (outside every mount),
+  print-conf-and-approve on change, content frozen at container create
+  (never a live bind), out-of-tree `allow-write`/`workspace-root`
+  entries becoming create-time `-v` mounts. Anything short of that
+  (a live bind, an ungated read, gate state on a sandbox-reachable
+  path) stays refused — it reopens the cross-session bind escalation.
+  The shadow itself still reads only `/etc`; check 18 unchanged.
 - "Make allow-write per-repo again so projects can opt in" reopens the
   cross-session bind-escalation vector. Per-session env vars are the
   supported override; the global conf is the only file.
@@ -416,6 +426,29 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   (`_is_mount`) and skips re-stamping. Conf stays outside the sandbox rw set.
 - A git tag publishes `ghcr.io/...:<tag>` without touching `:latest`
   (`latest` is default-branch-only) — beta images are safe to cut anytime.
+- **Launcher versioning (notify-only, by design)**: the `VERSION=` line
+  in `container/claude-container` is the single source of truth; CI seds
+  it into the Dockerfile `ARG` → OCI label
+  `io.gilesknap.claude-sandbox.launcher-version`, and a CI step asserts
+  label == baked script. Each run the launcher compares itself against
+  the LOCAL image's label (instant, offline, no container start) and
+  prints a curl pinned to `org.opencontainers.image.revision` when
+  outdated, or a pull+`--recreate` hint when newer. **Refuse:** a
+  `--self-update` flag (the launcher runs unsandboxed on the host —
+  replacing it must stay a deliberate, reviewable act), and hard-failing
+  the build on an empty `LAUNCHER_VERSION` ARG (the label is advisory;
+  pre-label images exist and must degrade to silence — CodeRabbit asked,
+  declined on PR #78).
+- **Distribution/conf decisions parked as issues** (re-read before
+  re-designing any of these): **#79** ship `/verify-sandbox` as a plugin
+  via managed settings — docs-verified that `extraKnownMarketplaces`
+  (local path) + `enabledPlugins` is Claude Code's ONLY machine-wide
+  command/skill channel (no system commands dir exists; command becomes
+  namespaced `/claude-sandbox:verify-sandbox`). **#80** Renovate-pinned
+  Claude version (official installer takes `[stable|latest|X.Y.Z]` as
+  `$1`; `downloads.claude.ai/claude-code-releases/{latest,stable}`
+  return bare version strings). **#81** per-project
+  `.claude-sandbox.conf` — see the Invariant 4 carve-out below.
 
 ## Where things live
 
