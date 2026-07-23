@@ -4,7 +4,8 @@
 # claude-sandbox
 
 bwrap-isolated Claude Code for Debian/Ubuntu devcontainers (rootless Podman is
-the supported runtime; rootless Docker works too). A hostile prompt, file, or
+the supported runtime; rootless Docker likely works but is untested with the
+default egress jail). A hostile prompt, file, or
 tool result cannot reach your host credentials, IDE bridges, or shell
 environment. The protection is launch-time: plain `claude` resolves to a shadow
 that wraps the real binary in `bwrap`, and a global integrity guard fails loud

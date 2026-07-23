@@ -21,8 +21,10 @@ Debian/Ubuntu devcontainer running as `root` — this page gets you there.
 
 claude-sandbox supports **rootless** containers only. We recommend
 [Podman](https://podman.io/), which is rootless by default;
-[rootless Docker](https://docs.docker.com/engine/security/rootless/) works
-too. Rootful containers are **not** supported.
+[rootless Docker](https://docs.docker.com/engine/security/rootless/) likely
+works but is untested with the default egress jail. Rootful containers are
+**not** supported — rootful docker in particular denies the jail's pasta
+attach (see the [egress jail how-to](../how-to/network-egress-jail.md)).
 
 Rootless is what makes running as `root` safe. Inside the container you are
 `root` and can install packages or change the system freely — but to your
