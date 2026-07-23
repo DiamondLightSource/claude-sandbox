@@ -9,6 +9,22 @@ That is deliberate: the sandbox builds its environment rather than
 inheriting one, so a variable reaches the session only if something says
 it should. This recipe is how you say so.
 
+:::{warning}
+**Every variable you forward is disclosed to the agent** — and to every
+tool, test and script the session runs, and potentially to the model
+provider in context. Before adding a name to `pass-env`, check what
+your shell actually holds under it: tokens, API keys, cloud credentials
+and connection strings with embedded passwords are all one `env` away
+once forwarded. Forward the minimum, prefer pointer variables
+(`DOCKER_HOST`, a path, a hostname) over secret-bearing ones, and never
+forward a variable whose value you would not paste into the chat.
+
+If a variable points at a unix socket, forwarding the name is the small
+half of the decision — see the warning in
+[Make extra paths writable](configure-workspace-scope.md) before
+binding the socket itself in.
+:::
+
 ## Symptoms
 
 The environment is empty rather than wrong, so the failure usually shows
