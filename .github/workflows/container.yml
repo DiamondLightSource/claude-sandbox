@@ -43,6 +43,15 @@ jobs:
       - name: Lowercase image name
         run: echo "IMAGE=${IMAGE,,}" >> "$GITHUB_ENV"
 
+      # Single source of truth for the launcher version is the script's
+      # own VERSION line; bake it into the image as a label so the
+      # launcher can warn when the user's copy is out of date.
+      - name: Extract launcher version
+        run: |
+          v="$(sed -n 's/^VERSION="\(.*\)"$/\1/p' container/claude-container)"
+          test -n "$v"
+          echo "LAUNCHER_VERSION=$v" >> "$GITHUB_ENV"
+
       - uses: docker/setup-buildx-action@v3
 
       - name: Extract metadata
@@ -58,6 +67,8 @@ jobs:
           target: claude-sandbox
           load: true
           tags: claude-sandbox:test
+          build-args: |
+            LAUNCHER_VERSION=${{ env.LAUNCHER_VERSION }}
 
       - name: "Test: baked install is complete"
         run: |
@@ -75,6 +86,18 @@ jobs:
               /etc/claude-code/managed-settings.json
             /usr/libexec/claude-sandbox/claude --version
           '
+
+      - name: "Test: launcher-version label matches the baked script"
+        run: |
+          label="$(docker image inspect \
+            -f '{{index .Config.Labels "io.gilesknap.claude-sandbox.launcher-version"}}' \
+            claude-sandbox:test)"
+          baked="$(docker run --rm --entrypoint sed claude-sandbox:test \
+            -n 's/^VERSION="\(.*\)"$/\1/p' \
+            /opt/claude-sandbox/container/claude-container)"
+          echo "label=$label baked=$baked"
+          test -n "$label"
+          test "$label" = "$baked"
 
       # In-container bwrap needs unprivileged userns: ubuntu-24.04
       # runners restrict it (same workaround as ci.yml), and docker's
@@ -127,6 +150,8 @@ jobs:
           context: .
           target: claude-sandbox
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            LAUNCHER_VERSION=${{ env.LAUNCHER_VERSION }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest

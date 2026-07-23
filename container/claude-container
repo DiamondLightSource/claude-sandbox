@@ -16,6 +16,7 @@
 #   --host-net      create with --network=host (EPICS CA broadcast, X11)
 #   --mount PATH    bind PATH read-write into the container AND the
 #                   sandbox (repeatable; becomes an allow-write entry)
+#   --version       print launcher version and exit
 #   -h | --help     this text
 #
 # Environment (all optional):
@@ -32,6 +33,10 @@
 #                                 at create time (allow-ip, egress-jail, ...)
 set -euo pipefail
 
+# Bump when this script meaningfully changes. CI bakes the version into
+# the image as a label, so warn_if_outdated can compare script vs image.
+VERSION="0.1.0"
+
 IMAGE="${CLAUDE_SANDBOX_IMAGE:-ghcr.io/gilesknap/claude-sandbox:latest}"
 ENGINE="${CLAUDE_SANDBOX_ENGINE:-podman}"
 SHARED="${CLAUDE_SANDBOX_SHARED_CONFIG:-$HOME/.config/terminal-config}"
@@ -40,6 +45,30 @@ CONF="${CLAUDE_SANDBOX_CONF:-$HOME/.config/claude-sandbox.conf}"
 usage() {
     # The header comment above IS the manual; print it (strip the '# ').
     sed -n '2,33p' "$0" | sed -e 's/^# \{0,1\}//'
+}
+
+# CI bakes two labels into the image: the version of this script it was
+# built and tested with, and the git revision to fetch it from. Compare
+# against the LOCAL image (no network, no container start) and print an
+# actionable hint on mismatch. Notify only — this script runs
+# unsandboxed on the host, so updating it must stay a deliberate,
+# reviewable act, never something it does to itself.
+warn_if_outdated() {
+    local img_ver rev
+    img_ver="$("$ENGINE" image inspect \
+        -f '{{index .Config.Labels "io.gilesknap.claude-sandbox.launcher-version"}}' \
+        "$IMAGE" 2>/dev/null)" || return 0
+    { [ -n "$img_ver" ] && [ "$img_ver" != "$VERSION" ]; } || return 0
+    if [ "$(printf '%s\n' "$VERSION" "$img_ver" | sort -V | head -1)" = "$VERSION" ]; then
+        rev="$("$ENGINE" image inspect \
+            -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' \
+            "$IMAGE" 2>/dev/null)" || rev=""
+        echo "claude-container: this launcher is v$VERSION; the image was built with v$img_ver. Update:" >&2
+        echo "    curl -fsSLO https://raw.githubusercontent.com/gilesknap/claude-sandbox/${rev:-main}/container/claude-container" >&2
+    else
+        echo "claude-container: this launcher (v$VERSION) is newer than the local image (v$img_ver);" >&2
+        echo "    consider: $ENGINE pull $IMAGE  then  claude-container --recreate" >&2
+    fi
 }
 
 recreate=0
@@ -57,6 +86,7 @@ while [ $# -gt 0 ]; do
             mounts+=( "$(realpath "$2")" )
             shift 2
             ;;
+        --version) echo "claude-container $VERSION"; exit 0 ;;
         -h|--help) usage; exit 0 ;;
         --) shift; break ;;
         *) break ;;
@@ -68,6 +98,9 @@ if ! command -v "$ENGINE" >/dev/null 2>&1; then
     echo "claude-container: $ENGINE not found (set CLAUDE_SANDBOX_ENGINE=docker?)" >&2
     exit 1
 fi
+
+# Silently a no-op until the image has been pulled / carries the labels.
+warn_if_outdated
 
 # Stable per-project container name: a readable basename slug plus a hash
 # of the full path, so same-named projects under different parents don't

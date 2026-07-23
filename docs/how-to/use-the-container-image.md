@@ -36,7 +36,7 @@ chmod +x claude-container
 ```
 
 The launcher runs **unsandboxed on your host**, so give it the scrutiny
-that deserves: it is ~150 lines of plain bash — read it before you run
+that deserves: it is ~200 lines of plain bash — read it before you run
 it. For fixed provenance, replace `main` in the URL with a release tag
 or commit SHA (any ref that contains `container/claude-container`) and
 re-fetch the same pinned ref when you update:
@@ -44,6 +44,15 @@ re-fetch the same pinned ref when you update:
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/gilesknap/claude-sandbox/<tag-or-commit>/container/claude-container
 ```
+
+You don't have to watch this repo for launcher fixes: each published
+image carries a label naming the launcher version it was built and
+tested with, and on every run the launcher compares itself against your
+locally pulled image (`claude-container --version` prints your copy's
+version). When your copy is older it prints a `curl` command pinned to
+the exact revision the image was built from; it never updates itself —
+the launcher runs unsandboxed, so replacing it stays a deliberate,
+reviewable act.
 
 Then, from any project directory:
 

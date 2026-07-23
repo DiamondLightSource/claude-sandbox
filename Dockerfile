@@ -20,6 +20,13 @@ FROM ghcr.io/diamondlightsource/ubuntu-devcontainer:noble AS developer
 
 FROM developer AS claude-sandbox
 
+# The version of container/claude-container this image was built and
+# tested with. CI derives it from the script's VERSION line (single
+# source of truth) and passes it in; the launcher reads the label from
+# the pulled image to warn when the user's copy is out of date.
+ARG LAUNCHER_VERSION=""
+LABEL io.gilesknap.claude-sandbox.launcher-version="${LAUNCHER_VERSION}"
+
 COPY . /opt/claude-sandbox
 WORKDIR /opt/claude-sandbox
 
