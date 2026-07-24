@@ -89,16 +89,20 @@ project directory** rather than a throwaway `--rm` container:
 
 ## Authenticate to forges
 
-Inside the container, the clone is baked at `/opt/claude-sandbox`, so
-the usual recipes work:
+Inside the container, the `claude-sandbox` CLI is on PATH, so the usual
+commands work:
 
 ```bash
-just --justfile /opt/claude-sandbox/justfile gh-auth
-just --justfile /opt/claude-sandbox/justfile glab-auth gitlab.example.com
+claude-sandbox gh-auth
+claude-sandbox glab-auth gitlab.example.com
 ```
 
 See [Authenticate with forges](authenticate-with-forges) for the
 recommended PAT scopes.
+
+Note: inside the published image, update by pulling a newer image and
+recreating the container (`claude-container --recreate`), not with
+`claude-sandbox update` — the CLI refuses there.
 
 ## Persist login and memory
 

@@ -35,7 +35,8 @@ bash "$CSBX_DIR/install"
 
 The clone lives in the container filesystem, so a rebuild re-creates it at
 the pinned revision; the installer is idempotent, so re-runs are cheap and
-never re-download Claude.
+never re-download Claude. Every teammate also gets the `claude-sandbox`
+helper CLI on PATH (`gh-auth`, `glab-auth`, `verify`, `version`).
 
 ## 2. Wire it into devcontainer.json
 

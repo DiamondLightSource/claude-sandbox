@@ -35,7 +35,7 @@ set -euo pipefail
 
 # Bump when this script meaningfully changes. CI bakes the version into
 # the image as a label, so warn_if_outdated can compare script vs image.
-VERSION="0.1.0"
+VERSION="0.1.1"
 
 IMAGE="${CLAUDE_SANDBOX_IMAGE:-ghcr.io/diamondlightsource/claude-sandbox:latest}"
 ENGINE="${CLAUDE_SANDBOX_ENGINE:-podman}"
@@ -173,7 +173,7 @@ create_container() {
     "$ENGINE" "${args[@]}" >/dev/null
     echo "claude-container: created container $NAME from $IMAGE" >&2
     echo "claude-container: for forge push access, run inside the container:" >&2
-    echo "    just --justfile /opt/claude-sandbox/justfile gh-auth" >&2
+    echo "    claude-sandbox gh-auth" >&2
 }
 
 if [ "$recreate" = 1 ] && container_exists; then

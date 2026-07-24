@@ -43,33 +43,25 @@ This is the simplest path, especially if your own projects don't have
 devcontainers. Skip to [Confirm the sandbox](#confirm-the-sandbox) to prove
 it's working.
 
-## The other way: add the sandbox beside your own project
+## The other way: install into your own devcontainer
 
-Already working inside your own project's devcontainer? Add claude-sandbox
-next to it.
+Already working inside your own project's devcontainer? Install
+claude-sandbox into it.
 
-### 1. Clone beside your project
+### 1. Clone and install
 
-Clone it as a **sibling** of your project — not inside it — so it lives on
-the host, survives container rebuilds, and one clone sandboxes every project
-beside it:
+In a terminal inside the container:
 
 ```bash
-cd ..        # the host-mounted parent of your project
-git clone https://github.com/DiamondLightSource/claude-sandbox.git
-cd claude-sandbox
+cd /tmp && rm -rf claude-sandbox && git clone https://github.com/DiamondLightSource/claude-sandbox && claude-sandbox/install
 ```
 
-(This assumes your project's parent directory is mounted, as it is for
-`python-copier-template` and most DLS devcontainers.)
+The clone is **disposable** — nothing depends on it after install (the
+`claude-sandbox` helper CLI lands on your PATH, and
+`claude-sandbox update` fetches its own fresh clone when you upgrade), so
+`/tmp` is exactly the right place: it evaporates with the container.
 
-### 2. Run the installer
-
-```bash
-./install
-```
-
-This relocates the real Claude binary off your `PATH` and drops a shadow
+The installer relocates the real Claude binary off your `PATH` and drops a shadow
 `claude` in its place that wraps every invocation in `bwrap`. It also
 installs the global integrity guard and a curated gitconfig. Curious where
 everything lands? See [What's installed](../reference/whats-installed.md).
@@ -92,10 +84,12 @@ non-functional sandbox. Fix the reported problem and re-run.
 > `CLAUDE_SANDBOX_EGRESS_JAIL=0` to turn the jail off instead. See [Configure
 > the network egress jail](../how-to/network-egress-jail.md).
 
-To restore the sandbox automatically on every rebuild, wire `bash
-<clone>/install` into your devcontainer's `postCreate.sh`.
+To restore the sandbox automatically on every rebuild, wire the same
+clone-and-install one-liner into your devcontainer's `postCreate.sh`
+(pin a tag there if you want a reviewable rollout — see [Sandbox a team
+devcontainer](../how-to/sandbox-a-team-devcontainer.md)).
 
-### 3. Run Claude
+### 2. Run Claude
 
 ```bash
 claude
@@ -112,7 +106,7 @@ From inside the Claude session, run:
 /verify-sandbox
 ```
 
-This runs the **18-check PASS/FAIL battery**, and — when the battery
+This runs the **20-check PASS/FAIL battery**, and — when the battery
 passes — follows it with **10 adversarial breakout probes** against the
 live process. It **exits non-zero on any FAIL**, so the same command
 doubles as a CI assertion.
@@ -123,18 +117,16 @@ resolve it before trusting the session.
 
 ## Re-run freely after a rebuild
 
-The installer is idempotent. After a devcontainer rebuild, just run it again
-(or let `postCreate` do it):
-
-```bash
-./install
-```
+The installer is idempotent. After a devcontainer rebuild, just run the
+clone-and-install one-liner again (or let `postCreate` do it). Once
+installed, `claude-sandbox update` upgrades you to the latest release and
+`claude-sandbox version` reports what you have.
 
 The shadow is re-established **without re-downloading Claude**.
 
 Your statusline script is seeded once and then left alone, so edits you make
 to it survive re-runs. If you'd rather a re-run pull the clone's current
-statusline, run `STATUS=1 ./install`.
+statusline, run `STATUS=1 <clone>/install`.
 
 ---
 
