@@ -309,44 +309,29 @@ read-only — means a session can never escalate the binds of a future session.
 The config keys themselves are documented in
 [configuration](../reference/configuration.md).
 
-## 6. The promote three-layer model
+## 6. One auditable home; consumers reference it, never embed it
 
-Installing into the source clone is one thing; making an *arbitrary* workspace a
-self-sufficient claude-sandbox host is `just promote`. It lands three layers in
-the target so a teammate who clones it only needs the devcontainer to come up.
-Notably, promote does **not** seed the integrity guard per-repo — the guard is
-global, wired into `/etc` by `install.sh` (which the target's `postCreate` runs),
-so promote never touches the target's project `settings.json`, hooks, or
-statusline.
+Every way of consuming the sandbox runs the **same** `install.sh` from
+the **same** repo — the machinery is never copied into consuming
+projects:
 
-```{mermaid}
-graph TD
-    src["source clone<br/>.claude/ + .devcontainer/claude-sandbox/"]
+- **This repo's own devcontainer** (dogfood) — `postCreate` runs the
+  installer.
+- **A clone beside your project** (guest) — `git clone` + `./install`
+  inside any devcontainer; a team wires the same thing into their
+  project's `postCreate` at a pinned tag
+  ([Sandbox a team devcontainer](../how-to/sandbox-a-team-devcontainer.md)).
+- **The published container image** — the image build sources
+  `install.sh` through the same seam.
 
-    src -->|just promote TARGET| target
-
-    subgraph target["target workspace"]
-        direction TB
-        l1["Layer 1 — curated .claude/<br/>commands/ + skills/ (no hooks/settings)"]
-        l2["Layer 2 — install machinery<br/>.devcontainer/claude-sandbox/{install.sh,<br/>claude-shadow, promote.sh,<br/>sandbox-verify.sh, sandbox-gate.sh}<br/>+ justfile, claude-sandbox.conf (if absent)"]
-        l3[".devcontainer/postCreate.sh<br/>→ bash .devcontainer/claude-sandbox/install.sh"]
-    end
-
-    l3 -->|on devcontainer create| installs["install.sh wires the<br/>GLOBAL guard into /etc + /usr/libexec"]
-
-    target -->|printed to stderr, NOT auto-edited| snippet["paste into devcontainer.json:<br/>postCreateCommand → .devcontainer/postCreate.sh"]
-```
-
-The root `install` shim is *not* copied — it is the source repo's manual-UX
-entry, and promoted targets invoke `install.sh` from `postCreate.sh` directly.
-The final step is deliberately *not* automated: promote prints the
-`postCreateCommand` snippet to paste into `devcontainer.json` rather than editing
-it, because that file is JSONC in the wild (comment-preserving structured edits
-are more code than this repo wants) and only you know whether you have already
-wired it or need to combine it with an existing command. Promote is idempotent,
-refuses to target the clone itself, and never touches `~/.claude` — that channel
-is reserved for cross-container shared state (OAuth, memories). The step-by-step
-recipe is in the [how-to guide](../how-to.md).
+An earlier mechanism, `just promote`, copied the install machinery *by
+value* into target workspaces. It was removed ({ref}`adr-remove-promote`,
+superseding {ref}`adr-promote-by-value`): frozen per-project copies of
+security-critical code have no update channel, and proliferating them
+defeats the single-auditable-repo principle the repo was extracted for
+({ref}`adr-standalone-repo`). Wiring a target's `devcontainer.json` stays
+manual either way — it is JSONC in the wild, and only you know whether a
+`postCreateCommand` needs combining with an existing one.
 
 ## Where the code lives
 
@@ -354,11 +339,10 @@ recipe is in the [how-to guide](../how-to.md).
 |---|---|
 | Shadow + inlined `bwrap` argv builder, recursion guard, gitconfig render, `script(1)` wrap, egress-jail orchestration (`egress_jail_enabled` / `netns_launch` / `netns_holder`) | `.devcontainer/claude-sandbox/claude-shadow` |
 | Relocate real binary off-PATH; wire shadow; merge managed-settings guard; disable auto-updater; place `/etc` config | `.devcontainer/claude-sandbox/install.sh` |
-| Three-layer promote into a target workspace | `.devcontainer/claude-sandbox/promote.sh` |
 | `SessionStart` guard — full integrity battery + loud warn when unwrapped | `.devcontainer/claude-sandbox/sandbox-verify.sh` |
 | `UserPromptSubmit` guard — sub-second fail-closed `IS_SANDBOX` gate | `.devcontainer/claude-sandbox/sandbox-gate.sh` |
 | Integrity-battery spec (18 checks + 10 adversarial probes) | `.claude/commands/verify-sandbox.md` |
-| Tests CI runs (argv builder, smoke, promote) | `tests/bwrap_argv.sh`, `tests/smoke.sh`, `tests/promote.sh` |
+| Tests CI runs (argv builder, smoke) | `tests/bwrap_argv.sh`, `tests/smoke.sh` |
 
 ### See also
 

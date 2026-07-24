@@ -170,8 +170,8 @@ ensure_cred_dirs() {
 # install_conf: place the clone's claude-sandbox.conf at the host-global
 # /etc/claude-sandbox.conf the shadow reads at launch. Re-run on every
 # rebuild (via postCreate) so the /etc copy tracks the clone's conf.
-# Unlike install_file this is skip-if-absent: a promoted target that
-# carries no conf, or a clone without one, simply gets no global config
+# Unlike install_file this is skip-if-absent: a clone that carries no
+# conf simply gets no global config
 # (parse_config then no-ops). Mode 0644 — it's data, not an executable.
 # cmp -s short-circuits so a re-run with unchanged content is a no-op.
 install_conf() {
@@ -229,7 +229,7 @@ _ensure_shared() {
 # symlink into the shared config store, picking the data-preserving
 # action for whatever TARGET currently is. The old create-if-absent
 # guard silently lost the share whenever TARGET already existed — and in
-# a not-yet-promoted devcontainer (install not in postCreate) an
+# a devcontainer that doesn't run install from postCreate an
 # unsandboxed `claude` or the VS Code extension routinely writes a local
 # ~/.claude before install ever runs, permanently shadowing the share.
 # Cases:
@@ -458,7 +458,7 @@ wire_user_statusline() {
     merged="$(printf '%s' "$input" | jq --arg sl "$USER_SL_CMD" --argjson slp "$sl_present" "$prune_program")"
 
     # Don't create an empty {} settings on a fresh home that has no
-    # statusline source to wire (e.g. a promoted target).
+    # statusline source to wire.
     if [ "$had_file" = false ] && printf '%s' "$merged" | jq -e '. == {}' >/dev/null 2>&1; then
         return 0
     fi
@@ -507,9 +507,9 @@ main() {
     echo "  run \`/verify-sandbox\` inside Claude for the live battery."
 }
 
-# Source guard: `promote.sh` re-uses `install_file` (and friends) by
-# sourcing this file. The guard keeps main() from auto-running in that
-# case.
+# Source guard: the container image build (see Dockerfile) re-uses the
+# install functions by sourcing this file. The guard keeps main() from
+# auto-running in that case.
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     main "$@"
 fi
