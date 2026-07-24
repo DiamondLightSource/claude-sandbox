@@ -572,7 +572,7 @@ egress_jail_enabled() {
 # bwrap_argv_build binds it over Claude's /etc/resolv.conf. Runs in the main flow
 # (not the holder) because the bind must be staged before the argv is built.
 # Fail-closed-by-diagnostic: the only genuinely unrecoverable case (resolv.conf
-# names no resolver at all) gets a clear, non-silent warning + the escape hatch;
+# names no resolver at all) gets a clear, non-silent warning;
 # if the host truly has no resolver to forward to, pasta attach fails closed.
 jail_stage_dns() {
     local -a ns=()
@@ -586,13 +586,13 @@ jail_stage_dns() {
 
     local f
     if ! f="$(mktemp "${TMPDIR:-/tmp}/claude-jail-resolv.XXXXXX" 2>/dev/null)"; then
-        echo "claude-sandbox: egress jail — could not stage a DNS override (mktemp failed); name resolution may fail. Set CLAUDE_SANDBOX_EGRESS_JAIL=0 to launch without the jail." >&2
+        echo "claude-sandbox: egress jail — could not stage a DNS override (mktemp failed); name resolution may fail." >&2
         return 0
     fi
     printf 'nameserver %s\n' "$JAIL_DNS_FWD" > "$f"
     export CLAUDE_SANDBOX_JAIL_RESOLV="$f"
     if [ "${#ns[@]}" -eq 0 ]; then
-        echo "claude-sandbox: egress jail — /etc/resolv.conf lists no resolvers; forwarding Claude DNS to the host's resolvers via pasta. If resolution still fails the host has none to forward to — set CLAUDE_SANDBOX_EGRESS_JAIL=0 to launch without the jail." >&2
+        echo "claude-sandbox: egress jail — /etc/resolv.conf lists no resolvers; forwarding Claude DNS to the host's resolvers via pasta. If resolution still fails the host has none to forward to." >&2
     fi
     return 0
 }
@@ -604,13 +604,16 @@ jail_stage_dns() {
 # created namespace set leaves bwrap a /proc it can't use. Fail-closed: the jail
 # is on by default, so if its prerequisites are missing Claude does NOT launch
 # (a silent unjailed fallback would quietly drop the default security control).
-# Each error names the fix AND the CLAUDE_SANDBOX_EGRESS_JAIL=0 escape hatch.
+# Each error names the fix. The messages deliberately do NOT name the
+# CLAUDE_SANDBOX_EGRESS_JAIL=0 escape hatch (it still works, for operators
+# who know the risks) — advertising a sandbox-weakening switch in an error
+# everyone hits would invite exactly the quiet opt-out fail-closed exists
+# to prevent.
 netns_launch() {
-    local esc="set CLAUDE_SANDBOX_EGRESS_JAIL=0 to launch without the jail"
-    command -v unshare >/dev/null 2>&1 || jail_fail "needs unshare (util-linux) — or $esc"
-    command -v pasta   >/dev/null 2>&1 || jail_fail "needs pasta (apt-get install passt) — or $esc"
+    command -v unshare >/dev/null 2>&1 || jail_fail "needs unshare (util-linux)"
+    command -v pasta   >/dev/null 2>&1 || jail_fail "needs pasta (apt-get install passt)"
     [ -e /dev/net/tun ] \
-        || jail_fail "needs /dev/net/tun — add --device=/dev/net/tun to the container, or $esc"
+        || jail_fail "needs /dev/net/tun — add --device=/dev/net/tun to the container"
 
     CLAUDE_JAIL_READY="$(mktemp -u "${TMPDIR:-/tmp}/claude-jail-ready.XXXXXX")"
     export CLAUDE_JAIL_READY

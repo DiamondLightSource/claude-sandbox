@@ -34,9 +34,9 @@ The full spec lives at `.claude/commands/verify-sandbox.md`.
 - Every line of the battery should report `PASS`.
 - Any `FAIL` line names the specific defence that regressed.
 - Probes may report `[INCONCLUSIVE]` for accepted information-disclosure
-  paths (e.g. network-identity disclosure, which applies in the
-  `CLAUDE_SANDBOX_EGRESS_JAIL=0` open-egress mode) — these are on the
-  radar by design, not failures.
+  paths (e.g. network-identity disclosure, which applies only when an
+  operator has disabled the egress jail) — these are on the radar by
+  design, not failures.
 
 > **Jailed sessions.** When the egress jail is on (the default), the full
 > 20-check battery still passes: check 06 asserts the *effective*

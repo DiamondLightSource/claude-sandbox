@@ -62,18 +62,6 @@ restores the shipped defaults, so re-apply afterwards (teams bake a
 persistent conf in at install time — see
 [Sandbox a team devcontainer](sandbox-a-team-devcontainer.md)).
 
-## Disable the jail
-
-Two ways; env wins over conf:
-
-- **Per host** — uncomment `egress-jail = 0` in
-  `.devcontainer/claude-sandbox.conf`, then re-run `./install` (or rebuild).
-- **Per session** — `CLAUDE_SANDBOX_EGRESS_JAIL=0 claude`, or set it in your
-  devcontainer's `remoteEnv`.
-
-Disabling restores the open-egress world of {ref}`adr-network-egress-open`:
-Claude shares the host network namespace, with no per-process firewall.
-
 ## A note on Channel Access for Claude
 
 Claude's private netns has no LAN broadcast domain, so EPICS Channel Access

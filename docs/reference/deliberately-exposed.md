@@ -22,11 +22,11 @@ These paths are bound into the sandbox on purpose. Modes are `r`
 | `/root/.config/glab-cli/` | rw | `glab` CLI's token store. Same reason as `gh`. Sibling paths under `/root/.config/` (VS Code state, other cred helpers, etc.) are NOT bound |
 | `/root/.local/share/` + single files `/root/.local/bin/{uv,uvx}` | rw | Bulk-bound XDG data dir: host-installed plugins for `helm`, `kubectl`/`krew`, `uv`-managed Python, etc. just work inside the sandbox without per-tool allowlist additions. `applications/` and `claude/` are tmpfs-masked so Claude Code's own writes (URL handler `.desktop`, versioned binary cache) stay ephemeral. `.config/` stays strict-allowlist — credentials live there, not under `.local/share/` |
 | `/usr/libexec/claude-sandbox/claude` | r | The real Claude binary, relocated here by the installer from `~/.local/bin/claude` so plain `claude` on the user's PATH always resolves to the shadow. The shadow exec's this same file via `bwrap`; a bind back to `~/.local/bin/claude` inside the sandbox keeps Claude Code's `installMethod=native` self-check happy |
-| Network (egress-jailed by default, ADR 0015) | — | Claude runs in a private network namespace (pasta-bridged) with a routing allowlist: the internet, DNS, and configured `allow-ip` devices stay reachable so Claude works (`api.anthropic.com`, GitHub/GitLab), while RFC1918 (10/8, 172.16/12, 192.168/16) and 169.254/16 are blackholed so a compromised session cannot pivot to internal hosts. **On by default**; `CLAUDE_SANDBOX_EGRESS_JAIL=0` restores the shared host netns (`--share-net`, {ref}`adr-network-egress-open`). See {ref}`adr-network-egress-jail` |
+| Network (egress-jailed by default, ADR 0015) | — | Claude runs in a private network namespace (pasta-bridged) with a routing allowlist: the internet, DNS, and configured `allow-ip` devices stay reachable so Claude works (`api.anthropic.com`, GitHub/GitLab), while RFC1918 (10/8, 172.16/12, 192.168/16) and 169.254/16 are blackholed so a compromised session cannot pivot to internal hosts. **On by default**; an operator opt-out (deliberately not documented here) restores the shared host netns (`--share-net`, {ref}`adr-network-egress-open`). See {ref}`adr-network-egress-jail` |
 
 For the rationale behind the XDG split, the uv bind discipline, the
 gitconfig redirect, and the egress jail (and the network-identity
-disclosure that remains on the `CLAUDE_SANDBOX_EGRESS_JAIL=0` path), see the
+disclosure that remains when an operator disables the jail), see the
 [threat model](../explanations/threat-model.md) and {ref}`adr-network-egress-jail`.
 
 ## Out of scope

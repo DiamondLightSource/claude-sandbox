@@ -77,7 +77,7 @@ each image records the launcher version it was tested with, and
   its own network namespace and blackholes RFC1918 (internal LANs, lab devices)
   while leaving the internet, DNS, and configured `allow-ip` devices reachable —
   so a compromised session can't pivot sideways to internal hosts. Fail-closed
-  (needs `--device=/dev/net/tun`); `CLAUDE_SANDBOX_EGRESS_JAIL=0` opts out.
+  (needs `--device=/dev/net/tun`).
 - A global, tamper-resistant **integrity guard** (highest-precedence
   managed-settings hooks + a disabled auto-updater) that fails loud and closed
   if Claude is ever launched outside the shadow.

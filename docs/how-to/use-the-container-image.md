@@ -120,7 +120,6 @@ through automatically when the container is created:
 
 ```bash
 CLAUDE_SANDBOX_NO_FORGE=1 claude-container          # no forge creds inside
-CLAUDE_SANDBOX_EGRESS_JAIL=0 claude-container       # jail off (not recommended)
 ```
 
 They are frozen into the container at create time — `--recreate` to
@@ -178,9 +177,7 @@ reads it on every invocation; it is not remembered).
   exists, but under *rootful* docker the egress jail's pasta attach is
   denied (`Couldn't open user namespace ... Permission denied` — differing
   namespace/ptrace semantics), so `claude` fail-closes at launch. Rootless
-  docker is untested. If you must use such an engine, the jail can be
-  disabled per session (`CLAUDE_SANDBOX_EGRESS_JAIL=0`) — a weaker
-  posture; prefer rootless podman.
+  docker is untested. Prefer rootless podman.
 - **Linux only** — the sandbox is built on Linux namespaces. macOS with
   `podman machine` runs the Linux image in a VM and should work, but is
   untested.

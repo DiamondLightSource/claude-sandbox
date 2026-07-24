@@ -90,9 +90,8 @@ non-functional sandbox. Fix the reported problem and re-run.
 > `passt` (which provides `pasta`), but it **cannot** add the runArg for you
 > — that's a `devcontainer.json` edit. Add `"--device=/dev/net/tun"` to your
 > `devcontainer.json` `runArgs` and rebuild (this repo's own devcontainer
-> already does). If you don't need lateral isolation, set
-> `CLAUDE_SANDBOX_EGRESS_JAIL=0` to turn the jail off instead. See [Configure
-> the network egress jail](../how-to/network-egress-jail.md).
+> already does). See [Configure the network egress
+> jail](../how-to/network-egress-jail.md).
 
 To restore the sandbox automatically on every rebuild, wire the same
 clone-and-install one-liner into your devcontainer's `postCreate.sh`
@@ -135,8 +134,8 @@ statusline, run `STATUS=1 <clone>/install`.
 - [Persist your login and memory across rebuilds](../how-to/persist-login-and-memory.md)
   — add a terminal-config mount if your devcontainer doesn't already have one.
 - [Configure the network egress jail](../how-to/network-egress-jail.md) —
-  the jail is on by default; add `allow-ip` lab devices, satisfy the
-  `--device=/dev/net/tun` requirement, or turn it off. It provides
+  the jail is on by default; add `allow-ip` lab devices or satisfy the
+  `--device=/dev/net/tun` requirement. It provides
   *lateral* (RFC1918) isolation and composes with Claude Code's native
   `allowedDomains` *internet-domain* isolation as complementary layers — run
   both.

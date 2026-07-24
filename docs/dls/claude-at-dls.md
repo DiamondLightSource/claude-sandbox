@@ -2,9 +2,8 @@
 
 This page sets out the Diamond Light Source policy for running Claude
 Code: **why** it must not run directly on a workstation, **what** we run
-instead — Claude Code inside a devcontainer, wrapped by the
-claude-sandbox isolation layer — and **how** to set that up. The setup
-instructions deliberately prescribe a single route; other supported
+instead, and **how** to set that up. The setup instructions deliberately
+prescribe a single recommended route; other supported
 routes are collected in [Further reading for DLS](further-reading.md).
 
 ## The risks, and what the sandbox mitigates
@@ -13,7 +12,7 @@ Claude Code is an *agentic* tool: it runs shell commands, edits files,
 and fetches from the network on your behalf. Run directly on a
 workstation, two things compound:
 
-- **Everything you can read, it can read** — SSH keys, tokens,
+- **Everything you can read, it can read**: SSH keys, tokens,
   browser/IDE state, kerberos caches, and every network the workstation
   reaches, including beamline and office networks.
 - **It can be steered by content it merely *reads*.** A hostile file,
@@ -42,20 +41,18 @@ The full analysis is in the
 [verification checks](../reference/verification-checks.md) are runnable
 on any install via `claude-sandbox verify`. As evidence of the checks in
 practice, see an
-[example expanded audit run](https://gist.github.com/gilesknap/a294d4ee803ec96c6f89196b4f011f0e)
-— 210 adversarial probes against a live sandbox: 179 blocked, 0 escaped,
-31 inconclusive-by-design (deliberately open elements such as the
-writable workspace).
+[example expanded audit run](https://gist.github.com/gilesknap/a294d4ee803ec96c6f89196b4f011f0e):
+210 adversarial probes against a live sandbox.
 
 ## How we use Claude at DLS
 
-1. **Never run directly on the host.** DLS-managed configuration blocks Claude
-   Code launched on a workstation outside the sandbox and points the
-   user at this page. The mechanism (a managed-settings gate that user
-   configuration cannot override) is described in
-   [Enforce sandbox use across an organisation](../how-to/enforce-org-wide.md).
+1. **Never run directly on the host.** DLS-managed configuration blocks
+   Claude Code launched on a workstation outside the sandbox (a
+   managed-settings gate that user configuration cannot override) and
+   points the user at this page.
 2. **Always run inside a devcontainer, sandboxed.** All Claude Code use happens
-   in a project devcontainer with claude-sandbox installed — set up below.
+   in a project devcontainer with claude-sandbox installed; the setup is
+   below.
 
 ## Install and run
 
@@ -75,7 +72,7 @@ A [devcontainer](https://code.visualstudio.com/docs/devcontainers/containers)
 is a project-defined container VS Code develops inside; DLS projects
 generated from `python-copier-template` already have one. VS Code will
 offer **"Reopen in Container"** when the project has a
-`.devcontainer/devcontainer.json` — accept it.
+`.devcontainer/devcontainer.json`. Accept it.
 
 No devcontainer yet? Create a minimal one first:
 [Set up a devcontainer for your project](../tutorials/set-up-a-devcontainer.md).
@@ -108,7 +105,7 @@ In a terminal inside the container (`` Ctrl+` `` in VS Code), paste:
 cd /tmp && rm -rf claude-sandbox && git clone https://github.com/DiamondLightSource/claude-sandbox && claude-sandbox/install
 ```
 
-The clone is disposable — nothing depends on it after install.
+The clone is disposable: nothing depends on it after install.
 
 ### 5. Run Claude
 
@@ -116,7 +113,7 @@ The clone is disposable — nothing depends on it after install.
 claude
 ```
 
-Log in when prompted (once — the login persists via the mount from
+Log in when prompted (once; the login persists via the mount from
 step 3). To let Claude push to a forge, authenticate with a
 short-lived, single-repo token:
 
