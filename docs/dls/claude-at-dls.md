@@ -1,10 +1,11 @@
 # Claude Code at DLS
 
-This page is two things at once: the summary reviewed by the DLS AI
-committee, and the instructions a DLS developer follows to run Claude
-Code on their workstation. It deliberately describes **one** prescriptive
-route; other supported routes are collected in
-[Further reading for DLS](further-reading.md).
+This page sets out the Diamond Light Source policy for running Claude
+Code: **why** it must not run directly on a workstation, **what** we run
+instead — Claude Code inside a devcontainer, wrapped by the
+claude-sandbox isolation layer — and **how** to set that up. The setup
+instructions deliberately prescribe a single route; other supported
+routes are collected in [Further reading for DLS](further-reading.md).
 
 ## The risks, and what the sandbox mitigates
 
@@ -29,8 +30,9 @@ devcontainer:
 - **Filesystem**: only the project workspace is writable; the rest of
   the container is read-only and host credentials are masked or empty.
 - **Network**: a fail-closed egress jail blackholes internal (RFC1918)
-  networks, so a compromised session cannot pivot to beamline or campus
-  hosts; the internet and explicitly allowed devices stay reachable.
+  networks, so a compromised session cannot pivot to facility servers or
+  network devices; the internet and explicitly allowed devices stay
+  reachable.
 - **Integrity**: a guard delivered through Claude Code's
   managed-settings layer fails loud and closed if `claude` is ever
   launched unwrapped.
@@ -47,15 +49,13 @@ writable workspace).
 
 ## How we use Claude at DLS
 
-Two rules, one route:
-
-1. **Not directly on the host.** DLS-managed configuration blocks Claude
+1. **Never run directly on the host.** DLS-managed configuration blocks Claude
    Code launched on a workstation outside the sandbox and points the
    user at this page. The mechanism (a managed-settings gate that user
    configuration cannot override) is described in
    [Enforce sandbox use across an organisation](../how-to/enforce-org-wide.md).
-2. **Inside a devcontainer, sandboxed.** All Claude Code use happens in
-   a project devcontainer with claude-sandbox installed — set up below.
+2. **Always run inside a devcontainer, sandboxed.** All Claude Code use happens
+   in a project devcontainer with claude-sandbox installed — set up below.
 
 ## Install and run
 
@@ -128,10 +128,9 @@ claude-sandbox glab-auth                  # Diamond GitLab
 See [Authenticate with forges](../how-to/authenticate-with-forges.md)
 for the recommended token shape.
 
-### 6. Verify and stay current
+### 6. Stay current
 
 ```bash
-claude-sandbox verify     # run the integrity battery
 claude-sandbox version    # what you have
 claude-sandbox update     # upgrade to the latest release
 ```
