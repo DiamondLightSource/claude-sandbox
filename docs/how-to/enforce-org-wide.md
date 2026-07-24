@@ -46,7 +46,7 @@ set -uo pipefail
 [ "${CLAUDE_SANDBOX_ALLOW_UNWRAPPED:-}" = "1" ] && exit 0
 
 echo "BLOCKED by IT policy: Claude Code must be run inside claude-sandbox so host
-credentials stay isolated. Set it up: https://github.com/gilesknap/claude-sandbox
+credentials stay isolated. Set it up: https://github.com/DiamondLightSource/claude-sandbox
 (clone + ./install, then launch claude inside the devcontainer)." >&2
 exit 2
 ```

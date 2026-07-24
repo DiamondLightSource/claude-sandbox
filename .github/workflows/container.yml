@@ -90,7 +90,7 @@ jobs:
       - name: "Test: launcher-version label matches the baked script"
         run: |
           label="$(docker image inspect \
-            -f '{{index .Config.Labels "io.gilesknap.claude-sandbox.launcher-version"}}' \
+            -f '{{index .Config.Labels "io.diamondlightsource.claude-sandbox.launcher-version"}}' \
             claude-sandbox:test)"
           baked="$(docker run --rm --entrypoint sed claude-sandbox:test \
             -n 's/^VERSION="\(.*\)"$/\1/p' \

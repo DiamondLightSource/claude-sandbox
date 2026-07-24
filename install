@@ -2,7 +2,7 @@
 # claude-sandbox installer shim. Resolves its own dir and execs the
 # real installer under .devcontainer/claude-sandbox/.
 #
-#   git clone https://github.com/gilesknap/claude-sandbox.git
+#   git clone https://github.com/DiamondLightSource/claude-sandbox.git
 #   cd claude-sandbox
 #   ./install
 #

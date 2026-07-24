@@ -8,7 +8,7 @@
 #                    (bubblewrap, just, nodejs, gh) is apt-installed by
 #                    `.devcontainer/claude-sandbox/install.sh` at
 #                    postCreate.
-#   claude-sandbox — the PUBLISHED image (ghcr.io/gilesknap/claude-sandbox,
+#   claude-sandbox — the PUBLISHED image (ghcr.io/diamondlightsource/claude-sandbox,
 #                    built by .github/workflows/container.yml): sandboxed
 #                    Claude Code for hosts WITHOUT a devcontainer workflow;
 #                    rootless podman/docker + the container/claude-container
@@ -25,7 +25,7 @@ FROM developer AS claude-sandbox
 # source of truth) and passes it in; the launcher reads the label from
 # the pulled image to warn when the user's copy is out of date.
 ARG LAUNCHER_VERSION=""
-LABEL io.gilesknap.claude-sandbox.launcher-version="${LAUNCHER_VERSION}"
+LABEL io.diamondlightsource.claude-sandbox.launcher-version="${LAUNCHER_VERSION}"
 
 COPY . /opt/claude-sandbox
 WORKDIR /opt/claude-sandbox

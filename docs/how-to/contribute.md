@@ -7,16 +7,16 @@ bash-only constraint and the sandbox itself, see the
 ## File an issue or open a discussion
 
 Issues and pull requests are handled through
-[GitHub](https://github.com/gilesknap/claude-sandbox/issues). Check for an
+[GitHub](https://github.com/DiamondLightSource/claude-sandbox/issues). Check for an
 existing issue before filing a new one.
 
 - **Bug report or concrete change** → file an
-  [issue](https://github.com/gilesknap/claude-sandbox/issues). If the change
+  [issue](https://github.com/DiamondLightSource/claude-sandbox/issues). If the change
   is large, file the issue *before* opening a pull request so the scope can be
   agreed first.
 - **Open-ended question or idea** → if it isn't obvious when it could be
   "closed", raise it as a
-  [discussion](https://github.com/gilesknap/claude-sandbox/discussions)
+  [discussion](https://github.com/DiamondLightSource/claude-sandbox/discussions)
   instead.
 
 ## Respect the bash-only ethos
@@ -32,7 +32,7 @@ a Python project.
 Clone the repo and run the same two commands CI runs:
 
 ```bash
-git clone https://github.com/gilesknap/claude-sandbox.git
+git clone https://github.com/DiamondLightSource/claude-sandbox.git
 cd claude-sandbox
 bash tests/bwrap_argv.sh
 bash tests/smoke.sh
