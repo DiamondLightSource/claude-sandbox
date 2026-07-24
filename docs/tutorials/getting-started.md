@@ -1,18 +1,29 @@
 # Getting started
 
-This tutorial gets you to a working, sandboxed Claude Code — and proves the
-sandbox is intact before you trust it. You'll be working inside a
+This tutorial gets you to a working, sandboxed Claude Code. You'll be
+working inside a
 Debian/Ubuntu [devcontainer](set-up-a-devcontainer.md) running as `root`
 (the typical rootless-Podman pattern; rootless Docker likely works but is
-untested with the egress jail). New to
-devcontainers? [Set one up first](set-up-a-devcontainer.md).
+untested with the egress jail).
 
-There are two ways in. Pick whichever fits how you already work.
+There are two ways in. **New to devcontainers? Take the quick way** — this
+repo ships its own devcontainer, so there is nothing to build or configure
+yourself. The other way is for when you already work inside your own
+project's devcontainer (and if your project doesn't have one yet,
+[set one up first](set-up-a-devcontainer.md)).
 
 ## The quick way: use claude-sandbox's own devcontainer
 
-Open **this repo** (`claude-sandbox`) in its devcontainer. That's it — the
-sandbox installs itself:
+Clone **this repo** and open it in VS Code:
+
+```bash
+git clone https://github.com/DiamondLightSource/claude-sandbox
+code claude-sandbox
+```
+
+When VS Code offers **"Reopen in Container"**, accept it (or press `F1` and
+run **"Dev Containers: Reopen in Container"**). That's it — the sandbox
+installs itself:
 
 - `postCreate` runs the installer for you, so the shadow `claude` and the
   global integrity guard are in place the moment the container comes up.
@@ -40,8 +51,7 @@ others stay read-only — usually exactly what you want. (To widen it, see
 [Configure the workspace scope](../how-to/configure-workspace-scope.md).)
 
 This is the simplest path, especially if your own projects don't have
-devcontainers. Skip to [Confirm the sandbox](#confirm-the-sandbox) to prove
-it's working.
+devcontainers.
 
 ## The other way: install into your own devcontainer
 
@@ -98,23 +108,6 @@ claude
 Use Claude exactly as you normally would — the shadow on your `$PATH` wraps
 plain `claude` in the sandbox, nothing else to remember.
 
-## Confirm the sandbox
-
-From inside the Claude session, run:
-
-```
-/verify-sandbox
-```
-
-This runs the **20-check PASS/FAIL battery**, and — when the battery
-passes — follows it with **10 adversarial breakout probes** against the
-live process. It **exits non-zero on any FAIL**, so the same command
-doubles as a CI assertion.
-
-A clean run means your host credentials, IDE bridges, and shell environment
-are isolated from anything Claude reads or runs. If you see a FAIL, stop and
-resolve it before trusting the session.
-
 ## Re-run freely after a rebuild
 
 The installer is idempotent. After a devcontainer rebuild, just run the
@@ -136,6 +129,9 @@ statusline, run `STATUS=1 <clone>/install`.
 
 ## Next steps
 
+- [Verify the sandbox](../how-to/verify-the-sandbox.md) — the sandbox ships
+  with an integrity battery and adversarial breakout probes; run them any
+  time you want proof, or wire them into CI.
 - [Persist your login and memory across rebuilds](../how-to/persist-login-and-memory.md)
   — add a terminal-config mount if your devcontainer doesn't already have one.
 - [Configure the network egress jail](../how-to/network-egress-jail.md) —

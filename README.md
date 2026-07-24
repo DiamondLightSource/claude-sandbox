@@ -47,7 +47,7 @@ you have.
 
 The [getting-started tutorial][tutorial] has the full walkthrough, including the
 `/user-terminal-config` clone location for `python-copier-template`
-devcontainers and how to confirm the install with `/verify-sandbox`.
+devcontainers.
 
 ### Not a devcontainer user? Prebuilt image
 
