@@ -1,6 +1,6 @@
 ---
 name: claude-sandbox
-description: Architecture decisions and historical reversals for this repo's bwrap-based Claude sandbox. Covers real claude off PATH, container-scoped PATs, the GLOBAL integrity guard delivered via managed-settings (/etc + /usr/libexec, NOT user-scope ~/.claude): SessionStart verify + UserPromptSubmit gate, plus auto-updater disable, Ubuntu-24.04 CI bwrap workarounds, dogfood ≈ guest, the `just promote` three-layer model (no JSONC editing), and two walked-back paths (Python orchestration; embedding in python-copier-template). Surface before edits to `.devcontainer/claude-sandbox/{claude-shadow,install.sh,promote.sh,sandbox-verify.sh,sandbox-gate.sh,verify-sandbox-battery.sh}`, `install`, `tests/`, `.github/workflows/ci.yml`, or `.claude/commands/verify-sandbox.md`; or before any suggestion to re-introduce Python tooling, embed in python-copier-template, persist gh/glab PATs across containers, auto-edit JSONC devcontainer.json, move the integrity guard out of managed-settings (to per-repo `.claude/` or user-scope `~/.claude`), or re-enable the in-container auto-updater.
+description: Architecture invariants, refuse-lists, and walked-back paths for this repo's bwrap sandbox core (shadow, installer, promote, integrity guard). Surface before editing `.devcontainer/claude-sandbox/*`, `install`, `tests/`, `.github/workflows/ci.yml`, or `.claude/commands/verify-sandbox.md` — or before any suggestion to re-add Python tooling, persist gh/glab PATs, auto-edit devcontainer.json, read conf from the workspace, move the integrity guard out of managed-settings, re-enable the auto-updater, expose a host container-engine socket, or pass-env secrets. Container-image/launcher topics: claude-sandbox-container skill. Network/egress topics: claude-sandbox-networking skill.
 ---
 
 # claude-sandbox
@@ -196,16 +196,12 @@ before proceeding.
 
 ### Reversal 1 — Python orchestration
 
-Trajectory: `embedded bash → standalone bash → Python package + typer
-CLI → bash-only` (commits `25e67ce`, `a35b8ee`, then `bf65407`
-"feat: bash-only rewrite — drop Python package, self-contained
-shadow", 2026-05-12, issue #14 / PR #15).
-
-The tool is fundamentally one bash function building a bwrap argv.
-A ~110 KB Python package (pyproject, uv lockfile, pytest scaffolding,
-a growing unit-test suite, typer CLI) made the security-critical bits
-harder to audit across multiple modules. Bash-only is two files — the
-shadow and the installer — each readable top-to-bottom.
+Went embedded bash → standalone bash → Python package + typer CLI →
+back to bash-only (`bf65407`, 2026-05-12, issue #14 / PR #15). The tool
+is one bash function building a bwrap argv; the Python package
+(pyproject, uv lock, pytest, typer) spread the security-critical bits
+across modules. Bash-only is two files, each readable top-to-bottom.
+Root `CLAUDE.md` carries the rule; this is the why.
 
 **Refuse without justification:**
 - "Let's add a small Python CLI for nicer error messages / config /
@@ -215,26 +211,15 @@ shadow and the installer — each readable top-to-bottom.
 - Anything that re-introduces `pyproject.toml`, `uv.lock`,
   `src/claude_sandbox/`, or `test_*.py`.
 
-Root `CLAUDE.md` says "Bash-only. No Python package, no uv, no
-pytest — don't add them back." This skill explains the why.
-
 ### Reversal 2 — extracted from python-copier-template
 
-The sandbox originally lived embedded in `python-copier-template` as
-`.devcontainer/claude-sandbox.sh` (a single bash script using
-`unshare -m` + tmpfs overlays). Extracted because:
-
-- A security tool needs **one canonical, audit-friendly home**, not
-  a templated copy in every project.
-- The bwrap-based defences (`--cap-drop ALL`, `--clearenv`
-  allow-list, strict-under-`/root` inversion, `NO_NEW_PRIVS`, …)
-  replace the older `unshare -m` and would be awkward inside a
-  per-project template.
-- A standalone repo gets a versioned release surface, its own CI,
-  and `/verify-sandbox` as a first-class command.
-
-`/workspaces/python-copier-template/.devcontainer/claude-sandbox.sh`
-exists as prior art but is **not** maintained.
+Originally embedded in `python-copier-template` as
+`.devcontainer/claude-sandbox.sh` (`unshare -m` + tmpfs overlays).
+Extracted because a security tool needs one canonical, audit-friendly
+home — not a templated copy per project — and a standalone repo gets
+the bwrap defences, versioned releases, its own CI, and
+`/verify-sandbox` as a first-class command. The old copy in that repo
+is prior art, **not** maintained.
 
 **Refuse without justification:**
 - Adding a `template/` directory or `copier.yml`.
@@ -318,11 +303,10 @@ ships a starter conf into a promoted target's `.devcontainer/`, whose own
 - "Make allow-write per-repo again so projects can opt in" reopens the
   cross-session bind-escalation vector. Per-session env vars are the
   supported override; the global conf is the only file.
-- verify-sandbox check 18 guards that the installed shadow reads `/etc`
-  and has no `$PWD/.devcontainer` read. `tests/bwrap_argv.sh` scenario 8b
-  guards that `$VIRTUAL_ENV/bin` is appended (not prepended) to PATH, and
-  the harness unsets the runner's `VIRTUAL_ENV`/`UV_*` so the suite is
-  deterministic inside an activated venv. Keep all three.
+- Guards to keep: verify-sandbox check 18 (installed shadow reads
+  `/etc`, no `$PWD/.devcontainer` read) and `tests/bwrap_argv.sh`
+  scenario 8b (`$VIRTUAL_ENV/bin` appended — not prepended — to PATH;
+  harness unsets the runner's `VIRTUAL_ENV`/`UV_*`).
 
 ## Invariant 5 — the integrity guard is GLOBAL via MANAGED settings (`/etc` + `/usr/libexec`), and the in-container auto-updater stays OFF
 
@@ -394,61 +378,51 @@ this.
 - A hard-fail (vs warn-and-skip) on a non-JSON managed/user settings
   file — bricking install over a file we don't exclusively own is worse
   than skipping the merge with a loud warning.
-- `tests/smoke.sh` asserts managed-merge idempotency, admin-policy
-  preservation, dedup, updater keys, no-`allowManagedHooksOnly`, the
-  user-scope prune migration, set-only-if-absent statusline, and the
-  wrapped/unwrapped/escape-hatch behaviour of both scripts — all via the
-  `INSTALL_PREFIX`/`INSTALL_USER_HOME` tmpdir seams (the suite never
-  touches the real `/etc` or `~/.claude`). Keep those seams.
+- `tests/smoke.sh` covers all of the above (managed-merge, updater keys,
+  prune migration, gate/escape-hatch behaviour) via the
+  `INSTALL_PREFIX`/`INSTALL_USER_HOME` tmpdir seams — the suite never
+  touches the real `/etc` or `~/.claude`. Keep those seams.
 
-## Third consumer — the published container image (PR #78)
+## Boundary discipline — sockets and env vars crossing the jail (#73/#74)
 
-`ghcr.io/gilesknap/claude-sandbox` (built by `.github/workflows/container.yml`
-from the root Dockerfile's `claude-sandbox` stage, `FROM` the `developer`
-stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
-`container/claude-container` launcher. Principles already extended here:
+`allow-write` binds unix sockets (#73) and `pass-env` forwards named env
+vars (#74). Both were contributed by DLS (coretl) to reach a container
+engine from inside the sandbox — and the obvious way to use them is the
+dangerous one. The docs draw a deliberate line, agreed 2026-07-23:
 
-- **Dogfood ≈ guest ≈ image**: the image build *sources* `install.sh` and runs
-  main()'s function sequence — never a parallel install path. Two deliberate
-  build-time skips (both re-run by `container/entrypoint.sh` at start):
-  `probe_userns_or_refuse` (a builder probe proves nothing about the runtime
-  host) and `link_terminal_config` — the DLS base ships an EMPTY
-  `/user-terminal-config` stub, and wiring it at build symlinks
-  `~/.claude.json` to a zero-length file the official installer rejects as
-  corrupted JSON ("Unexpected EOF"). The entrypoint also seeds `{}` into a
-  zero-length `~/.claude.json` (same hazard, first run with a fresh share).
-- **Invariant 2 mapping**: the launcher creates one NAMED container per
-  project dir (`podman create` once, `start -ai` after) so forge PATs are
-  container-scoped without per-launch re-paste; `--recreate` ⇒ re-auth. Refuse
-  a "just mount host ~/.config/gh" convenience swap.
-- **Invariant 4 mapping**: durable user conf = host file ro-mounted at the
-  canonical `/etc/claude-sandbox.conf`; the entrypoint detects the mount
-  (`_is_mount`) and skips re-stamping. Conf stays outside the sandbox rw set.
-- A git tag publishes `ghcr.io/...:<tag>` without touching `:latest`
-  (`latest` is default-branch-only) — beta images are safe to cut anytime.
-- **Launcher versioning (notify-only, by design)**: the `VERSION=` line
-  in `container/claude-container` is the single source of truth; CI seds
-  it into the Dockerfile `ARG` → OCI label
-  `io.gilesknap.claude-sandbox.launcher-version`, and a CI step asserts
-  label == baked script. Each run the launcher compares itself against
-  the LOCAL image's label (instant, offline, no container start) and
-  prints a curl pinned to `org.opencontainers.image.revision` when
-  outdated, or a pull+`--recreate` hint when newer. **Refuse:** a
-  `--self-update` flag (the launcher runs unsandboxed on the host —
-  replacing it must stay a deliberate, reviewable act), and hard-failing
-  the build on an empty `LAUNCHER_VERSION` ARG (the label is advisory;
-  pre-label images exist and must degrade to silence — CodeRabbit asked,
-  declined on PR #78).
-- **Distribution/conf decisions parked as issues** (re-read before
-  re-designing any of these): **#79** ship `/verify-sandbox` as a plugin
-  via managed settings — docs-verified that `extraKnownMarketplaces`
-  (local path) + `enabledPlugins` is Claude Code's ONLY machine-wide
-  command/skill channel (no system commands dir exists; command becomes
-  namespaced `/claude-sandbox:verify-sandbox`). **#80** Renovate-pinned
-  Claude version (official installer takes `[stable|latest|X.Y.Z]` as
-  `$1`; `downloads.claude.ai/claude-code-releases/{latest,stable}`
-  return bare version strings). **#81** per-project
-  `.claude-sandbox.conf` — see the Invariant 4 carve-out below.
+- **A container-engine socket is a sandbox escape**: the engine mounts
+  any path its account can read into a container the agent controls.
+  The sandbox scopes which *socket file* is reachable; it cannot
+  constrain the engine behind it. Same for any socket — it's an API
+  crossing the boundary.
+- **Host/daily-driver engine socket (incl. one mounted into the
+  devcontainer, the common DLS pattern): never.** A dedicated,
+  disposable engine (e.g. `podman system service` inside the
+  devcontainer, holding nothing valuable): acceptable, and it's what
+  the how-to's example demonstrates.
+- **pass-env forwards pointer vars (`DOCKER_HOST`), never
+  secret-bearing ones** — every forwarded var is disclosed to the agent
+  and everything it runs.
+
+Warnings live in `docs/how-to/configure-workspace-scope.md` ("Reach a
+container-engine socket") and `docs/how-to/pass-environment-variables.md`.
+
+**Refuse as regressions:** softening/removing those warning callouts;
+adding a doc recipe or example that binds a *host* engine socket in
+(users — DLS especially — will ask for exactly this); example conf lines
+that `pass-env` a token/credential var. Mechanism stays; the docs must
+keep saying what it costs.
+
+## Third consumer — the published container image
+
+The image `ghcr.io/gilesknap/claude-sandbox` + `container/claude-container`
+launcher (PR #78) is the third consumer after dogfood and guest. Its
+design decisions (image build sources `install.sh`, entrypoint re-runs,
+PAT scoping via named containers, ro-mounted conf, notify-only launcher
+versioning, parked issues #79/#80/#81) live in the
+**`claude-sandbox-container` skill** — split out so they load only on
+image/launcher topics. Touch the root `Dockerfile`, `container/*`, or
+`.github/workflows/container.yml` → read that skill first.
 
 ## Where things live
 
@@ -462,8 +436,7 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
 | End-to-end install smoke test | `tests/smoke.sh`                                    |
 | Promote smoke test            | `tests/promote.sh`                                  |
 | CI workflow                   | `.github/workflows/ci.yml`                          |
-| Published image build+publish | `.github/workflows/container.yml` (e2e jailed launch runs under rootless podman) |
-| Image stage / entrypoint / launcher | root `Dockerfile` (`claude-sandbox` stage), `container/entrypoint.sh`, `container/claude-container` |
+| Container image / launcher design | `claude-sandbox-container` skill (root `Dockerfile`, `container/*`, `.github/workflows/container.yml`) |
 | Live verification spec (why)  | `.claude/commands/verify-sandbox.md`                |
 | Phase-1 battery script (what) | `.devcontainer/claude-sandbox/verify-sandbox-battery.sh` |
 | Global SessionStart verifier  | `.devcontainer/claude-sandbox/sandbox-verify.sh`    |
