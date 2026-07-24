@@ -6,13 +6,20 @@ variables. For task recipes see the [how-to guides](../how-to.md).
 
 ## `/etc/claude-sandbox.conf`
 
-The shadow reads this file at every launch. It is installed by
-`install.sh` from the clone's `.devcontainer/claude-sandbox.conf` and
-re-stamped on every rebuild via postCreate. It lives at `/etc`, **not**
-in the rw-bound workspace, so a compromised session cannot rewrite it
-to widen the next launch's binds — or, with `allow-ip`, its network
-reach. To change it, edit the clone conf and
-re-run `./install` (a rebuild does it via postCreate).
+The shadow reads this file at every launch. It is seeded by
+`install.sh` from the installing clone's
+`.devcontainer/claude-sandbox.conf` (the shipped defaults). It lives at
+`/etc`, **not** in the rw-bound workspace, so a compromised session
+cannot rewrite it to widen the next launch's binds — or, with
+`allow-ip`, its network reach.
+
+To change it, edit `/etc/claude-sandbox.conf` directly in the container
+(you are root); the next `claude` launch picks it up. Edits are
+per-devcontainer and not persisted: a rebuild, re-install, or
+`claude-sandbox update` restores the shipped defaults, so re-apply
+afterwards. Teams that want a persistent conf bake it in at install
+time — see
+[Sandbox a team devcontainer](../how-to/sandbox-a-team-devcontainer.md).
 
 A missing file is a no-op (`parse_config` returns). The installer
 skips placing it if the clone carries no conf. File mode is `0644`.

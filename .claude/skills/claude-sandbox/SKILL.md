@@ -241,8 +241,13 @@ Two reasons, one load-bearing for the threat model:
   cross-session breakout. `/etc` is not in the rw bind set.
 - **Ergonomics.** One global conf means `allow-write = /cache` (uv) and
   friends apply to `claude` in every workspace with nothing added to
-  individual repos. Edit the clone conf + re-run `./install` (a rebuild
-  does it via postCreate) to apply.
+  individual repos. The documented user flow (2026-07-24, post
+  disposable-clone install) is editing `/etc/claude-sandbox.conf`
+  directly from an unsandboxed root shell — same trust boundary, the
+  shadow re-reads it at every launch. Edits are per-container and are
+  reset by a rebuild / re-install / `claude-sandbox update`; persistence
+  across rebuilds is an open follow-up. Teams bake persistent conf into
+  the pinned clone before `./install` runs.
 
 `parse_config` still takes the path as `$1` (tests pass a fixture); only
 the launch-time call site is pinned to `CONFIG_PATH`. Env vars
