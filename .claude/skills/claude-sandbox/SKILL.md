@@ -291,7 +291,7 @@ their own `~/.claude/settings.json`. Two hooks, wired by
   lean fail-closed gate, `exit 2` (blocks the prompt) unless
   `IS_SANDBOX=1`. Escape hatch: the ROOT-OWNED flag
   `/etc/claude-code/allow-unwrapped` (stamped by `install.sh` when
-  `ALLOW_UNWRAPPED=1`, or `sudo touch`). It is a flag under `/etc`, NOT an
+  `DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED=1`, or `sudo touch`). It is a flag under `/etc`, NOT an
   env var, because a confined Claude can write `~/.claude/settings.json`
   (host-shared) and Claude Code exports its `env` block into later
   sessions — so the old `CLAUDE_SANDBOX_ALLOW_UNWRAPPED=1` env hatch was

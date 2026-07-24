@@ -335,16 +335,20 @@ echo '{}' | env -u IS_SANDBOX CLAUDE_SANDBOX_GATE_FLAG=/etc/hostname bash "$GATE
 echo '{}' | env -u IS_SANDBOX CLAUDE_CODE_REMOTE=true bash "$GATE_DEST" >/dev/null 2>&1
 [ "$?" -eq 0 ] && pass || fail "gate did not skip on Claude Code Web"
 
-# install.sh stamps/removes the root-owned flag from ALLOW_UNWRAPPED. The
+# install.sh stamps/removes the root-owned flag from the (deliberately
+# scary) DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED install seam. The
 # base install above ran without it, so the flag must be ABSENT (gate stays
-# fail-closed by default). A re-install with ALLOW_UNWRAPPED=1 must create
+# fail-closed by default). A re-install with the seam set must create
 # it; a subsequent re-install without it must remove it again.
 GATE_FLAG_DEST="$PREFIX/etc/claude-code/allow-unwrapped"
 [ ! -e "$GATE_FLAG_DEST" ] && pass || fail "default install left the gate escape-hatch flag present (should be fail-closed)"
-ALLOW_UNWRAPPED=1 run_install
-[ -f "$GATE_FLAG_DEST" ] && pass || fail "ALLOW_UNWRAPPED=1 install did not stamp $GATE_FLAG_DEST"
+DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED=1 run_install
+[ -f "$GATE_FLAG_DEST" ] && pass || fail "DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED=1 install did not stamp $GATE_FLAG_DEST"
 run_install
-[ ! -e "$GATE_FLAG_DEST" ] && pass || fail "re-install without ALLOW_UNWRAPPED did not remove a stale $GATE_FLAG_DEST"
+[ ! -e "$GATE_FLAG_DEST" ] && pass || fail "re-install without DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED did not remove a stale $GATE_FLAG_DEST"
+# The retired short name must no longer stamp the flag (renamed 2026-07-24).
+ALLOW_UNWRAPPED=1 run_install
+[ ! -e "$GATE_FLAG_DEST" ] && pass || fail "retired ALLOW_UNWRAPPED=1 name still stamps the gate escape-hatch flag"
 
 VERIFY_OUT="$(echo '{}' | env -u IS_SANDBOX bash "$VERIFY_DEST" 2>/dev/null)"
 VERIFY_RC=$?
