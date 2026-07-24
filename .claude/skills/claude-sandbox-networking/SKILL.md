@@ -136,7 +136,7 @@ Route-immutability holds because the netns/routes are owned by the holder's
 ANCESTOR userns (caps raised inside Claude's own userns don't reach it): verified
 route del/punch + device-add all EPERM, RFC1918 stays blocked.
 **verify-sandbox needs NO jail-aware variant** — check 06 asserts `CapEff=0` (not
-CapBnd), which holds; the full 18-check battery passes live in a jailed session.
+CapBnd), which holds; the full 20-check battery passes live in a jailed session.
 Cap-ceiling diligence is **VERIFIED** (`probe-network-jail-caps.sh`, unjailed,
 2026-06-18): the full `CapBnd` ceiling can't be re-raised to weaken another bwrap
 protection. Even with a full *effective* cap set gained via a child `unshare

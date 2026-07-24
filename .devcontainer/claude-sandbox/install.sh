@@ -20,7 +20,8 @@
 #   STATUS=1                         force-overwrite the user-scope
 #                                    statusline script from the clone's
 #                                    copy, instead of seed-only-if-absent.
-#   ALLOW_UNWRAPPED=1                stamp the ROOT-OWNED gate escape-hatch
+#   DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED=1
+#                                    stamp the ROOT-OWNED gate escape-hatch
 #                                    flag (/etc/claude-code/allow-unwrapped)
 #                                    so the UserPromptSubmit gate downgrades
 #                                    to warn-only. The OPERATOR's switch for
@@ -39,7 +40,7 @@ WORKSPACE="${INSTALL_WORKSPACE:-$PWD}"
 USER_HOME="${INSTALL_USER_HOME:-$HOME}"
 SMOKE="${CLAUDE_SANDBOX_SMOKE:-0}"
 FORCE_STATUSLINE="${STATUS:-0}"
-ALLOW_UNWRAPPED="${ALLOW_UNWRAPPED:-0}"
+ALLOW_UNWRAPPED="${DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED:-0}"
 
 # Resolve a target under $PREFIX. Stripping the leading slash lets us
 # compose relative-to-prefix paths cleanly without a `//` between root
@@ -364,13 +365,13 @@ install_guard_scripts() {
     install_file "$SCRIPT_DIR/verify-sandbox-battery.sh"  "$(prefixed "$BATTERY_PATH")"
 }
 
-# wire_gate_flag: stamp (ALLOW_UNWRAPPED=1) or remove the ROOT-OWNED gate
+# wire_gate_flag: stamp (DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED=1) or remove the ROOT-OWNED gate
 # escape-hatch flag the UserPromptSubmit gate checks. The flag REPLACES the
 # old CLAUDE_SANDBOX_ALLOW_UNWRAPPED env hatch, which a confined Claude could
 # forge by writing ~/.claude/settings.json's "env" block (deep-review H4).
 # Living under /etc — root-owned, ro inside the sandbox, NOT host-shared —
 # the flag can only be created by the operator (or a deliberate ./install),
-# never from inside the jail. State is fully driven by ALLOW_UNWRAPPED so a
+# never from inside the jail. State is fully driven by the env seam so a
 # re-install with it unset removes a previously-stamped flag (fail-closed
 # default restored). Mode 0644 — it's a presence marker; only existence
 # matters.
@@ -380,7 +381,7 @@ wire_gate_flag() {
         mkdir -p "$(dirname "$flag")"
         : > "$flag"
         chmod 0644 "$flag"
-        echo "claude-sandbox: WARNING — gate escape hatch ENABLED ($flag); the UserPromptSubmit gate is warn-only, unwrapped claude is permitted. Re-run install with ALLOW_UNWRAPPED unset to restore fail-closed." >&2
+        echo "claude-sandbox: WARNING — gate escape hatch ENABLED ($flag); the UserPromptSubmit gate is warn-only, unwrapped claude is permitted. Re-run install with DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED unset to restore fail-closed." >&2
     else
         rm -f "$flag"
     fi

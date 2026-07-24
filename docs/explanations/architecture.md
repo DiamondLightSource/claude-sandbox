@@ -281,19 +281,21 @@ run. The full guard mechanics are in [integrity guard](integrity-guard.md).
 
 The sandbox config (`workspace-root`, `no-forge`, `allow-write`, `pass-env`,
 `egress-jail`, `allow-ip`) follows the same `/etc`-not-the-workspace discipline
-as the guard, and for the same reason. You edit the conf in the clone;
-`install.sh` copies it to `/etc`; the shadow reads it from `/etc` at launch —
-never from `$PWD`. Like `allow-write`, the `allow-ip` device allowlist is read
+as the guard, and for the same reason. `install.sh` seeds `/etc` with the
+shipped defaults from the installing clone; you edit
+`/etc/claude-sandbox.conf` directly (an unsandboxed root shell — your
+container terminal); the shadow reads it from `/etc` at launch — never
+from `$PWD`. Like `allow-write`, the `allow-ip` device allowlist is read
 only from `/etc`, so a session cannot widen its own network reach.
 
 ```{mermaid}
 graph LR
-    clone[".devcontainer/claude-sandbox.conf<br/>(in the clone — you edit here)"]
-    etc["/etc/claude-sandbox.conf<br/>(host-global, outside the rw workspace)"]
+    clone[".devcontainer/claude-sandbox.conf<br/>(shipped defaults in the clone)"]
+    etc["/etc/claude-sandbox.conf<br/>(outside the rw workspace — you edit here, as root)"]
     shadow["shadow at launch<br/>parse_config()"]
     argv["bwrap argv + netns routes<br/>WORKSPACE_ROOT, ALLOW_WRITE, NO_FORGE,<br/>EGRESS_JAIL, ALLOW_IP"]
 
-    clone -->|install.sh install_conf<br/>re-stamped each rebuild| etc
+    clone -->|install.sh install_conf<br/>seeds defaults at install| etc
     etc -->|read at launch| shadow
     shadow --> argv
 
@@ -341,7 +343,7 @@ manual either way — it is JSONC in the wild, and only you know whether a
 | Relocate real binary off-PATH; wire shadow; merge managed-settings guard; disable auto-updater; place `/etc` config | `.devcontainer/claude-sandbox/install.sh` |
 | `SessionStart` guard — full integrity battery + loud warn when unwrapped | `.devcontainer/claude-sandbox/sandbox-verify.sh` |
 | `UserPromptSubmit` guard — sub-second fail-closed `IS_SANDBOX` gate | `.devcontainer/claude-sandbox/sandbox-gate.sh` |
-| Integrity-battery spec (18 checks + 10 adversarial probes) | `.claude/commands/verify-sandbox.md` |
+| Integrity-battery spec (20 checks + 10 adversarial probes) | `.claude/commands/verify-sandbox.md` |
 | Tests CI runs (argv builder, smoke) | `tests/bwrap_argv.sh`, `tests/smoke.sh` |
 
 ### See also

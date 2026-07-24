@@ -47,7 +47,7 @@ you have.
 
 The [getting-started tutorial][tutorial] has the full walkthrough, including the
 `/user-terminal-config` clone location for `python-copier-template`
-devcontainers and how to confirm the install with `/verify-sandbox`.
+devcontainers.
 
 ### Not a devcontainer user? Prebuilt image
 
@@ -77,7 +77,7 @@ each image records the launcher version it was tested with, and
   its own network namespace and blackholes RFC1918 (internal LANs, lab devices)
   while leaving the internet, DNS, and configured `allow-ip` devices reachable —
   so a compromised session can't pivot sideways to internal hosts. Fail-closed
-  (needs `--device=/dev/net/tun`); `CLAUDE_SANDBOX_EGRESS_JAIL=0` opts out.
+  (needs `--device=/dev/net/tun`).
 - A global, tamper-resistant **integrity guard** (highest-precedence
   managed-settings hooks + a disabled auto-updater) that fails loud and closed
   if Claude is ever launched outside the shadow.

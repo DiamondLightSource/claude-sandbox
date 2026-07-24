@@ -51,8 +51,7 @@ file is JSONC and yours; nothing here edits it for you.)
 
 The `--device=/dev/net/tun` runArg is required by the fail-closed
 [network egress jail](network-egress-jail.md); without it `claude`
-refuses to launch. If your team doesn't need lateral isolation, set
-`CLAUDE_SANDBOX_EGRESS_JAIL=0` instead.
+refuses to launch.
 
 ## 3. (Optional) team configuration
 

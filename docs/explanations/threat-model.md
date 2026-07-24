@@ -196,8 +196,8 @@ It is **fail-closed**: if `/dev/net/tun`, pasta, or `unshare` is unavailable,
 escape hatch `CLAUDE_SANDBOX_EGRESS_JAIL=0` (env, or `egress-jail = 0` in
 `/etc/claude-sandbox.conf`) restores the older shared-host-netns world of
 {ref}`adr-network-egress-open`. Normal, non-Claude shells keep host networking
-untouched. The operational recipe — adding the required `--device=/dev/net/tun`,
-allow-listing a device, or turning the jail off — is in
+untouched. The operational recipe — adding the required `--device=/dev/net/tun`
+or allow-listing a device — is in
 [Configure the network egress jail](../how-to/network-egress-jail.md); the config
 keys are in [configuration](../reference/configuration.md).
 
