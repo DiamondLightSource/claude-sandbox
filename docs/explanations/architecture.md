@@ -343,7 +343,7 @@ manual either way — it is JSONC in the wild, and only you know whether a
 | Relocate real binary off-PATH; wire shadow; merge managed-settings guard; disable auto-updater; place `/etc` config | `.devcontainer/claude-sandbox/install.sh` |
 | `SessionStart` guard — full integrity battery + loud warn when unwrapped | `.devcontainer/claude-sandbox/sandbox-verify.sh` |
 | `UserPromptSubmit` guard — sub-second fail-closed `IS_SANDBOX` gate | `.devcontainer/claude-sandbox/sandbox-gate.sh` |
-| Integrity-battery spec (18 checks + 10 adversarial probes) | `.claude/commands/verify-sandbox.md` |
+| Integrity-battery spec (20 checks + 10 adversarial probes) | `.claude/commands/verify-sandbox.md` |
 | Tests CI runs (argv builder, smoke) | `tests/bwrap_argv.sh`, `tests/smoke.sh` |
 
 ### See also

@@ -64,9 +64,9 @@ claude-container
 The first run pulls the image, creates a container named after the
 project directory, and starts sandboxed `claude` with the project
 mounted read-write. Later runs restart the same container. Everything
-you know from the devcontainer applies inside: `/verify-sandbox` runs
-the live battery, the egress jail is on by default, and plain `claude`
-can only ever resolve to the shadow.
+you know from the devcontainer applies inside: `claude-sandbox verify`
+runs the live battery, the egress jail is on by default, and plain
+`claude` can only ever resolve to the shadow.
 
 ## One named container per project
 
