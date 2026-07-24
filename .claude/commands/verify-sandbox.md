@@ -30,8 +30,9 @@ the **FAIL count** — `0` when every check passes.
   overall command exit non-zero so CI assertions fail.
 
 If the script is missing (`No such file`), the install is stale — re-run
-`./install` (it places the battery under `/usr/libexec/claude-sandbox`)
-and relaunch. An absent battery is itself a finding, not a pass.
+the installer (`claude-sandbox update`, or the install one-liner; either
+places the battery under `/usr/libexec/claude-sandbox`) and relaunch. An
+absent battery is itself a finding, not a pass.
 
 **Why the checks are a committed script and not inline snippets here.**
 Slash-command loading substitutes `$1`…`$9` as positional arguments, so

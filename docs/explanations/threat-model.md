@@ -163,7 +163,7 @@ blast-radius arithmetic:
 - GitLab gets the equivalent: project-scoped tokens, `api` only if you need
   push, otherwise `read_repository` + `write_repository`.
 
-The `just gh-auth` / `just glab-auth` helpers keep the token out of shell
+The `claude-sandbox gh-auth` / `claude-sandbox glab-auth` helpers keep the token out of shell
 history, but they do **not** enforce scope — that part is irreducibly yours.
 
 When a session genuinely does not need to push, the right move is to remove the

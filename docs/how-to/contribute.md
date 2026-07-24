@@ -51,13 +51,13 @@ commands, and hooks the installer ships — make edits there, in the clone.
 ## Build the docs locally
 
 The docs toolchain is the project's one isolated Python dependency, pinned in
-`docs/requirements.txt`. The quickest way to preview is the `docs` recipe, which
-provisions an isolated `.venv-docs` on first run and serves the site with live
-reload:
+`docs/requirements.txt`. For a live-reload preview, provision an isolated
+`.venv-docs` and run `sphinx-autobuild`:
 
 ```bash
-just docs          # http://localhost:8000, rebuilds on save
-just docs 9000     # choose a different port
+python -m venv .venv-docs
+.venv-docs/bin/pip install -r docs/requirements.txt sphinx-autobuild
+.venv-docs/bin/sphinx-autobuild docs build/html --port 8000   # rebuilds on save
 ```
 
 Or build it once by hand into a throwaway virtualenv:

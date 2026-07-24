@@ -33,14 +33,17 @@ Inside any Debian/Ubuntu devcontainer (running as `root`, the typical
 rootless-podman pattern):
 
 ```
-git clone https://github.com/DiamondLightSource/claude-sandbox.git
-cd claude-sandbox
-./install
+cd /tmp && rm -rf claude-sandbox && git clone https://github.com/DiamondLightSource/claude-sandbox && claude-sandbox/install
 ```
 
-Then run `claude` as usual — the shadow on `$PATH` wraps every invocation. The
-installer is idempotent; wire `bash <clone>/install` into your devcontainer's
-`postCreate.sh` to re-establish it on every rebuild.
+Then run `claude` as usual — the shadow on `$PATH` wraps every invocation.
+Nothing depends on the clone after install, so a clone in `/tmp` is fine —
+it evaporates with the container. The installer is idempotent; wire the
+same one-liner into your devcontainer's `postCreate.sh` to re-establish it
+on every rebuild (or clone at a pinned tag for a reviewable rollout — see
+the [team how-to][team-howto]). Afterwards, `claude-sandbox update`
+upgrades to the latest release and `claude-sandbox version` reports what
+you have.
 
 The [getting-started tutorial][tutorial] has the full walkthrough, including the
 `/user-terminal-config` clone location for `python-copier-template`
@@ -111,6 +114,7 @@ GitHub Pages on every push to `main`.
 See [`LICENSE`](./LICENSE).
 
 [tutorial]: https://diamondlightsource.github.io/claude-sandbox/tutorials/getting-started.html
+[team-howto]: https://diamondlightsource.github.io/claude-sandbox/how-to/sandbox-a-team-devcontainer.html
 [howto]: https://diamondlightsource.github.io/claude-sandbox/how-to.html
 [reference]: https://diamondlightsource.github.io/claude-sandbox/reference.html
 [explain]: https://diamondlightsource.github.io/claude-sandbox/explanations.html

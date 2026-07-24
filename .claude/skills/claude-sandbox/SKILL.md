@@ -51,7 +51,7 @@ conventional path.
 relocate — provided plain `claude` still cannot resolve past
 `/usr/local/bin/claude`.
 
-## Invariant 2 — PATs are container-scoped; `just gh-auth` per rebuild is deliberate
+## Invariant 2 — PATs are container-scoped; `claude-sandbox gh-auth` per rebuild is deliberate
 
 The re-paste-on-rebuild ceremony for `gh` / `glab` PATs is the cost
 of keeping blast radius small: fine-grained PATs typically cover
@@ -403,7 +403,7 @@ image/launcher topics. Touch the root `Dockerfile`, `container/*`, or
 | Global SessionStart verifier  | `.devcontainer/claude-sandbox/sandbox-verify.sh`    |
 | Global UserPromptSubmit gate  | `.devcontainer/claude-sandbox/sandbox-gate.sh`      |
 | Threat model + binds rationale| [sphinx docs](https://diamondlightsource.github.io/claude-sandbox/explanations/threat-model.html) |
-| Recipes (gh-auth, glab-auth, docs) | `justfile`                                     |
+| Helper CLI (gh-auth, glab-auth, update, verify, version) | `.devcontainer/claude-sandbox/claude-sandbox` |
 | Network egress / firewall / lateral-movement design | `claude-sandbox-networking` skill (kept separate so it loads only on network topics) |
 
 Touching any of these → re-read this skill first.

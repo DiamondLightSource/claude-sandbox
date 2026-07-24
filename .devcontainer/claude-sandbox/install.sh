@@ -78,7 +78,7 @@ apt_install() {
     # devcontainer.json runArg this installer cannot add (see claude-shadow's
     # netns_launch error message and claude-sandbox.conf).
     apt-get install -y -qq --no-install-recommends \
-        bubblewrap just jq curl ca-certificates git nodejs gh passt
+        bubblewrap jq curl ca-certificates git nodejs gh passt
     # glab isn't in every Ubuntu repo; install-try.
     apt-get install -y -qq --no-install-recommends glab 2>/dev/null || true
 }
@@ -184,6 +184,25 @@ install_conf() {
         return 0
     fi
     install -m 0644 "$src" "$dst"
+}
+
+# stamp_version: record what this clone is at install time, for
+# `claude-sandbox version`. A tagged checkout stamps the tag (git
+# describe on a tag == the tag, which is what `claude-sandbox update`
+# installs); an unpinned main clone stamps a commit hash — honest
+# "unreleased" reporting. CLAUDE_SANDBOX_VERSION overrides for builds
+# with no .git (the container image). Deterministic per clone, so the
+# byte-stable re-run property holds.
+stamp_version() {
+    local ver dst
+    dst="$(prefixed "$VERSION_FILE_PATH")"
+    ver="${CLAUDE_SANDBOX_VERSION:-$(git -C "$REPO_ROOT" describe --tags --always --dirty 2>/dev/null || echo unknown)}"
+    mkdir -p "$(dirname "$dst")"
+    if [ -f "$dst" ] && [ "$(cat "$dst")" = "$ver" ]; then
+        return 0
+    fi
+    printf '%s\n' "$ver" > "$dst"
+    chmod 0644 "$dst"
 }
 
 # _is_mount PATH — true if PATH is itself a mount target. Compares the
@@ -320,6 +339,10 @@ GATE_PATH="$GUARD_LIBEXEC/sandbox-gate.sh"
 # a broken sandbox. It is NOT a hook (not wired into managed-settings); the
 # /verify-sandbox command runs it by absolute path for the live battery.
 BATTERY_PATH="$GUARD_LIBEXEC/verify-sandbox-battery.sh"
+# Version record for `claude-sandbox version` — data, not a script, but
+# it lives with the guard scripts (root-owned, ro in the sandbox) so a
+# compromised session can't spoof what "version" reports.
+VERSION_FILE_PATH="$GUARD_LIBEXEC/version"
 VERIFY_CMD="bash $VERIFY_PATH"
 GATE_CMD="bash $GATE_PATH"
 MANAGED_SETTINGS="/etc/claude-code/managed-settings.json"
@@ -477,12 +500,16 @@ main() {
     # the shadow itself transiently fails because bwrap or the real
     # binary haven't landed yet.
     install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/claude)"
+    # The helper CLI (gh-auth, glab-auth, update, verify, version) —
+    # on PATH so it works after the install clone is deleted.
+    install_file "$SCRIPT_DIR/claude-sandbox" "$(prefixed /usr/local/bin/claude-sandbox)"
     apt_install
     probe_userns_or_refuse
     link_terminal_config
     install_claude_binary
     ensure_cred_dirs
     install_conf
+    stamp_version
     # GLOBAL integrity guard via the MANAGED settings layer: scripts off
     # the rw set in /usr/libexec, hook entries + updater-disable in
     # /etc/claude-code/managed-settings.json (highest precedence, not
@@ -496,6 +523,7 @@ main() {
 
     echo "claude-sandbox: install complete."
     echo "  shadow:      $(prefixed /usr/local/bin/claude)"
+    echo "  cli:         $(prefixed /usr/local/bin/claude-sandbox) ($(cat "$(prefixed "$VERSION_FILE_PATH")"))"
     echo "  real claude: $(prefixed /usr/libexec/claude-sandbox/claude)"
     echo "  config:      $(prefixed /etc/claude-sandbox.conf)"
     echo "  guard:       $(prefixed "$VERIFY_PATH"), $(prefixed "$GATE_PATH") (off-PATH, ro in sandbox)"
@@ -504,7 +532,7 @@ main() {
     echo "  gate hatch:  $(prefixed "$GATE_FLAG_PATH") $([ "$ALLOW_UNWRAPPED" = "1" ] && echo 'PRESENT — gate warn-only (unwrapped permitted)' || echo 'absent — gate fail-closed')"
     echo "  statusline:  $USER_HOME/.claude/settings.json (preference only)"
     echo "  workspace:   $WORKSPACE"
-    echo "  run \`/verify-sandbox\` inside Claude for the live battery."
+    echo "  run \`claude-sandbox verify\` for the live battery (or \`/verify-sandbox\` inside Claude in a claude-sandbox clone for the full audit)."
 }
 
 # Source guard: the container image build (see Dockerfile) re-uses the

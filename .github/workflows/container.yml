@@ -69,6 +69,7 @@ jobs:
           tags: claude-sandbox:test
           build-args: |
             LAUNCHER_VERSION=${{ env.LAUNCHER_VERSION }}
+            CLAUDE_SANDBOX_VERSION=${{ github.ref_name }}
 
       - name: "Test: baked install is complete"
         run: |
@@ -152,6 +153,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             LAUNCHER_VERSION=${{ env.LAUNCHER_VERSION }}
+            CLAUDE_SANDBOX_VERSION=${{ github.ref_name }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
