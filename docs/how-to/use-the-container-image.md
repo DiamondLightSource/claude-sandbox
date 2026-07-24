@@ -7,7 +7,7 @@ shadow, the relocated real binary, the [integrity
 guard](../explanations/integrity-guard), and the [network egress
 jail](network-egress-jail).
 
-Image: `ghcr.io/gilesknap/claude-sandbox:latest` (amd64 + arm64), built
+Image: `ghcr.io/diamondlightsource/claude-sandbox:latest` (amd64 + arm64), built
 by CI from the same `install.sh` the devcontainer runs — plus a weekly
 rebuild so the baked-in Claude tracks upstream releases. The in-image
 auto-updater is deliberately disabled (that is part of the integrity
@@ -31,7 +31,7 @@ container update itself.
 Fetch the launcher and put it on your `PATH`:
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/gilesknap/claude-sandbox/main/container/claude-container
+curl -fsSLO https://raw.githubusercontent.com/DiamondLightSource/claude-sandbox/main/container/claude-container
 chmod +x claude-container
 ```
 
@@ -42,7 +42,7 @@ or commit SHA (any ref that contains `container/claude-container`) and
 re-fetch the same pinned ref when you update:
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/gilesknap/claude-sandbox/<tag-or-commit>/container/claude-container
+curl -fsSLO https://raw.githubusercontent.com/DiamondLightSource/claude-sandbox/<tag-or-commit>/container/claude-container
 ```
 
 You don't have to watch this repo for launcher fixes: each published
@@ -153,7 +153,7 @@ device access for Claude is still granted per-IP with `allow-ip`.
 ## Update
 
 ```bash
-podman pull ghcr.io/gilesknap/claude-sandbox:latest
+podman pull ghcr.io/diamondlightsource/claude-sandbox:latest
 claude-container --recreate
 ```
 

@@ -1,5 +1,5 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
-[![Docs](https://img.shields.io/badge/docs-online-blue.svg)](https://gilesknap.github.io/claude-sandbox/)
+[![Docs](https://img.shields.io/badge/docs-online-blue.svg)](https://diamondlightsource.github.io/claude-sandbox/)
 
 # claude-sandbox
 
@@ -11,7 +11,7 @@ environment. The protection is launch-time: plain `claude` resolves to a shadow
 that wraps the real binary in `bwrap`, and a global integrity guard fails loud
 and closed if it is ever launched unwrapped.
 
-📖 **Documentation: <https://gilesknap.github.io/claude-sandbox/>**
+📖 **Documentation: <https://diamondlightsource.github.io/claude-sandbox/>**
 
 ## Why Use Claude Sandbox
 
@@ -33,7 +33,7 @@ Inside any Debian/Ubuntu devcontainer (running as `root`, the typical
 rootless-podman pattern):
 
 ```
-git clone https://github.com/gilesknap/claude-sandbox.git
+git clone https://github.com/DiamondLightSource/claude-sandbox.git
 cd claude-sandbox
 ./install
 ```
@@ -48,13 +48,13 @@ devcontainers and how to confirm the install with `/verify-sandbox`.
 
 ### Not a devcontainer user? Prebuilt image
 
-A published image (`ghcr.io/gilesknap/claude-sandbox`) ships the whole sandbox
+A published image (`ghcr.io/diamondlightsource/claude-sandbox`) ships the whole sandbox
 pre-installed — any Linux host with rootless podman can run sandboxed Claude
 Code with no devcontainer and no root access (docker is untested with the
 egress jail):
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/gilesknap/claude-sandbox/main/container/claude-container
+curl -fsSLO https://raw.githubusercontent.com/DiamondLightSource/claude-sandbox/main/container/claude-container
 chmod +x claude-container
 cd ~/src/my-project && ./claude-container
 ```
@@ -110,12 +110,12 @@ GitHub Pages on every push to `main`.
 
 See [`LICENSE`](./LICENSE).
 
-[tutorial]: https://gilesknap.github.io/claude-sandbox/tutorials/getting-started.html
-[howto]: https://gilesknap.github.io/claude-sandbox/how-to.html
-[reference]: https://gilesknap.github.io/claude-sandbox/reference.html
-[explain]: https://gilesknap.github.io/claude-sandbox/explanations.html
-[arch]: https://gilesknap.github.io/claude-sandbox/explanations/architecture.html
-[threat]: https://gilesknap.github.io/claude-sandbox/explanations/threat-model.html
-[jail]: https://gilesknap.github.io/claude-sandbox/explanations/decisions/0015-network-egress-jail.html
-[contribute]: https://gilesknap.github.io/claude-sandbox/how-to/contribute.html
-[container]: https://gilesknap.github.io/claude-sandbox/how-to/use-the-container-image.html
+[tutorial]: https://diamondlightsource.github.io/claude-sandbox/tutorials/getting-started.html
+[howto]: https://diamondlightsource.github.io/claude-sandbox/how-to.html
+[reference]: https://diamondlightsource.github.io/claude-sandbox/reference.html
+[explain]: https://diamondlightsource.github.io/claude-sandbox/explanations.html
+[arch]: https://diamondlightsource.github.io/claude-sandbox/explanations/architecture.html
+[threat]: https://diamondlightsource.github.io/claude-sandbox/explanations/threat-model.html
+[jail]: https://diamondlightsource.github.io/claude-sandbox/explanations/decisions/0015-network-egress-jail.html
+[contribute]: https://diamondlightsource.github.io/claude-sandbox/how-to/contribute.html
+[container]: https://diamondlightsource.github.io/claude-sandbox/how-to/use-the-container-image.html
