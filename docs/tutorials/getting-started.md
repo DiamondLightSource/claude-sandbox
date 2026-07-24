@@ -56,7 +56,7 @@ beside it:
 
 ```bash
 cd ..        # the host-mounted parent of your project
-git clone https://github.com/gilesknap/claude-sandbox.git
+git clone https://github.com/DiamondLightSource/claude-sandbox.git
 cd claude-sandbox
 ```
 

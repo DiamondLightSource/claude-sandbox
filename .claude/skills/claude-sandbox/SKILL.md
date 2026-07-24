@@ -7,7 +7,7 @@ description: Architecture invariants, refuse-lists, and walked-back paths for th
 
 Project-specific architecture decisions. The code documents *what*;
 this skill documents *why* and *what regressions to refuse*. Threat
-model: [threat model](https://gilesknap.github.io/claude-sandbox/explanations/threat-model.html); live verification: `/verify-sandbox`
+model: [threat model](https://diamondlightsource.github.io/claude-sandbox/explanations/threat-model.html); live verification: `/verify-sandbox`
 (the command markdown `.claude/commands/verify-sandbox.md` documents the
 *why* of each check; the phase-1 PASS/FAIL battery is the committed
 script `.devcontainer/claude-sandbox/verify-sandbox-battery.sh`, run by
@@ -378,7 +378,7 @@ keep saying what it costs.
 
 ## Third consumer — the published container image
 
-The image `ghcr.io/gilesknap/claude-sandbox` + `container/claude-container`
+The image `ghcr.io/diamondlightsource/claude-sandbox` + `container/claude-container`
 launcher (PR #78) is the third consumer after dogfood and guest. Its
 design decisions (image build sources `install.sh`, entrypoint re-runs,
 PAT scoping via named containers, ro-mounted conf, notify-only launcher
@@ -402,7 +402,7 @@ image/launcher topics. Touch the root `Dockerfile`, `container/*`, or
 | Phase-1 battery script (what) | `.devcontainer/claude-sandbox/verify-sandbox-battery.sh` |
 | Global SessionStart verifier  | `.devcontainer/claude-sandbox/sandbox-verify.sh`    |
 | Global UserPromptSubmit gate  | `.devcontainer/claude-sandbox/sandbox-gate.sh`      |
-| Threat model + binds rationale| [sphinx docs](https://gilesknap.github.io/claude-sandbox/explanations/threat-model.html) |
+| Threat model + binds rationale| [sphinx docs](https://diamondlightsource.github.io/claude-sandbox/explanations/threat-model.html) |
 | Recipes (gh-auth, glab-auth, docs) | `justfile`                                     |
 | Network egress / firewall / lateral-movement design | `claude-sandbox-networking` skill (kept separate so it loads only on network topics) |
 

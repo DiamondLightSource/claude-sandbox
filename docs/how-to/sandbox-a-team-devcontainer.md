@@ -20,7 +20,7 @@ In your project's `.devcontainer/postCreate.sh` (create it if absent):
 # deliberate, reviewable act — like any dependency upgrade.
 set -euo pipefail
 
-CSBX_REPO="https://github.com/gilesknap/claude-sandbox.git"
+CSBX_REPO="https://github.com/DiamondLightSource/claude-sandbox.git"
 CSBX_PIN="2.2.0"           # a release tag, or a full commit SHA
 CSBX_DIR="$HOME/claude-sandbox"
 
