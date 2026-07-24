@@ -532,7 +532,7 @@ main() {
     echo "  gate hatch:  $(prefixed "$GATE_FLAG_PATH") $([ "$ALLOW_UNWRAPPED" = "1" ] && echo 'PRESENT — gate warn-only (unwrapped permitted)' || echo 'absent — gate fail-closed')"
     echo "  statusline:  $USER_HOME/.claude/settings.json (preference only)"
     echo "  workspace:   $WORKSPACE"
-    echo "  run \`/verify-sandbox\` inside Claude for the live battery."
+    echo "  run \`claude-sandbox verify\` for the live battery (or \`/verify-sandbox\` inside Claude in a claude-sandbox clone for the full audit)."
 }
 
 # Source guard: the container image build (see Dockerfile) re-uses the
