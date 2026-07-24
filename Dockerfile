@@ -31,7 +31,7 @@ COPY . /opt/claude-sandbox
 WORKDIR /opt/claude-sandbox
 
 # Run install.sh's main() sequence MINUS two build-time-inappropriate
-# steps, via the same source-guard seam promote.sh uses:
+# steps, via install.sh's source-guard seam:
 #   - probe_userns_or_refuse: a build-time probe proves the BUILDER can
 #     nest namespaces, not the host that will run the image (and BuildKit
 #     confinement varies by builder).

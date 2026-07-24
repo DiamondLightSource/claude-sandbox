@@ -99,5 +99,5 @@ this policy merely steers people toward.
 - [The integrity guard](../explanations/integrity-guard.md) — the
   in-sandbox counterpart, which blocks prompts when Claude is launched
   unwrapped *inside* a configured host.
-- [Promote to a workspace](promote-to-a-workspace.md) — make an
-  individual repo a self-sufficient sandbox host.
+- [Sandbox a team devcontainer](sandbox-a-team-devcontainer.md) — wire a
+  project's devcontainer to install the sandbox at a pinned tag.

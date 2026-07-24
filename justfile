@@ -1,14 +1,5 @@
-# claude-sandbox recipes. Shipped verbatim into promoted targets via
-# `just promote`, so every recipe here must be SAFE in both the source
-# clone and a promoted host workspace. Dev-only recipes (e.g. `docs`)
-# self-guard: they no-op where they don't apply rather than erroring.
-
-# Seed the sandbox's curated `.claude/` (commands, skills) into a target
-# host workspace. The integrity guard is global (wired into ~/.claude by
-# install.sh), not seeded per-repo. See
-# .devcontainer/claude-sandbox/promote.sh for the rationale.
-promote target=invocation_directory():
-    bash .devcontainer/claude-sandbox/promote.sh {{ target }}
+# claude-sandbox recipes. Dev-only recipes (e.g. `docs`) self-guard:
+# they no-op where they don't apply rather than erroring.
 
 # Authenticate gh CLI with a GitHub PAT (token not stored in shell history).
 gh-auth:
@@ -56,8 +47,8 @@ glab-auth hostname="gitlab.com":
     unset t
     glab auth status
 
-# Provisions an isolated .venv-docs on first run; no-ops where there is no
-# docs/ Sphinx project, so it stays promote-target-safe.
+# Provisions an isolated .venv-docs on first run; no-ops where there is
+# no docs/ Sphinx project.
 # Live-reload preview of the docs/ site at http://localhost:<port>.
 docs port="8000":
     #!/usr/bin/env bash

@@ -29,14 +29,13 @@ a Python project.
 
 ## Run the tests CI runs
 
-Clone the repo and run the same three commands CI runs:
+Clone the repo and run the same two commands CI runs:
 
 ```bash
 git clone https://github.com/gilesknap/claude-sandbox.git
 cd claude-sandbox
 bash tests/bwrap_argv.sh
 bash tests/smoke.sh
-bash tests/promote.sh
 ```
 
 No `uv sync`, no pytest, no twine. Development is best done inside a
@@ -47,10 +46,7 @@ environment.
 ## Edit shipped skills, commands, and hooks
 
 The repo's own `.claude/` **is the canonical source** of the skills,
-commands, and hooks the installer ships. Editing one entry updates both how
-Claude behaves on this repo *and* what
-[`just promote`](../how-to/promote-to-a-workspace.md) lands in target workspaces — so make
-those edits in `.claude/`, not in a copied target.
+commands, and hooks the installer ships — make edits there, in the clone.
 
 ## Build the docs locally
 

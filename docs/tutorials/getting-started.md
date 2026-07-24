@@ -138,10 +138,9 @@ statusline, run `STATUS=1 ./install`.
 
 ---
 
-> **Note:** `just promote` (copying the sandbox's commands into a workspace
-> so they're available in place) still exists, but the sibling clone above
-> covers the common case and is the recommended workflow. See [Promote a
-> workspace](../how-to/promote-to-a-workspace.md) only if you need it.
+> **Note:** rolling the sandbox out to a whole team? Wire the clone-and-install
+> into your project's `postCreate` at a pinned tag — see [Sandbox a team
+> devcontainer](../how-to/sandbox-a-team-devcontainer.md).
 
 ## Next steps
 

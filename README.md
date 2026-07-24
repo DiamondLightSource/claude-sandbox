@@ -89,7 +89,7 @@ How and why it works: the [architecture overview][arch], the
 | | |
 |---|---|
 | [Tutorial][tutorial] | Get to a working, verified sandbox. |
-| [How-to guides][howto] | Verify, authenticate forges, configure workspace scope, configure the egress jail, promote, upgrade. |
+| [How-to guides][howto] | Verify, authenticate forges, configure workspace scope, configure the egress jail, sandbox a team devcontainer, upgrade. |
 | [Reference][reference] | Locked-down defences, the egress jail, the verification checks, config keys, deliberate exposures. |
 | [Explanations][explain] | Threat model, architecture, the integrity guard, sandbox internals. |
 
@@ -98,10 +98,9 @@ How and why it works: the [architecture overview][arch], the
 ```
 bash tests/bwrap_argv.sh
 bash tests/smoke.sh
-bash tests/promote.sh
 ```
 
-The same three commands CI runs — bash all the way down, no `uv`/pytest (see the
+The same two commands CI runs — bash all the way down, no `uv`/pytest (see the
 [contributing guide][contribute]). The repo's own `.claude/` is the canonical
 source of the skills and commands the installer ships into target workspaces.
 The docs live in `docs/` — the one isolated Python toolchain — and publish to

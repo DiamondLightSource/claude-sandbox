@@ -56,12 +56,6 @@ jobs:
           mkdir -p "$HOME/.claude" "$HOME/.cache"
           CLAUDE_SANDBOX_SMOKE=1 sudo -E bash tests/smoke.sh
 
-      - name: Run promote test
-        run: |
-          export HOME=/tmp/sandbox-home
-          mkdir -p "$HOME/.claude" "$HOME/.cache"
-          CLAUDE_SANDBOX_SMOKE=1 bash tests/promote.sh
-
   egress-jail:
     # Exercises the egress-jail netns routing enforcement (ADR 0015 / issue #56),
     # which the rest of CI never touches: smoke.sh stays outside the netns and
