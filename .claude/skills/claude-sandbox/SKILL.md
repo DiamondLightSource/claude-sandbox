@@ -381,6 +381,53 @@ adding a doc recipe or example that binds a *host* engine socket in
 that `pass-env` a token/credential var. Mechanism stays; the docs must
 keep saying what it costs.
 
+## Policy — weakening switches exist but are never advertised
+
+DLS-rollout decision (2026-07-24, PR #5): making the sandbox trustworthy
+is the operator's job, not each user's. Switches that weaken the sandbox
+stay supported for operators who know the risks, but must NOT be
+surfaced in user-facing docs or in code messages:
+
+- `CLAUDE_SANDBOX_EGRESS_JAIL=0` / conf `egress-jail = 0`: never named
+  in how-tos, the tutorial, README, shipped-conf comments, or the
+  shadow's error/warning messages (`jail_fail` names only the real fix).
+  Reference pages say "an operator opt-out exists but is deliberately
+  not documented"; explanations keep their *analytical* mentions — the
+  fail-closed-plus-hatch design is a fact auditors need.
+- `DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED=1` (install-time seam;
+  renamed 2026-07-24 from `ALLOW_UNWRAPPED`, whose old name is dead —
+  smoke asserts it no longer stamps the flag; the flag path
+  `/etc/claude-code/allow-unwrapped` is unchanged). Managing the flag is
+  documented ONLY on `docs/how-to/enforce-org-wide.md`, the IT-operator
+  page — and the DLS pages (`docs/dls/`) must NOT link that page, since
+  linking it surfaces the hatch to every reader.
+- Verification is not a user chore: quickstarts carry no verify step;
+  the verify how-to is reachable as a Next-steps pointer.
+
+**Refuse as regressions:** any doc or message change that re-advertises
+a weakening switch (naming `EGRESS_JAIL=0` in an error, restoring a
+"disable the jail" section, a conf comment showing the disable line,
+linking enforce-org-wide from the DLS pages), and shortening the
+`DANGEROUSLY_` name back to something comfortable.
+
+Style note for `docs/dls/` pages: no em dashes — rewrite with colons,
+parentheses, or semicolons (owner preference).
+
+## Running the test suites from inside a jailed session
+
+`tests/smoke.sh` run as-is inside a jailed claude cascade-fails ~21
+checks: `link_terminal_config` operates on the real `$HOME`, where the
+jail's `~/.claude.json` file bind goes ESTALE after Claude Code's
+rename-replace, and `_is_mount`'s `[ -e ]` misreads ESTALE as absent.
+Workaround (verified 2026-07-24, 59/59):
+
+```bash
+HOME=$(mktemp -d) CLAUDE_SANDBOX_SMOKE=1 bash tests/smoke.sh
+```
+
+`tests/bwrap_argv.sh` runs fine in-jail. `tests/egress_jail.sh` cannot
+(needs `unshare`, and namespaces don't nest here) — trust CI for it.
+
 ## Third consumer — the published container image
 
 The image `ghcr.io/diamondlightsource/claude-sandbox` + `container/claude-container`
