@@ -7,7 +7,10 @@ to `docs/` (`docs/requirements.txt`: Sphinx + MyST + pydata theme + mermaid).
 It builds `docs/` to HTML for GitHub Pages and touches nothing in the
 security-critical core — no `pyproject.toml`, no `uv.lock`, no `src/`, no
 pytest, no docs command in the shipped `claude-sandbox` CLI. Don't let it
-grow past that boundary.
+grow past that boundary. Contributors may *run* that toolchain with
+`uvx --with-requirements docs/requirements.txt ...` (adds no repo files;
+`docs/requirements.txt` stays the pinned source of truth and CI still
+uses `pip`) — that is not a route to a `uv.lock` or a `pyproject.toml`.
 
 - Docs (Diátaxis, Sphinx): `docs/` → published to GitHub Pages by
   `.github/workflows/docs.yml`. Build locally: `python -m venv .venv-docs

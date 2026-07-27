@@ -51,23 +51,34 @@ commands, and hooks the installer ships — make edits there, in the clone.
 ## Build the docs locally
 
 The docs toolchain is the project's one isolated Python dependency, pinned in
-`docs/requirements.txt`. For a live-reload preview, provision an isolated
-`.venv-docs` and run `sphinx-autobuild`:
+`docs/requirements.txt`. Nothing else here needs Python — and with
+[uv](https://docs.astral.sh/uv/) you do not need one installed at all:
+`uvx` fetches an interpreter and the pinned requirements into its own
+throwaway environment, leaving no virtualenv in the repo.
+
+For a live-reload preview:
 
 ```bash
-python -m venv .venv-docs
-.venv-docs/bin/pip install -r docs/requirements.txt sphinx-autobuild
-.venv-docs/bin/sphinx-autobuild docs build/html --port 8000   # rebuilds on save
+uvx --with-requirements docs/requirements.txt --from sphinx-autobuild \
+  sphinx-autobuild docs build/html --port 8000        # rebuilds on save
 ```
 
-Or build it once by hand into a throwaway virtualenv:
+Or build once, exactly as CI does:
 
 ```bash
-python -m venv venv
-. venv/bin/activate
-pip install -r docs/requirements.txt
-sphinx-build -b html docs build/html
+uvx --with-requirements docs/requirements.txt --from sphinx \
+  sphinx-build -b html -W --keep-going docs build/html
 ```
 
 Open `build/html/index.html` to preview. CI builds with `-W` (warnings are
 errors), so resolve any warning the local build prints.
+
+No `uv`? Install it
+([one command](https://docs.astral.sh/uv/getting-started/installation/)), or
+use a throwaway virtualenv instead:
+
+```bash
+python -m venv .venv-docs
+.venv-docs/bin/pip install -r docs/requirements.txt sphinx-autobuild
+.venv-docs/bin/sphinx-autobuild docs build/html --port 8000
+```

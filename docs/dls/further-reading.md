@@ -57,3 +57,51 @@ Also supported:
   gets an identical, reviewable sandbox with no manual step. See
   [Sandbox a team devcontainer](../how-to/sandbox-a-team-devcontainer.md).
 
+## Without VS Code: the devcontainer CLI
+
+VS Code is only one way into a devcontainer. If you work in a terminal
+editor, or over plain SSH to a DLS workstation, the
+[devcontainer CLI](https://github.com/devcontainers/cli) starts the same
+container from the same `devcontainer.json` — including the
+`runArgs`, `mounts`, and `initializeCommand` from
+[step 3](claude-at-dls.md#install-and-run), so the egress jail's tun
+device and your persisted Claude login work exactly as they do under VS
+Code. epics-containers documents the general workflow in
+[Using the devcontainer CLI](https://epics-containers.github.io/main/how-to/own_tools.html#using-the-devcontainer-cli);
+the DLS-specific parts are:
+
+```bash
+module load node                       # only if node/npm are not already on PATH
+npm config set prefix ~/.local         # keep the CLI out of the repo, off /usr
+npm install -g @devcontainers/cli
+export DOCKER_PATH=$(which podman)     # DLS workstations run rootless podman
+```
+
+Add `~/.local/bin` to your `PATH` if it is not there already. Then, from
+the project directory on the *host* (not inside any container):
+
+```bash
+devcontainer up --workspace-folder .            # build and start
+devcontainer exec --workspace-folder . bash     # a shell inside it
+```
+
+In that shell, continue from
+[step 4](claude-at-dls.md#install-and-run): run the installer, then
+`claude`. Note the ordering — `devcontainer up` runs `initializeCommand`
+on the host, so `~/.config/terminal-config` is created as *you* before
+the mount happens, just as with "Reopen in Container".
+
+Two DLS gotchas:
+
+- **UID remapping.** Rootless podman can fail the container's user
+  remapping step; add `"updateRemoteUserUid": false` to
+  `devcontainer.json` if you hit it.
+- **No `devcontainer down`.** Stop and remove with podman directly
+  (`podman ps`, then `podman stop <name>` / `podman rm -f <name>`), and
+  rebuild after a Dockerfile change with
+  `devcontainer up --workspace-folder . --remove-existing-container`.
+
+Wanting a terminal-only route because you have no devcontainer at all is
+a different problem — use
+[the container image](../how-to/use-the-container-image.md) instead.
+
