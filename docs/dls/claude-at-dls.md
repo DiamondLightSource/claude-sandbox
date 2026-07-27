@@ -57,7 +57,9 @@ practice, see an
 ## Install and run
 
 You do not need prior VS Code or devcontainer knowledge; each step links
-to the detail.
+to the detail. If you would rather not use VS Code, the same route works
+from a terminal with the devcontainer CLI:
+[Without VS Code: the devcontainer CLI](further-reading.md#without-vs-code-the-devcontainer-cli).
 
 ### 1. Open your project in VS Code
 
