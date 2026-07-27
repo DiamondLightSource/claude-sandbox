@@ -8,13 +8,22 @@ bwrap isolation, and that no defence has regressed.
 
 ## Run the verification
 
-From inside a Claude session:
+From a terminal, in any workspace, *outside* a Claude session:
+
+```bash
+claude-sandbox verify
+```
+
+That launches a sandboxed session, runs the checks against the live
+process, and prints a summary table.
+
+Inside a claude-sandbox clone it runs the full two-phase audit; anywhere
+else it runs the phase-1 battery. To drive the full audit yourself from
+within a Claude session in a clone:
 
 ```bash
 /verify-sandbox
 ```
-
-This runs against the live process and prints a summary table.
 
 ## What it does
 
@@ -58,5 +67,5 @@ if the sandbox ever regresses.
   list of checks and what each one proves.
 - [The integrity guard](../explanations/integrity-guard.md) — the
   always-on guard that re-runs the integrity subset every session and
-  blocks prompts when Claude is unwrapped, so you do not have to run
-  `/verify-sandbox` by hand to stay protected.
+  blocks prompts when Claude is unwrapped, so you do not have to verify
+  by hand to stay protected.

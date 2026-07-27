@@ -107,7 +107,12 @@ cmd_update() {
 
 cmd_verify() {
     if [ "${IS_SANDBOX:-0}" = "1" ]; then
-        echo "claude-sandbox: already inside a sandboxed session — run /verify-sandbox there instead." >&2
+        # Don't point at /verify-sandbox unconditionally: that project
+        # command ships with a claude-sandbox clone, so it is absent in
+        # most workspaces. The battery is installed globally.
+        echo "claude-sandbox: already inside a sandboxed session — verification launches its own session." >&2
+        echo "  from a terminal outside this session: claude-sandbox verify" >&2
+        echo "  here and now:                         bash /usr/libexec/claude-sandbox/verify-sandbox-battery.sh" >&2
         exit 1
     fi
     if [ -f .claude/commands/verify-sandbox.md ]; then
