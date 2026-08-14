@@ -17,9 +17,15 @@ claude-sandbox glab-auth gitlab.example.com
 - `claude-sandbox glab-auth gitlab.example.com` authenticates any other
   GitLab instance (including `gitlab.com`).
 
-Each command walks you through a fine-grained-PAT prompt, feeds the
-token to the respective CLI's `auth login`, and unsets the variable
-afterwards. The token never enters shell history.
+Each command prints the right token page for what you are working on,
+feeds the token you paste to the respective CLI's `auth login`, and
+unsets the variable afterwards. The token never enters shell history.
+
+Run `glab-auth` **from inside the checkout** you want Claude to push to:
+it reads that folder's `origin` remote and links you to that project's
+own access-token page, so the token you mint reaches only that project.
+Run it somewhere else and it says so, and falls back to the
+(instance-wide) personal-token page.
 
 ## Result
 
@@ -47,8 +53,23 @@ radius small:
   takes seconds.
 - **No `workflow` scope** unless Claude needs to edit GitHub Actions
   files. **No `admin:*` or org-wide write scopes.**
-- **GitLab** — equivalent fine-grained project tokens; `api` scope only
-  if you need push, otherwise `read_repository` + `write_repository`.
+- **GitLab** — use a **project access token**, minted from the project's
+  own `Settings → Access tokens` page, with role **Developer** and scope
+  **`api`**. Run `claude-sandbox glab-auth` from inside a checkout and it
+  links you straight to that project's page.
+
+  `api` is the only scope you need: it covers git over HTTPS, so adding
+  `read_repository` / `write_repository` alongside it changes nothing.
+  Role matters as much as scope — Developer pushes unprotected branches
+  and opens MRs but cannot change project settings or read CI/CD
+  variables, whereas Maintainer can do both.
+
+  Note that GitLab has **no equivalent of a fine-grained PAT covering a
+  chosen set of repositories**: a token is scoped to one project, to a
+  whole group (group access token), or to everything you can see
+  (personal token). Prefer the first; the last is what you get if you
+  mint from the personal-token page, and a leak then reaches every
+  project on the instance.
 
 `claude-sandbox gh-auth` / `claude-sandbox glab-auth` keep the token out
 of shell history but do **not** enforce scope discipline — that is

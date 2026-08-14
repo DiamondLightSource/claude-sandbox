@@ -36,13 +36,14 @@ clone (or from this repo's own devcontainer):
 CLAUDE_SANDBOX_SMOKE=1 bash tests/bwrap_argv.sh   # shadow's bwrap argv
 CLAUDE_SANDBOX_SMOKE=1 bash tests/smoke.sh        # installer file placement
 bash tests/install_ref.sh                         # which ref `install` picks
+bash tests/cli_remote_url.sh                      # glab-auth remote parsing
 bash tests/egress_jail.sh                         # network egress jail
 ```
 
 `CLAUDE_SANDBOX_SMOKE=1` keeps the first two off the network and out of
-`/`; they install into a tmpdir instead. All four want **root** — which a
-devcontainer already gives you, so no `sudo`; CI adds it because its
-runner is not root. `tests/egress_jail.sh` needs
+`/`; they install into a tmpdir instead. `smoke.sh` and `install_ref.sh`
+need **root** — a devcontainer already gives you that, so no `sudo`; CI
+adds it because its runner is not root. `tests/egress_jail.sh` needs
 `CAP_NET_ADMIN` and its own network namespace, so it **skips** when run
 from inside a sandboxed Claude session (namespaces can't nest there) —
 run it from an unsandboxed devcontainer terminal. CI runs it with

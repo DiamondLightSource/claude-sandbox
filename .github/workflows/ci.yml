@@ -50,6 +50,12 @@ jobs:
           mkdir -p "$HOME/.claude" "$HOME/.cache"
           CLAUDE_SANDBOX_SMOKE=1 bash tests/bwrap_argv.sh
 
+      # Remote-URL parsing behind `glab-auth`'s project-token targeting.
+      # Sources the CLI (source guard) and shadows `git`, so no repo, no
+      # network and no root.
+      - name: Run CLI remote-URL tests
+        run: bash tests/cli_remote_url.sh
+
       # Which git ref `install` selects, and when it refuses to select one.
       # Hermetic — builds its own throwaway origin+clone with synthetic tags,
       # so it never touches this checkout. `sudo` only to clear the shim's own
