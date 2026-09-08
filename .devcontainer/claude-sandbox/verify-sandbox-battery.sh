@@ -99,6 +99,7 @@ check_03() {
     agent="${IS_SANDBOX_AGENT:-claude}"
     case "$agent" in
         codex) own='\.codex' ;;
+        pi)    own='\.pi' ;;
         *)     own='\.claude|\.claude\.json' ;;
     esac
     extras="$(ls -A "$HOME" 2>/dev/null \

@@ -95,6 +95,12 @@ each image records the launcher version it was tested with, and
   Each agent sees only its own credentials. Skip the download with
   `WITH_CODEX=0 ./install`; the codex shadow and guard are installed regardless,
   so an unwrapped `codex` can never quietly appear on `$PATH`.
+- **Pi with cloud or local models**: run `pi` (or `claude-container --agent pi`),
+  authenticate OpenAI or Anthropic with `/login`, and switch using `/model`.
+  An opt-in localhost relay supports lllm2 on port 1920 while keeping the
+  network jail enabled. Pi has its own persistent credentials and a launch
+  guard. See [Use Pi](docs/how-to/use-pi.md) for setup and guard limitations.
+  `WITH_PI=0 ./install` skips downloading Pi.
 
 How and why it works: the [architecture overview][arch], the
 [threat model][threat], and the [network egress jail decision (ADR 0015)][jail].

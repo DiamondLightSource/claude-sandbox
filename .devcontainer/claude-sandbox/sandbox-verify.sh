@@ -25,11 +25,11 @@ set -uo pipefail
 AGENT=claude
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --agent) shift; case "${1:-}" in codex) AGENT=codex ;; esac ;;
+        --agent) shift; case "${1:-}" in codex|pi) AGENT="$1" ;; esac ;;
     esac
     shift || break
 done
-if [ "$AGENT" = codex ]; then AGENT_LABEL=Codex; else AGENT_LABEL=Claude; fi
+case "$AGENT" in codex) AGENT_LABEL=Codex ;; pi) AGENT_LABEL=Pi ;; *) AGENT_LABEL=Claude ;; esac
 
 # SessionStart delivers a JSON event on stdin. Drain it (only when stdin
 # is a pipe, not a tty) so the writer never blocks, then ignore it.

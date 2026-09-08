@@ -25,6 +25,8 @@
 #                                    vendor's installer can claim it
 #                                    (Invariant 1), so opting out here only
 #                                    skips the download.
+#   WITH_PI=0                        skip the pinned Pi standalone download;
+#                                    its shadow and launch guard stay installed.
 #   STATUS=1                         force-overwrite the user-scope
 #                                    statusline script from the clone's
 #                                    copy, instead of seed-only-if-absent.
@@ -48,6 +50,10 @@ WORKSPACE="${INSTALL_WORKSPACE:-$PWD}"
 USER_HOME="${INSTALL_USER_HOME:-$HOME}"
 SMOKE="${CLAUDE_SANDBOX_SMOKE:-0}"
 WITH_CODEX="${WITH_CODEX:-1}"
+WITH_PI="${WITH_PI:-1}"
+# Pin the standalone release: it includes its runtime and assets, so Debian's
+# nodejs version does not constrain Pi. Upgrade deliberately with validation.
+PI_VERSION="0.85.1"
 FORCE_STATUSLINE="${STATUS:-0}"
 ALLOW_UNWRAPPED="${DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED:-0}"
 
@@ -88,7 +94,7 @@ apt_install() {
     # devcontainer.json runArg this installer cannot add (see claude-shadow's
     # netns_launch error message and claude-sandbox.conf).
     apt-get install -y -qq --no-install-recommends \
-        bubblewrap jq curl ca-certificates git nodejs gh passt
+        bubblewrap jq curl ca-certificates git nodejs gh passt socat iproute2
     # glab isn't in every Ubuntu repo; install-try.
     apt-get install -y -qq --no-install-recommends glab 2>/dev/null || true
 }
@@ -311,6 +317,44 @@ install_codex_binary() {
     codex_purge_vendor_tree "$stage"
 }
 
+# Download only into a private staging dir. Unlike vendor installers this
+# never puts an unwrapped pi on PATH or mutates the user's shell startup files.
+install_pi_binary() (
+    [ "$SMOKE" != 1 ] && [ "$WITH_PI" = 1 ] || return 0
+    local arch asset stage dest base checksum
+    case "$(uname -m)" in
+        x86_64) arch=x64 ;;
+        aarch64|arm64) arch=arm64 ;;
+        *) echo 'claude-sandbox: WARNING — Pi standalone supports Linux x64/arm64; skipping.' >&2; return 0 ;;
+    esac
+    dest="$(prefixed /usr/libexec/claude-sandbox/pi-dist)"
+    if [ -x "$dest/pi" ] && [ "$(cat "$dest/.sandbox-version" 2>/dev/null)" = "$PI_VERSION" ]; then
+        return 0
+    fi
+    stage="$(mktemp -d)"
+    trap 'rm -rf "$stage"' EXIT
+    asset="pi-linux-$arch.tar.gz"
+    base="https://github.com/earendil-works/pi/releases/download/v$PI_VERSION"
+    if ! curl -fLSs --retry 2 "$base/$asset" -o "$stage/$asset" \
+        || ! curl -fLSs --retry 2 "$base/SHA256SUMS" -o "$stage/SHA256SUMS"; then
+        echo 'claude-sandbox: WARNING — Pi download failed; its shadow remains installed.' >&2
+        return 0
+    fi
+    checksum="$(awk -v asset="$asset" '$2 == asset || $2 == "*" asset {print $1}' "$stage/SHA256SUMS")"
+    if ! [[ "$checksum" =~ ^[a-fA-F0-9]{64}$ ]] \
+        || ! (cd "$stage" && printf '%s  %s\n' "$checksum" "$asset" | sha256sum -c - >/dev/null) \
+        || ! tar -xzf "$stage/$asset" --no-same-owner -C "$stage" \
+        || [ ! -x "$stage/pi/pi" ]; then
+        echo 'claude-sandbox: WARNING — Pi release validation failed; existing installation preserved.' >&2
+        return 0
+    fi
+    # Keep all assets together. The entire tree is read-only in the sandbox.
+    mkdir -p "$(dirname "$dest")"
+    rm -rf "$dest"
+    mv "$stage/pi" "$dest"
+    printf '%s\n' "$PI_VERSION" > "$dest/.sandbox-version"
+)
+
 # install_file: byte-stable copy of src → dst at mode 0755. Refuses
 # if src is missing (loud-fail beats a downstream errno). cmp -s
 # short-circuits so a re-run is a true no-op when content matches.
@@ -348,6 +392,7 @@ ensure_cred_dirs() {
     # ~/.codex is CODEX_HOME: config.toml, auth.json, sessions/. Pre-created
     # so the shadow's --bind of it succeeds on a first-ever codex launch.
     mkdir -p "$USER_HOME/.codex"
+    mkdir -p "$USER_HOME/.pi/agent"
 }
 
 # install_conf: place the clone's claude-sandbox.conf at the host-global
@@ -508,8 +553,10 @@ link_terminal_config() {
     # the sandbox.
     if [ -w "$shared" ]; then
         _share_path "$HOME/.codex" "$shared/.codex" dir
+        _share_path "$HOME/.pi" "$shared/.pi" dir
     else
         echo "claude-sandbox: $shared is not writable; ~/.codex stays container-scoped (expect to sign in to codex again after a rebuild)." >&2
+        echo "claude-sandbox: ~/.pi also stays container-scoped." >&2
     fi
 }
 
@@ -851,6 +898,8 @@ main() {
     # claim it (Invariant 1). An unbacked shadow loud-fails with instructions;
     # an unshadowed vendor binary would silently run outside the jail.
     install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/codex)"
+    install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/pi)"
+    install_file "$SCRIPT_DIR/pi-run" "$(prefixed /usr/libexec/claude-sandbox/pi-run)"
     # The helper CLI (gh-auth, glab-auth, update, verify, version) —
     # on PATH so it works after the install clone is deleted.
     install_file "$SCRIPT_DIR/claude-sandbox" "$(prefixed /usr/local/bin/claude-sandbox)"
@@ -859,6 +908,7 @@ main() {
     link_terminal_config
     install_claude_binary
     install_codex_binary
+    install_pi_binary
     ensure_cred_dirs
     install_conf
     stamp_version
@@ -875,7 +925,8 @@ main() {
     wire_user_statusline
 
     echo "claude-sandbox: install complete."
-    echo "  shadow:      $(prefixed /usr/local/bin/claude), $(prefixed /usr/local/bin/codex)"
+    echo "  shadow:      $(prefixed /usr/local/bin/claude), $(prefixed /usr/local/bin/codex), $(prefixed /usr/local/bin/pi)"
+    echo "  real pi:     $(prefixed /usr/libexec/claude-sandbox/pi-dist/pi) $([ -x "$(prefixed /usr/libexec/claude-sandbox/pi-dist/pi)" ] && echo 'installed (standalone, ro in sandbox)' || echo 'NOT installed — pi will refuse to launch')"
     echo "  cli:         $(prefixed /usr/local/bin/claude-sandbox) ($(cat "$(prefixed "$VERSION_FILE_PATH")"))"
     echo "  real claude: $(prefixed /usr/libexec/claude-sandbox/claude)"
     echo "  real codex:  $(prefixed "$CODEX_REAL_PATH") $([ -x "$(prefixed "$CODEX_REAL_PATH")" ] && echo 'installed (whole package, ro in sandbox)' || echo 'NOT installed — `codex` will refuse to launch')"

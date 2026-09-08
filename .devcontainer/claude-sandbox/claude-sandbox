@@ -20,7 +20,9 @@ Commands:
   glab-auth [hostname]  Authenticate glab with a GitLab PAT (default hostname: gitlab.diamond.ac.uk)
   update                Clone and install the latest claude-sandbox release
   verify [--agent NAME] Launch a sandboxed session running the integrity battery
-                        (NAME: claude, the default, or codex)
+                        (NAME: claude, the default, codex, or pi)
+  pi-local MODEL CONTEXT [PORT]
+                        Configure Pi's lllm2 provider (PORT defaults to 1920)
   version               Show the installed claude-sandbox version
   help                  Show this help
 EOF
@@ -129,8 +131,8 @@ cmd_verify() {
         case "$1" in
             --agent)
                 case "${2:-}" in
-                    claude|codex) agent="$2"; shift 2 ;;
-                    *) echo "claude-sandbox: verify --agent needs claude or codex" >&2; exit 2 ;;
+                    claude|codex|pi) agent="$2"; shift 2 ;;
+                    *) echo "claude-sandbox: verify --agent needs claude, codex, or pi" >&2; exit 2 ;;
                 esac
                 ;;
             *) echo "claude-sandbox: unknown verify option '$1'" >&2; exit 2 ;;
@@ -145,6 +147,14 @@ cmd_verify() {
         echo "  from a terminal outside this session: claude-sandbox verify [--agent codex]" >&2
         echo "  here and now:                         bash /usr/libexec/claude-sandbox/verify-sandbox-battery.sh" >&2
         exit 1
+    fi
+
+    if [ "$agent" = pi ]; then
+        if [ ! -x /usr/libexec/claude-sandbox/pi-dist/pi ]; then
+            echo 'claude-sandbox: Pi is not installed; re-run ./install with WITH_PI=1.' >&2
+            exit 1
+        fi
+        exec pi -p "$VERIFY_PROMPT"
     fi
 
     if [ "$agent" = codex ]; then
@@ -173,6 +183,47 @@ cmd_verify() {
     exec claude "$VERIFY_PROMPT"
 }
 
+# Explicit configuration command: preserve other providers and refuse malformed
+# JSON. Context is supplied by the operator from the running server's settings;
+# a model's training context is not its actual allocated llama.cpp context.
+cmd_pi_local() (
+    if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
+        echo 'Usage: claude-sandbox pi-local MODEL CONTEXT [PORT]' >&2
+        exit 2
+    fi
+    local model="$1" context="$2" port="${3:-1920}" dir file tmp
+    if [ -z "$model" ] || ! [[ "$context" =~ ^[1-9][0-9]{3,6}$ ]] \
+        || ! [[ "$port" =~ ^[1-9][0-9]{0,4}$ ]] || (( port > 65535 )); then
+        echo 'claude-sandbox: supply a model ID, context of 1000–9999999 tokens, and port 1–65535.' >&2
+        exit 2
+    fi
+    umask 077
+    dir="$HOME/.pi/agent"
+    file="$dir/models.json"
+    mkdir -p "$dir"
+    tmp="$(mktemp "$dir/.models.XXXXXX")"
+    trap 'rm -f "$tmp"' EXIT
+    if [ -e "$file" ]; then
+        jq -e 'type == "object" and ((.providers // {}) | type == "object")' "$file" >/dev/null
+    else
+        printf '{}\n' > "$tmp"
+        file="$tmp"
+    fi
+    local result
+    result="$(jq --arg model "$model" --argjson context "$context" --arg port "$port" '
+        .providers.lllm2 = {
+            baseUrl: ("http://127.0.0.1:" + $port + "/v1"),
+            api: "openai-completions", apiKey: "local",
+            compat: {supportsDeveloperRole: false, supportsReasoningEffort: false},
+            models: [{id: $model, name: ("Local (lllm2): " + $model),
+                      contextWindow: $context, maxTokens: ([$context / 4 | floor, 4096] | min)}]
+        }' "$file")"
+    printf '%s\n' "$result" > "$tmp"
+    mv "$tmp" "$dir/models.json"
+    echo "Configured Pi's lllm2 provider at http://127.0.0.1:$port/v1."
+    echo "Enable local-model-port = $port in /etc/claude-sandbox.conf outside the sandbox, then launch pi and select /model."
+)
+
 cmd_version() {
     if [ -r "$VERSION_FILE" ]; then
         echo "claude-sandbox $(cat "$VERSION_FILE")"
@@ -187,6 +238,7 @@ case "${1:-help}" in
     glab-auth)            shift; cmd_glab_auth "$@" ;;
     update)               shift; cmd_update "$@" ;;
     verify)               shift; cmd_verify "$@" ;;
+    pi-local)             shift; cmd_pi_local "$@" ;;
     version|--version|-v) cmd_version ;;
     help|-h|--help)       usage ;;
     *)

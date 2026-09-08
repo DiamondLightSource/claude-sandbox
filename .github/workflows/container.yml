@@ -77,6 +77,9 @@ jobs:
             set -euo pipefail
             test -x /usr/local/bin/claude
             test -x /usr/libexec/claude-sandbox/claude
+            test -x /usr/local/bin/pi
+            test -x /usr/libexec/claude-sandbox/pi-run
+            test -x /usr/libexec/claude-sandbox/pi-dist/pi
             test -x /usr/libexec/claude-sandbox/sandbox-verify.sh
             test -x /usr/libexec/claude-sandbox/sandbox-gate.sh
             test -x /usr/libexec/claude-sandbox/verify-sandbox-battery.sh
@@ -86,6 +89,7 @@ jobs:
                    and .env.DISABLE_AUTOUPDATER == \"1\"" \
               /etc/claude-code/managed-settings.json
             /usr/libexec/claude-sandbox/claude --version
+            /usr/libexec/claude-sandbox/pi-dist/pi --version
           '
 
       - name: "Test: launcher-version label matches the baked script"
@@ -134,6 +138,16 @@ jobs:
                 echo "--- ip addr / route ---"; ip -o addr; ip route || true
                 exit "$rc"
               }'
+
+      - name: "Test: Pi streams a local tool call through the sandbox"
+        run: |
+          podman run --rm -t \
+            --security-opt seccomp=unconfined \
+            --security-opt apparmor=unconfined \
+            --security-opt label=disable \
+            --device /dev/net/tun \
+            -v "$RUNNER_TEMP/terminal-config:/user-terminal-config" \
+            claude-sandbox:test bash /opt/claude-sandbox/tests/pi_e2e.sh
 
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
