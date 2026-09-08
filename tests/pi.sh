@@ -57,10 +57,12 @@ unset CLAUDE_SANDBOX_LOCAL_MODEL_PORT
 cli="$REPO_ROOT/.devcontainer/claude-sandbox/claude-sandbox"
 printf '{"providers":{"other":{"apiKey":"preserve"}}}\n' > "$HOME/.pi/agent/models.json"
 bash "$cli" pi-local 'model with "quotes"' 32768 >/dev/null
-jq_check config '.providers.lllm2.baseUrl == "http://127.0.0.1:1920/v1" and .providers.lllm2.models[0].contextWindow == 32768 and .providers.lllm2.models[0].maxTokens == 4096 and .providers.other.apiKey == "preserve"' "$HOME/.pi/agent/models.json"
+jq_check config '.providers.lllm2.baseUrl == "http://127.0.0.1:1920/v1" and .providers.lllm2.models[0].contextWindow == 32768 and .providers.lllm2.models[0].maxTokens == 8192 and .providers.other.apiKey == "preserve"' "$HOME/.pi/agent/models.json"
 assert_eq config-mode 600 "$(stat -c %a "$HOME/.pi/agent/models.json")"
 bash "$cli" pi-local replacement 8192 8080 >/dev/null
 jq_check config-replace '.providers.lllm2.models[0].id == "replacement" and .providers.lllm2.models[0].maxTokens == 2048 and .providers.other.apiKey == "preserve"' "$HOME/.pi/agent/models.json"
+bash "$cli" pi-local large-context 262144 >/dev/null
+jq_check config-output-cap '.providers.lllm2.models[0].contextWindow == 262144 and .providers.lllm2.models[0].maxTokens == 32000' "$HOME/.pi/agent/models.json"
 printf 'broken JSON\n' > "$HOME/.pi/agent/models.json"
 if bash "$cli" pi-local test 32768 >/dev/null 2>&1; then fail 'overwrote invalid config'; else pass; fi
 assert_eq invalid-config-preserved 'broken JSON' "$(cat "$HOME/.pi/agent/models.json")"
