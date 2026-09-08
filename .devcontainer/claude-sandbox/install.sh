@@ -769,6 +769,20 @@ codex_owned_or_skipped() {
     fi
 }
 
+# claude_guard_active: same disk-ground-truth check as codex_owned_or_skipped,
+# for the Claude side. wire_managed_settings warns-and-skips (rather than
+# aborting) when managed-settings.json isn't valid JSON, so the merge can
+# silently not happen; read back whether both hooks actually landed rather
+# than trusting that the merge ran.
+claude_guard_active() {
+    local settings; settings="$(prefixed "$MANAGED_SETTINGS")"
+    [ -f "$settings" ] && jq -e '
+        (.hooks.SessionStart // [] | any(.[].hooks[]?; (.command // "") | endswith("sandbox-verify.sh")))
+        and
+        (.hooks.UserPromptSubmit // [] | any(.[].hooks[]?; (.command // "") | endswith("sandbox-gate.sh")))
+    ' "$settings" >/dev/null 2>&1
+}
+
 # wire_user_statusline: the user-scope ~/.claude/settings.json now holds
 # only the statusline PREFERENCE (set-only-if-absent + script seeded
 # only-if-absent — never stomp an owner's own). The integrity guard does
@@ -875,6 +889,38 @@ main() {
     echo "  statusline:  $USER_HOME/.claude/settings.json (preference only)"
     echo "  workspace:   $WORKSPACE"
     echo "  run \`claude-sandbox verify\` for the live battery (or \`/verify-sandbox\` inside Claude in a claude-sandbox clone for the full audit)."
+
+    # Loud, impossible-to-miss callout when any managed-tier guard failed to
+    # wire because a foreign policy file was already in place (warn-and-skip,
+    # not brick — see wire_managed_settings / install_owned_toml). The binary
+    # relocation (Invariant 1) still holds either way, but the fail-closed
+    # gate that catches an unwrapped direct invocation does not. A one-line
+    # summary entry is easy to miss in a wall of install output; this is not.
+    local guard_gaps=()
+    claude_guard_active ||
+        guard_gaps+=("Claude integrity guard NOT ACTIVE — $(prefixed "$MANAGED_SETTINGS") could not be merged (see warning above)")
+    [ "$(codex_owned_or_skipped "$(prefixed "$CODEX_REQUIREMENTS")")" = "active" ] ||
+        guard_gaps+=("Codex integrity guard NOT ACTIVE — $(prefixed "$CODEX_REQUIREMENTS") is a foreign policy file (see warning above)")
+    [ "$(codex_owned_or_skipped "$(prefixed "$CODEX_MANAGED_CONFIG")")" = "active" ] ||
+        guard_gaps+=("Codex updater-disable NOT ACTIVE — $(prefixed "$CODEX_MANAGED_CONFIG") is a foreign policy file (see warning above)")
+
+    if [ "${#guard_gaps[@]}" -gt 0 ]; then
+        {
+            echo
+            echo "################################################################################"
+            echo "#  claude-sandbox: WARNING — SECURITY GUARD NOT FULLY ACTIVE ON THIS HOST     #"
+            echo "################################################################################"
+            for gap in "${guard_gaps[@]}"; do
+                echo "  - $gap"
+            done
+            echo
+            echo "  The sandbox binary relocation is still in force (plain claude/codex still"
+            echo "  resolve to the shadow), but the fail-closed integrity gate described above"
+            echo "  is NOT. Merge the printed policy snippet(s) by hand, then re-run install to"
+            echo "  confirm ACTIVE."
+            echo "################################################################################"
+        } >&2
+    fi
 }
 
 # Source guard: the container image build (see Dockerfile) re-uses the
