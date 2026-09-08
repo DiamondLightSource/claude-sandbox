@@ -4,7 +4,7 @@ description: Compact the current conversation into a handoff document for anothe
 argument-hint: "What will the next session be used for?"
 ---
 
-Write a handoff document summarising the current conversation so a fresh agent can continue the work. Save to the temporary directory of the user's OS - not the current workspace.
+Write a handoff document summarising the current conversation so a fresh agent can continue the work. Unless the user specifies a destination, save to `.claude/handoffs/` in the workspace, creating the directory if needed, with a unique timestamped filename. This ignored directory persists across sandbox sessions and is accessible to both Claude Code and Codex; `/tmp` is private to each sandbox session. Give the user the resulting path so the next agent can read it. For a different checkout or machine, the user must transfer the file explicitly.
 
 Include a "suggested skills" section in the document, which suggests skills that the agent should invoke.
 

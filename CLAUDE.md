@@ -26,3 +26,19 @@ uses `pip`) — that is not a route to a `uv.lock` or a `pyproject.toml`.
 - Network egress jail (lateral-movement isolation, ADR 0015):
   `docs/explanations/decisions/0015-network-egress-jail.md`; operational skill:
   `.claude/skills/claude-sandbox-networking/SKILL.md`
+
+## Sharing work between Claude Code and Codex
+
+Maintain project instructions here; `AGENTS.md` directs Codex to this file.
+Maintain skills in `.claude/skills/`; `.agents/skills` points to the same
+directory for Codex discovery. Command bodies remain in `.claude/commands/`;
+Codex can use `$claude-command <name>` to read and execute them.
+
+Use `.claude/MEMORY.md` for shared task memory and `.claude/handoffs/` for
+handoff documents. These are ignored local workspace files, accessible to both
+agents in this checkout, unlike their private home directories or `/tmp`.
+When resuming work, read shared memory if present and any handoff the user
+identifies; verify its status against the current working tree. Keep reusable
+project knowledge in tracked instructions, skills, or documentation. Share a
+handoff explicitly when switching checkouts or machines; Git does not carry
+these ignored files. Do not store credentials in shared notes.

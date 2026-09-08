@@ -1,5 +1,5 @@
 ---
-description: Save current task state to auto-memory, then promote reusable lessons to skills and trim memory.
+description: Save current task state to shared workspace memory, then promote reusable lessons to skills and trim memory.
 ---
 
 # Memo
@@ -9,7 +9,9 @@ Save a snapshot of current work to persistent memory, then clean up.
 ## Step 1 — Save current state
 
 Write a concise summary of in-progress or recently completed work to the
-auto-memory `MEMORY.md` for this project. Include:
+shared `.claude/MEMORY.md` in this workspace (create it if absent). Both Claude
+Code and Codex use this file; private agent auto-memory is not the shared
+source. Include:
 
 - What was done (feature, bug, refactor, area of code)
 - Current status (completed, blocked, in-progress)

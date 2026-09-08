@@ -5,6 +5,9 @@
 # Claude local-only settings (per-user, not committed)
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+# Shared local task state for Claude Code and Codex
+.claude/MEMORY.md
+.claude/handoffs/
 # Workflow scripts are local tooling (e.g. deep-review.js), not shipped sandbox
 .claude/workflows/
 
