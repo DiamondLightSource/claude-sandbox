@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# verify-sandbox phase-1 battery — the 20 deterministic PASS/FAIL checks
+# verify-sandbox phase-1 battery — the 21 deterministic PASS/FAIL checks
 # behind the /verify-sandbox command (.claude/commands/verify-sandbox.md).
 #
 # WHY THIS IS A COMMITTED SCRIPT, NOT INLINE IN THE COMMAND MARKDOWN:
@@ -23,7 +23,7 @@
 # Claude (workspace is rw) therefore cannot rewrite the verifier to print
 # PASS for a broken sandbox.
 #
-# CONTRACT: prints `/verify-sandbox: 20 checks`, one [PASS]/[FAIL] line
+# CONTRACT: prints `/verify-sandbox: 21 checks`, one [PASS]/[FAIL] line
 # per check, then `Summary: N PASS / M FAIL`, and exits with the FAIL
 # count (0 == all green). The /verify-sandbox command runs this for
 # phase 1; on a clean exit it proceeds to the open-ended phase-2
@@ -68,7 +68,7 @@ mount_fstype() {
     }' /proc/self/mountinfo
 }
 
-echo "/verify-sandbox: 20 checks"
+echo "/verify-sandbox: 21 checks"
 
 # 01 — IS_SANDBOX sentinel. Only `bwrap --setenv` sets it; unset means
 # Claude ran against the real binary, bypassing the sandbox entirely.
@@ -88,9 +88,21 @@ fi
 # 03 — strict-under-/root inversion: only the allow-listed binds/masks
 # may appear under $HOME, and only gh/glab-cli under $HOME/.config.
 check_03() {
-    local extras config_extras
+    local extras config_extras agent own
+    # The sandbox wraps more than one agent, and each session binds only its
+    # OWN config dir. So the expected set depends on whose session this is —
+    # and listing only that agent's dir makes the check STRONGER, not weaker:
+    # a `.claude` appearing inside a codex session (or the reverse) is a
+    # cross-agent credential leak, and now fails here.
+    # IS_SANDBOX_AGENT is set by the shadow; default to claude so a session
+    # launched by an older shadow still evaluates as it always did.
+    agent="${IS_SANDBOX_AGENT:-claude}"
+    case "$agent" in
+        codex) own='\.codex' ;;
+        *)     own='\.claude|\.claude\.json' ;;
+    esac
     extras="$(ls -A "$HOME" 2>/dev/null \
-        | grep -vxE '\.claude|\.claude\.json|\.cache|\.config|\.local|\.gitconfig|\.netrc|\.Xauthority|\.ICEauthority' \
+        | grep -vxE "$own"'|\.cache|\.config|\.local|\.gitconfig|\.netrc|\.Xauthority|\.ICEauthority' \
         || true)"
     if [ -n "$extras" ]; then
         EXTRA_DETAIL="unexpected \$HOME entries: $(printf '%s' "$extras" | tr '\n' ' ')"
@@ -107,16 +119,22 @@ check_03() {
 }
 EXTRA_DETAIL=""
 if check_03; then
-    result 03 "strict-under-/root: only .claude (+.cache/.local) under \$HOME" 0
+    result 03 "strict-under-/root: only ${IS_SANDBOX_AGENT:-claude}'s own config (+.cache/.local) under \$HOME" 0
 else
-    result 03 "strict-under-/root: only .claude (+.cache/.local) under \$HOME" 1 "$EXTRA_DETAIL"
+    result 03 "strict-under-/root: only ${IS_SANDBOX_AGENT:-claude}'s own config (+.cache/.local) under \$HOME" 1 "$EXTRA_DETAIL"
 fi
 
-# 04 — env scrub: GH_TOKEN must not survive --clearenv.
-if [ -z "${GH_TOKEN:-}" ]; then
-    result 04 "env scrub: GH_TOKEN empty" 0
+# 04 — env scrub: host API/forge credentials must not survive --clearenv.
+# OPENAI_API_KEY is asserted for BOTH agents, not just codex: an OpenAI key on
+# the host is a credential the jail must not hand to any session, whichever
+# agent is running. Mirrors sandbox-verify.sh's leak list.
+scrub_leaks=""
+[ -z "${GH_TOKEN:-}" ]        || scrub_leaks="$scrub_leaks GH_TOKEN"
+[ -z "${OPENAI_API_KEY:-}" ]  || scrub_leaks="$scrub_leaks OPENAI_API_KEY"
+if [ -z "$scrub_leaks" ]; then
+    result 04 "env scrub: GH_TOKEN / OPENAI_API_KEY empty" 0
 else
-    result 04 "env scrub: GH_TOKEN empty" 1 "GH_TOKEN leaked into the sandbox"
+    result 04 "env scrub: GH_TOKEN / OPENAI_API_KEY empty" 1 "leaked into the sandbox:$scrub_leaks"
 fi
 
 # 05 — env scrub: DISPLAY (X11 reachability path) must be empty.
@@ -315,6 +333,37 @@ if grep -qE '^blackhole (10\.0\.0\.0/8|172\.16\.0\.0/12|192\.168\.0\.0/16)' <<<"
     fi
 else
     result 20 "RFC1918 lateral egress unreachable, gateway still routable (or disabled)" 0 "jail not active (disabled)"
+fi
+
+# 21 — agent binary mask: the vendor unpacks Codex's own binary under
+# $CODEX_HOME/packages, i.e. INSIDE the ~/.codex we bind read-write. A writable
+# copy of the agent's binary in its own session is a persistence foothold — a
+# compromised codex rewrites it and is re-executed next launch, entirely
+# bypassing the read-only /usr/libexec copy we actually exec. The shadow
+# tmpfs-masks it; this asserts the mask is really there, because check 03 only
+# inspects $HOME's TOP level and .codex is legitimately allow-listed.
+#
+# Claude sessions have nothing to assert here (its equivalent cache,
+# ~/.local/share/claude, is masked by an unconditional --tmpfs the argv tests
+# already cover), so they PASS with a note rather than skewing the count.
+check_21() {
+    local pkgs="$HOME/.codex/packages"
+    # A mask is a tmpfs mounted ON that path. Absent directory is equally fine:
+    # nothing writable is exposed either way.
+    [ -e "$pkgs" ] || return 0
+    mountpoint -q "$pkgs" 2>/dev/null || return 1
+    # Masked AND empty — a non-empty tmpfs would mean something in-session
+    # already wrote a binary tree there.
+    [ -z "$(ls -A "$pkgs" 2>/dev/null)" ]
+}
+if [ "${IS_SANDBOX_AGENT:-claude}" = "codex" ]; then
+    if check_21; then
+        result 21 "agent binary mask: ~/.codex/packages is an empty tmpfs" 0
+    else
+        result 21 "agent binary mask: ~/.codex/packages is an empty tmpfs" 1 "the vendor's writable package tree is visible in-session (persistence foothold)"
+    fi
+else
+    result 21 "agent binary mask: ~/.codex/packages is an empty tmpfs" 0 "not a codex session"
 fi
 
 echo "  Summary: $PASS PASS / $FAIL FAIL"

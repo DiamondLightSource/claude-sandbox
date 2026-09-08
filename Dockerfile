@@ -32,6 +32,17 @@ LABEL io.diamondlightsource.claude-sandbox.launcher-version="${LAUNCHER_VERSION}
 # CI passes the ref name (tag on releases, `main` otherwise) instead.
 ARG CLAUDE_SANDBOX_VERSION=""
 
+# Whether to fetch OpenAI's Codex CLI at build time (install.sh's own
+# WITH_CODEX knob, exposed here). The codex SHADOW and its managed guard
+# are installed either way — Invariant 1 says the shadow must own the name
+# on $PATH regardless — this only controls the best-effort curl fetch of
+# the real binary. Default on, matching install.sh; set to 0 to build an
+# image that never reaches chatgpt.com (e.g. an offline/air-gapped build,
+# or to keep the published image's Codex support pinned to a build done
+# with known network access rather than whichever runner happened to build
+# a given tag).
+ARG WITH_CODEX=1
+
 COPY . /opt/claude-sandbox
 WORKDIR /opt/claude-sandbox
 
@@ -50,17 +61,21 @@ WORKDIR /opt/claude-sandbox
 # IN install.sh.
 RUN bash -c ' \
     set -euo pipefail; \
+    export WITH_CODEX="'"$WITH_CODEX"'"; \
     source .devcontainer/claude-sandbox/install.sh; \
     probe_or_refuse; \
     install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/claude)"; \
+    install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/codex)"; \
     install_file "$SCRIPT_DIR/claude-sandbox" "$(prefixed /usr/local/bin/claude-sandbox)"; \
     apt_install; \
     install_claude_binary; \
+    install_codex_binary; \
     ensure_cred_dirs; \
     install_conf; \
     stamp_version; \
     install_guard_scripts; \
     wire_managed_settings; \
+    wire_codex_managed; \
     wire_gate_flag; \
     wire_user_statusline; \
     rm -rf /var/lib/apt/lists/*'
@@ -74,7 +89,9 @@ RUN bash -c ' \
 # troubleshooting note).
 #
 # The entrypoint re-runs the launch-time installer steps that depend on
-# runtime mounts (shared ~/.claude, /etc conf), probes userns, then execs
-# the command — default: claude, i.e. the shadow on $PATH.
+# runtime mounts (shared ~/.claude and ~/.codex, /etc conf), probes userns,
+# then execs the command — default: claude, i.e. the shadow on $PATH. Run the
+# image with `codex` as the command to get a sandboxed Codex session from the
+# same image (the same shadow, dispatching on argv[0]).
 ENTRYPOINT ["/opt/claude-sandbox/container/entrypoint.sh"]
 CMD ["claude"]

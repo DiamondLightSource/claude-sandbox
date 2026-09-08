@@ -1,7 +1,7 @@
 # Verification checks
 
 `/verify-sandbox` runs two phases against the live Claude process: a
-deterministic **20-check PASS/FAIL battery**, then — only when all 20
+deterministic **21-check PASS/FAIL battery**, then — only when all 21
 pass — **10 adversarial breakout probes**. Any FAIL in phase 1, or any
 `[ESCAPED]` probe in phase 2, exits the command non-zero, so it is
 usable as a CI assertion.
@@ -25,14 +25,14 @@ stays empty inside the jail's nested userns, and the two jail checks
 (19–20) treat a deliberately disabled jail as a pass with a
 "disabled" note rather than a failure.
 
-## Phase 1 — the 20-check battery
+## Phase 1 — the 21-check battery
 
 | # | Asserts |
 |---|---|
 | 01 | `IS_SANDBOX=1` is set (the fall-through sentinel proving bwrap was entered, not the real binary run directly). |
 | 02 | `/proc/self/status` reports `NoNewPrivs: 1` (NO_NEW_PRIVS blocks setuid escalation). |
-| 03 | Strict-under-`/root`: only the allowed top-level entries exist under `$HOME` (`.claude`, `.claude.json`, `.cache`, `.config`, `.local`, and the masked dotfiles), and `$HOME/.config` contains only `gh` / `glab-cli` — no leaked sibling configs and no browser `NativeMessagingHosts` dirs. |
-| 04 | `GH_TOKEN` is empty (host env scrubbed by `--clearenv` + allow-list). |
+| 03 | Strict-under-`/root`: only the allowed top-level entries exist under `$HOME` (`.cache`, `.config`, `.local`, the masked dotfiles, and **only the running agent's own config** — `.claude`/`.claude.json` for Claude, `.codex` for Codex), and `$HOME/.config` contains only `gh` / `glab-cli` — no leaked sibling configs and no browser `NativeMessagingHosts` dirs. The *other* agent's credentials turning up in a session is a cross-agent leak and FAILs here. |
+| 04 | `GH_TOKEN` and `OPENAI_API_KEY` are empty (host env scrubbed by `--clearenv` + allow-list). |
 | 05 | `DISPLAY` is empty (kept out of the allow-list, closing the X11 path). |
 | 06 | `CapEff` in `/proc/self/status` is all zeros (`--cap-drop ALL`). |
 | 07 | `/proc/self/status:NSpid:` has ≥ 2 entries (nested PID namespace; kill/ptrace scoped away from host/devcontainer processes). |
@@ -49,6 +49,7 @@ stays empty inside the jail's nested userns, and the two jail checks
 | 18 | The installed shadow pins `CONFIG_PATH="/etc/claude-sandbox.conf"` and feeds it to `parse_config`, with no `parse_config` call reading from `.devcontainer` (config read from `/etc`, not the attacker-writable workspace). |
 | 19 | Egress jail active: the netns routing table carries the full blackhole set (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, CGNAT `100.64.0.0/10`) plus a default route — or the jail is deliberately disabled (pass with a "disabled" note; partial programming is a FAIL). |
 | 20 | Behavioural counterpart to 19: representative non-allow-listed RFC1918/CGNAT addresses (and the connected subnet's base) get no forwardable route, while the gateway stays routable. Disabled jail ⇒ nothing to assert (pass). |
+| 21 | Agent binary mask: in a Codex session `$HOME/.codex/packages` is an empty `tmpfs` (or absent). The vendor unpacks Codex's own binary there — *inside* the read-write `~/.codex` bind — so an unmasked tree is a writable copy of the agent's binary in its own session: a persistence foothold that bypasses the read-only `/usr/libexec` copy actually exec'd. Check 03 cannot catch this, since it inspects only `$HOME`'s top level where `.codex` is legitimately allow-listed. Claude sessions have nothing to assert (pass with a note). |
 
 On any FAIL the command exits non-zero, names the regressed defence on
 the FAIL line, and **skips phase 2 entirely**.
@@ -64,7 +65,7 @@ jail-aware variant of `/verify-sandbox` is needed.
 
 ## Phase 2 — adversarial breakout probes
 
-Runs only when all 20 checks pass. The command reasons up **10 novel
+Runs only when all 21 checks pass. The command reasons up **10 novel
 breakout attempts** aimed at gaps the deterministic matrix does not
 directly exercise — escaping the filesystem inversion, recovering
 scrubbed env vars, reaching the host's network identity, signalling or

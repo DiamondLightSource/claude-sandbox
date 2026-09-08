@@ -10,7 +10,10 @@
 # model as a devcontainer (re-authenticate after --recreate), never a
 # host-credential mount.
 #
-# Usage: claude-container [OPTIONS] [CLAUDE_ARGS...]
+# Usage: claude-container [OPTIONS] [AGENT_ARGS...]
+#   --agent NAME    which sandboxed agent to run: claude (default) or codex
+#                   (OpenAI's Codex CLI). Both are wrapped by the same shadow
+#                   inside the image, so either way the session is jailed
 #   --recreate      remove and recreate the project container (e.g. after
 #                   a `podman pull`); forge auth must be re-done after
 #   --host-net      create with --network=host (EPICS CA broadcast, X11)
@@ -35,7 +38,7 @@ set -euo pipefail
 
 # Bump when this script meaningfully changes. CI bakes the version into
 # the image as a label, so warn_if_outdated can compare script vs image.
-VERSION="0.1.1"
+VERSION="0.2.0"
 
 IMAGE="${CLAUDE_SANDBOX_IMAGE:-ghcr.io/diamondlightsource/claude-sandbox:latest}"
 ENGINE="${CLAUDE_SANDBOX_ENGINE:-podman}"
@@ -44,7 +47,7 @@ CONF="${CLAUDE_SANDBOX_CONF:-$HOME/.config/claude-sandbox.conf}"
 
 usage() {
     # The header comment above IS the manual; print it (strip the '# ').
-    sed -n '2,33p' "$0" | sed -e 's/^# \{0,1\}//'
+    sed -n '2,36p' "$0" | sed -e 's/^# \{0,1\}//'
 }
 
 # CI bakes two labels into the image: the version of this script it was
@@ -73,11 +76,27 @@ warn_if_outdated() {
 
 recreate=0
 host_net=0
+agent=claude
+# Tracked separately from $agent so the restart path can tell "the user asked
+# for codex" from "nobody said, so it defaults to claude" — only the former
+# deserves a warning that the flag will not apply.
+agent_explicit=0
 mounts=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --recreate) recreate=1; shift ;;
         --host-net) host_net=1; shift ;;
+        --agent)
+            # Which sandboxed agent to run in the image. Both are wrapped by
+            # the same shadow inside; this only chooses the command.
+            case "${2:-}" in
+                claude|codex) agent="$2"; agent_explicit=1; shift 2 ;;
+                *)
+                    echo "claude-container: --agent needs claude or codex" >&2
+                    exit 1
+                    ;;
+            esac
+            ;;
         --mount)
             if [ $# -lt 2 ]; then
                 echo "claude-container: --mount needs a PATH" >&2
@@ -92,7 +111,7 @@ while [ $# -gt 0 ]; do
         *) break ;;
     esac
 done
-# Remaining args are claude's (create-time or exec-time).
+# Remaining args are the agent's (create-time or exec-time).
 
 if ! command -v "$ENGINE" >/dev/null 2>&1; then
     echo "claude-container: $ENGINE not found (set CLAUDE_SANDBOX_ENGINE=docker?)" >&2
@@ -169,7 +188,7 @@ create_container() {
         args+=( -e "$v=${!v}" )
     done
 
-    args+=( "$IMAGE" claude "$@" )
+    args+=( "$IMAGE" "$agent" "$@" )
     "$ENGINE" "${args[@]}" >/dev/null
     echo "claude-container: created container $NAME from $IMAGE" >&2
     echo "claude-container: for forge push access, run inside the container:" >&2
@@ -182,16 +201,24 @@ fi
 
 if ! container_exists; then
     create_container "$@"
-elif [ $# -gt 0 ] && ! container_running; then
+elif ! container_running && { [ $# -gt 0 ] || [ "$agent_explicit" = 1 ]; }; then
+    # `start -ai` replays the command baked in at CREATE time, so neither fresh
+    # args nor --agent can take effect here. --agent is called out separately
+    # because it is silently wrong rather than merely ignored: asking for codex
+    # and getting a Claude session back looks like the flag did nothing.
     echo "claude-container: note — $NAME already exists; restarting reuses its" >&2
     echo "  creation-time arguments (yours are ignored). --recreate to change." >&2
+    if [ "$agent_explicit" = 1 ]; then
+        echo "  --agent $agent will NOT apply: this container starts whichever agent" >&2
+        echo "  it was created with. Use --recreate --agent $agent to switch." >&2
+    fi
 fi
 
 if container_running; then
     # Already running (another claude-container in this project): open an
     # additional sandboxed session in the same container. Fresh args DO
     # apply on this path.
-    exec "$ENGINE" exec -it "$NAME" claude "$@"
+    exec "$ENGINE" exec -it "$NAME" "$agent" "$@"
 else
     exec "$ENGINE" start -ai "$NAME"
 fi

@@ -146,6 +146,20 @@ To make extra folders writable, `--mount` binds them into the container
 claude-container --mount ~/src/shared-lib
 ```
 
+## Run Codex instead of Claude
+
+The image ships both agents behind the same shadow, so either is sandboxed
+identically. Pick one with `--agent`:
+
+```bash
+claude-container --agent codex
+```
+
+Codex signs in separately from Claude (its credentials live in `~/.codex`,
+persisted through the same `/user-terminal-config` share), and a Codex session
+sees no Claude credentials — nor the reverse. Everything else is the same
+container: the same project bind, the same forge auth, the same egress jail.
+
 ## EPICS / lab-device hosts
 
 `--host-net` creates the container with `--network=host` (Channel Access

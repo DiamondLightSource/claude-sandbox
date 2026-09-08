@@ -29,7 +29,7 @@ within a Claude session in a clone:
 
 There are two phases:
 
-1. **The PASS/FAIL battery** — 20 checks against the running process,
+1. **The PASS/FAIL battery** — 21 checks against the running process,
    one per defence (sandbox entered, capabilities dropped, namespaces
    unshared, IPC/secrets/runtime dirs masked, curated gitconfig in
    effect, and so on).
@@ -48,7 +48,7 @@ The full spec lives at `.claude/commands/verify-sandbox.md`.
   design, not failures.
 
 > **Jailed sessions.** When the egress jail is on (the default), the full
-> 20-check battery still passes: check 06 asserts the *effective*
+> 21-check battery still passes: check 06 asserts the *effective*
 > capability set (`CapEff=0`), which bwrap's `--cap-drop ALL` empties even
 > inside the jail's nested user namespace. The `CapBnd` *ceiling* will
 > read full (`…1ffffffffff`) rather than `0` — a nested-userns artifact,

@@ -19,7 +19,8 @@ Commands:
   gh-auth               Authenticate gh with a GitHub PAT (kept out of shell history)
   glab-auth [hostname]  Authenticate glab with a GitLab PAT (default hostname: gitlab.diamond.ac.uk)
   update                Clone and install the latest claude-sandbox release
-  verify                Launch a sandboxed claude session running the integrity battery
+  verify [--agent NAME] Launch a sandboxed session running the integrity battery
+                        (NAME: claude, the default, or codex)
   version               Show the installed claude-sandbox version
   help                  Show this help
 EOF
@@ -119,16 +120,49 @@ cmd_update() {
     exec bash -c 'bash "$1/claude-sandbox/install" && rm -rf "$1"' claude-sandbox-update "$tmp"
 }
 
+# Prompt used when driving an agent to run the phase-1 battery for us.
+VERIFY_PROMPT="Run: bash /usr/libexec/claude-sandbox/verify-sandbox-battery.sh — show its output verbatim and report the Summary line and exit code. Do not attempt to fix failures."
+
 cmd_verify() {
+    local agent=claude
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --agent)
+                case "${2:-}" in
+                    claude|codex) agent="$2"; shift 2 ;;
+                    *) echo "claude-sandbox: verify --agent needs claude or codex" >&2; exit 2 ;;
+                esac
+                ;;
+            *) echo "claude-sandbox: unknown verify option '$1'" >&2; exit 2 ;;
+        esac
+    done
+
     if [ "${IS_SANDBOX:-0}" = "1" ]; then
         # Don't point at /verify-sandbox unconditionally: that project
         # command ships with a claude-sandbox clone, so it is absent in
         # most workspaces. The battery is installed globally.
         echo "claude-sandbox: already inside a sandboxed session — verification launches its own session." >&2
-        echo "  from a terminal outside this session: claude-sandbox verify" >&2
+        echo "  from a terminal outside this session: claude-sandbox verify [--agent codex]" >&2
         echo "  here and now:                         bash /usr/libexec/claude-sandbox/verify-sandbox-battery.sh" >&2
         exit 1
     fi
+
+    if [ "$agent" = codex ]; then
+        # `codex exec` is Codex's headless one-shot mode: prompt in, result
+        # out, no TUI. Phase 1 only — the phase-2 adversarial probes are a
+        # Claude slash-command flow (.claude/commands/verify-sandbox.md) and
+        # have no Codex equivalent yet.
+        # Codex ships as a PACKAGE, so its binary sits inside the relocated
+        # release dir. /usr/libexec/claude-sandbox/codex is never created by
+        # the installer — testing it made this command always report "not
+        # installed" and exit 1.
+        if [ ! -x /usr/libexec/claude-sandbox/codex-dist/bin/codex ]; then
+            echo "claude-sandbox: no codex binary installed — re-run ./install (or it was installed with WITH_CODEX=0)." >&2
+            exit 1
+        fi
+        exec codex exec "$VERIFY_PROMPT"
+    fi
+
     if [ -f .claude/commands/verify-sandbox.md ]; then
         # In the claude-sandbox clone: the project-scoped /verify-sandbox
         # command runs the full two-phase flow (battery + adversarial probes).
@@ -136,7 +170,7 @@ cmd_verify() {
     fi
     # Anywhere else: the phase-1 battery is installed globally at an
     # absolute path; start a sandboxed session that runs it.
-    exec claude "Run: bash /usr/libexec/claude-sandbox/verify-sandbox-battery.sh — show its output verbatim and report the Summary line and exit code. Do not attempt to fix failures."
+    exec claude "$VERIFY_PROMPT"
 }
 
 cmd_version() {

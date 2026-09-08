@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Shadow `claude` binary. Wraps the real Claude in a bwrap sandbox so
-# every `claude` invocation on $PATH runs sandboxed.
+# Shadow agent binary. Wraps a real coding agent in a bwrap sandbox so
+# every `claude` / `codex` invocation on $PATH runs sandboxed.
+#
+# ONE file, several agents: install.sh places this same script at both
+# /usr/local/bin/claude and /usr/local/bin/codex, and it decides which
+# agent it is wrapping from argv[0]. See "Agent profiles" below.
 #
 # Self-contained: no @@PLACEHOLDERS@@, no `source $SRC_DIR/...`. The
 # bwrap argv builder is inlined as `bwrap_argv_build` below so the
@@ -13,12 +17,6 @@
 
 set -euo pipefail
 
-# Real Claude lives off the user's PATH so plain `claude` always
-# resolves to /usr/local/bin/claude (this shadow). The official
-# claude.ai installer drops the binary at ~/.local/bin/claude AND
-# prepends ~/.local/bin to the user's shell rc; the installer
-# relocates it here so that rc-mutation becomes inert.
-REAL_CLAUDE="/usr/libexec/claude-sandbox/claude"
 GITCONFIG_PATH="/etc/claude-gitconfig"
 # Host-global config, placed by install.sh from the clone's
 # .devcontainer/claude-sandbox.conf and re-stamped on every rebuild.
@@ -66,16 +64,164 @@ filter_chrome_args() {
     done
 }
 
+# ── Agent profiles ────────────────────────────────────────────────────
+# The sandbox wraps more than one coding agent: Claude Code, and OpenAI's
+# Codex CLI (the client for GPT-6 Astra). They differ only in which binary
+# to exec, which $HOME paths carry their login, and which flags to inject.
+# The security-critical parts — the bwrap argv, the egress jail, the
+# script(1) pty wrap — are identical, and must stay that way.
+#
+# So: ONE file, installed under both names, dispatching on argv[0]. A
+# second 800-line shadow to keep in sync would rebuild exactly the
+# "surface too big to audit in one read" that the bash-only rewrite
+# walked back from.
+#
+# The real binaries live off the user's PATH (/usr/libexec/claude-sandbox/)
+# so plain `claude` / `codex` always resolve to the shadow in
+# /usr/local/bin. Both vendors' installers drop their binary in
+# ~/.local/bin AND prepend that dir to the user's shell rc; install.sh
+# relocates both so the rc-mutation is inert (Invariant 1).
+
+# detect_agent ARGV0 OVERRIDE: name the agent this invocation wraps.
+# OVERRIDE (CLAUDE_SANDBOX_AGENT) exists for tests and for reaching a
+# shadow through a differently-named symlink. It is matched against a
+# CLOSED set and can only ever select a hard-coded profile below — it can
+# never name an arbitrary binary for the sandbox to launch.
+detect_agent() {
+    local argv0="${1:-}" override="${2:-}"
+    if [ -n "$override" ]; then
+        case "$override" in
+            claude|codex) printf '%s\n' "$override"; return 0 ;;
+            *)
+                echo "claude-sandbox: unknown CLAUDE_SANDBOX_AGENT '$override' (expected: claude, codex)." >&2
+                return 1
+                ;;
+        esac
+    fi
+    case "${argv0##*/}" in
+        codex) printf 'codex\n' ;;
+        *)     printf 'claude\n' ;;
+    esac
+}
+
+# agent_profile NAME: resolve every per-agent knob into globals. Everything
+# that differs between the agents lives HERE and nowhere else.
+#   AGENT_REAL          real binary on the host, off the user's PATH
+#   AGENT_INNER_REL     $HOME-relative conventional path inside the sandbox
+#   AGENT_HOME_DIRS     $HOME-relative dirs bound rw (config + login state)
+#   AGENT_HOME_FILES    $HOME-relative files bound rw
+#   AGENT_INJECT        args injected ahead of the user's
+#   AGENT_FILTER_CHROME strip a user-supplied --chrome (Claude only)
+#   AGENT_LABEL         human name for messages
+agent_profile() {
+    # Own the name too, so the profile and the label can never disagree —
+    # the argv builder stamps $AGENT into IS_SANDBOX_AGENT, and a caller that
+    # switched profile without updating the name would mislabel the session.
+    AGENT="$1"
+    case "$1" in
+        claude)
+            AGENT_REAL="/usr/libexec/claude-sandbox/claude"
+            AGENT_INNER_REL=".local/bin/claude"
+            # Bound back to the conventional path inside the sandbox so
+            # Claude's installMethod=native self-check sees what it expects
+            # (Invariant 1). The bind is rw, so an in-session self-update
+            # could rewrite the host binary — mitigated by the managed
+            # DISABLE_AUTOUPDATER.
+            AGENT_BIND_BACK=1
+            AGENT_HOME_DIRS=( .claude )
+            AGENT_HOME_FILES=( .claude.json )
+            AGENT_HOME_TMPFS=()
+            AGENT_INJECT=( --no-chrome )
+            AGENT_FILTER_CHROME=1
+            # Claude's updater-disable is delivered by managed-settings
+            # (env.DISABLE_AUTOUPDATER), so there is nothing to add here.
+            AGENT_SETENV=()
+            AGENT_LABEL="Claude"
+            ;;
+        codex)
+            # Codex ships as a package — the binary needs its siblings
+            # (ripgrep at codex-path/rg, its own bwrap/zsh under
+            # codex-resources/). So the whole release directory is relocated
+            # and we exec IN PLACE from it, with no bind-back: /usr/libexec is
+            # already visible inside the sandbox via --ro-bind / /, and the
+            # package's internal layout stays intact. This is strictly better
+            # than Claude's bind-back — the binary we exec is READ-ONLY in the
+            # session, so an in-session self-update cannot rewrite it.
+            AGENT_REAL="/usr/libexec/claude-sandbox/codex-dist/bin/codex"
+            AGENT_INNER_REL=""
+            AGENT_BIND_BACK=0
+            # CODEX_HOME defaults to ~/.codex and holds config.toml,
+            # auth.json (the OAuth tokens / API key), sessions/ and
+            # history. Bound rw for the same reason ~/.claude is
+            # (Invariant 2): it is ONE OpenAI login, not a repo-scoped
+            # credential like a gh/glab PAT, so carrying it across
+            # containers does not widen blast radius the way a forge
+            # token would.
+            AGENT_HOME_DIRS=( .codex )
+            AGENT_HOME_FILES=()
+            # The vendor installer unpacks the codex binary itself under
+            # $CODEX_HOME/packages/standalone/releases/<version>/ — i.e. INSIDE
+            # the directory we just bound read-write. Left visible, that is a
+            # writable copy of the agent's own binary in its own session: a
+            # compromised codex could rewrite it and be re-executed by the next
+            # launch, entirely outside the ro /usr/libexec copy we actually
+            # exec. Mask it. Same reasoning as the ~/.local/share/claude tmpfs
+            # (Claude's versioned binary cache) below.
+            AGENT_HOME_TMPFS=( .codex/packages )
+            # Codex has no browser-extension RPC channel to disable and
+            # no --chrome flag; injecting Claude's would abort the launch.
+            AGENT_INJECT=()
+            AGENT_FILTER_CHROME=0
+            # The in-sandbox half of the updater-disable. The binary we exec is
+            # already READ-ONLY in the session (no bind-back — see AGENT_REAL
+            # above), so unlike Claude's rw bind-back this is not what stops a
+            # self-update rewriting the host binary; it stops codex spending a
+            # session's first seconds fetching a release it cannot install, and
+            # writing a half-unpacked tree into CODEX_HOME. /etc/codex/
+            # managed_config.toml covers the startup check; this covers the
+            # explicit `codex update`.
+            AGENT_SETENV=( CODEX_UPDATE_DISABLED 1 )
+            AGENT_LABEL="Codex"
+            ;;
+        *)
+            echo "claude-sandbox: unknown agent '$1'." >&2
+            AGENT=""
+            return 1
+            ;;
+    esac
+}
+
+# agent_inner_path HOME: where the agent is exec'd from INSIDE the sandbox.
+# Bind-back agents (claude) run from the conventional $HOME/.local/bin/<agent>
+# that the argv builder binds the real binary onto; the rest run in place from
+# their root-owned, read-only /usr/libexec path, which is already visible via
+# --ro-bind / /.
+agent_inner_path() {
+    if [ "$AGENT_BIND_BACK" = "1" ]; then
+        printf '%s/%s\n' "$1" "$AGENT_INNER_REL"
+    else
+        printf '%s\n' "$AGENT_REAL"
+    fi
+}
+
+AGENT="$(detect_agent "${0:-claude}" "${CLAUDE_SANDBOX_AGENT:-}")" || exit 1
+agent_profile "$AGENT" || exit 1
+
 # Recursion guard: if IS_SANDBOX=1 is already set we are inside the
-# sandbox (e.g. a hook or skill spawned `claude`), so fall through to
+# sandbox (e.g. a hook or skill spawned the agent), so fall through to
 # the real binary directly. Inside the sandbox the real binary is
-# bind-mounted at ~/.local/bin/claude — exec that path so argv[0]
-# matches the conventional install location. --no-chrome injection
-# (via filter_chrome_args) applies here too so a nested spawn
+# bind-mounted at $HOME/$AGENT_INNER_REL — exec that path so argv[0]
+# matches the conventional install location. Claude's --no-chrome
+# injection (via filter_chrome_args) applies here too so a nested spawn
 # can't re-enable the browser-extension RPC channel.
 if [ "$CLAUDE_SHADOW_SOURCE_ONLY" != "1" ] && [ "${IS_SANDBOX:-}" = "1" ]; then
-    filter_chrome_args _filtered "$@"
-    exec "${HOME:-/root}/.local/bin/claude" --no-chrome "${_filtered[@]+"${_filtered[@]}"}"
+    if [ "$AGENT_FILTER_CHROME" = "1" ]; then
+        filter_chrome_args _filtered "$@"
+    else
+        _filtered=( "$@" )
+    fi
+    exec "$(agent_inner_path "${HOME:-/root}")" \
+        "${AGENT_INJECT[@]+"${AGENT_INJECT[@]}"}" "${_filtered[@]+"${_filtered[@]}"}"
 fi
 
 # Export so the inlined bwrap_argv_build picks up the gitconfig path.
@@ -95,7 +241,7 @@ export CLAUDE_SANDBOX_GITCONFIG_PATH="$GITCONFIG_PATH"
 # remains intact via --unshare-pid.
 bwrap_argv_build() {
     local workspace="$1"; shift
-    local real_claude="$1"; shift
+    local real_agent="$1"; shift
 
     local home="${HOME:-/root}"
     local gitconfig_path="${CLAUDE_SANDBOX_GITCONFIG_PATH:-/etc/claude-gitconfig}"
@@ -147,10 +293,19 @@ bwrap_argv_build() {
         forge_rels=()
     fi
     local rel
-    for rel in .claude .cache "${forge_rels[@]+"${forge_rels[@]}"}"; do
+    for rel in "${AGENT_HOME_DIRS[@]}" .cache "${forge_rels[@]+"${forge_rels[@]}"}"; do
         if [ -d "$home/$rel" ]; then
             argv+=( --bind "$home/$rel" "$home/$rel" )
         fi
+    done
+    # Per-agent tmpfs masks, emitted AFTER the binds above so they cover a
+    # sub-path of a directory we just bound rw (bwrap applies argv in order).
+    # Unconditional, like the .local/share masks: the mask must exist whether
+    # or not the host currently has the directory, or a first in-session write
+    # would land on the host.
+    local mask_rel
+    for mask_rel in "${AGENT_HOME_TMPFS[@]+"${AGENT_HOME_TMPFS[@]}"}"; do
+        argv+=( --tmpfs "$home/$mask_rel" )
     done
     # $HOME/.local/share bulk-bound for host XDG data dirs (helm
     # plugins, krew, uv Python, etc.). Two sub-dirs need to stay
@@ -166,18 +321,23 @@ bwrap_argv_build() {
         argv+=( --tmpfs "$home/.local/share/applications" )
         argv+=( --tmpfs "$home/.local/share/claude" )
     fi
-    for rel in .claude.json .local/bin/uv .local/bin/uvx; do
+    for rel in "${AGENT_HOME_FILES[@]+"${AGENT_HOME_FILES[@]}"}" .local/bin/uv .local/bin/uvx; do
         if [ -f "$home/$rel" ]; then
             argv+=( --bind "$home/$rel" "$home/$rel" )
         fi
     done
 
     # Real binary lives off-PATH on the host; expose it inside the
-    # sandbox at the conventional ~/.local/bin/claude location so
-    # Claude's self-inspection and any internal claude-spawns-claude
-    # path lookups see the path they expect. Unconditional — the
-    # shadow's loud-fail upstream catches a missing real binary.
-    argv+=( --bind "$real_claude" "$home/.local/bin/claude" )
+    # sandbox at the agent's conventional ~/.local/bin/<agent> location
+    # so the agent's self-inspection (Claude's installMethod=native
+    # check, Codex's own version/update probes) and any internal
+    # agent-spawns-agent path lookups see the path they expect.
+    # Unconditional — the shadow's loud-fail upstream catches a missing
+    # real binary.
+    local inner; inner="$(agent_inner_path "$home")"
+    if [ "$AGENT_BIND_BACK" = "1" ]; then
+        argv+=( --bind "$real_agent" "$inner" )
+    fi
 
     if [ -n "$workspace" ] && [ -d "$workspace" ]; then
         argv+=( --bind "$workspace" "$workspace" )
@@ -265,8 +425,20 @@ bwrap_argv_build() {
     argv+=( --setenv HOME "$home" )
     argv+=( --setenv USER "root" )
     argv+=( --setenv IS_SANDBOX "1" )
+    # Which agent's session this is, for the in-sandbox verifier: check 03
+    # asserts the EXACT contents of $HOME, so it has to know whose config dir
+    # legitimately belongs there. Deliberately NOT named CLAUDE_SANDBOX_AGENT:
+    # that variable is detect_agent's override, and a nested `claude` spawned
+    # inside a codex session would then re-dispatch to codex.
+    argv+=( --setenv IS_SANDBOX_AGENT "$AGENT" )
     argv+=( --setenv GIT_CONFIG_GLOBAL "$gitconfig_path" )
     argv+=( --setenv GIT_CONFIG_SYSTEM "/dev/null" )
+    # Per-agent env the sandbox sets for itself (agent_profile's AGENT_SETENV,
+    # a flat NAME VALUE list). Empty for claude, so its argv is unchanged.
+    local _sv
+    for (( _sv=0; _sv < ${#AGENT_SETENV[@]}; _sv+=2 )); do
+        argv+=( --setenv "${AGENT_SETENV[_sv]}" "${AGENT_SETENV[_sv+1]}" )
+    done
     local pass_through_var
     for pass_through_var in \
         TERM LANG LC_ALL LC_CTYPE LC_MESSAGES LC_TIME LC_COLLATE LC_NUMERIC LC_MONETARY \
@@ -312,6 +484,19 @@ bwrap_argv_build() {
             # the sandbox's own value wins.
             case "$pass_name" in
                 PATH|HOME|USER|IS_SANDBOX|GIT_CONFIG_GLOBAL|GIT_CONFIG_SYSTEM) continue ;;
+                # CODEX_HOME would move Codex's config + auth.json off the
+                # bound ~/.codex to an unbound tmpfs path, silently losing
+                # the login on exit. The profile's bind is the supported
+                # location, so the sandbox's own value wins here too.
+                CODEX_HOME|CLAUDE_CONFIG_DIR|CLAUDE_SANDBOX_AGENT) continue ;;
+                # IS_SANDBOX_AGENT is emitted ABOVE this loop, and a later
+                # --setenv of the same name wins — so forwarding it here would
+                # let the conf overwrite the sandbox's own value. It is what
+                # battery check 03 uses to decide WHICH agent's config dir may
+                # legitimately appear under $HOME, so a forged value downgrades
+                # that check into ignoring the other agent's credentials.
+                # Blocked for the same reason as IS_SANDBOX.
+                IS_SANDBOX_AGENT) continue ;;
                 LD_*|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|IFS) continue ;;
             esac
             if [ -n "${!pass_name:-}" ]; then
@@ -329,11 +514,16 @@ bwrap_argv_build() {
     # into ~/.config/<browser>/NativeMessagingHosts/ are gated on this
     # flag, so check 03 (strict-under-/root) catches any regression.
     local -a user_args=()
-    filter_chrome_args user_args "$@"
+    if [ "${AGENT_FILTER_CHROME:-0}" = "1" ]; then
+        filter_chrome_args user_args "$@"
+    else
+        user_args=( "$@" )
+    fi
 
-    # Exec via the in-sandbox conventional path so Claude's argv[0]
-    # matches what the official installer would have placed.
-    argv+=( -- "$home/.local/bin/claude" --no-chrome "${user_args[@]+"${user_args[@]}"}" )
+    # Exec via the in-sandbox conventional path so the agent's argv[0]
+    # matches what its official installer would have placed.
+    argv+=( -- "$inner" \
+        "${AGENT_INJECT[@]+"${AGENT_INJECT[@]}"}" "${user_args[@]+"${user_args[@]}"}" )
     printf '%s\n' "${argv[@]}"
 }
 
@@ -672,18 +862,18 @@ netns_launch() {
     exit "$rc"
 }
 
-# check_dot_claude_persistence: warn (with keypress gate) when ~/.claude
-# is neither a symlink (link_terminal_config path) nor a direct bind
-# mount. A plain container directory means memory, settings, and OAuth
+# check_config_persistence: warn (with keypress gate) when the agent's
+# config dir is neither a symlink (link_terminal_config path) nor a direct
+# bind mount. A plain container directory means memory, settings, and OAuth
 # state will be lost on the next devcontainer rebuild.
-check_dot_claude_persistence() {
-    local claude_dir="${HOME:-/root}/.claude"
+check_config_persistence() {
+    local cfg_dir="${HOME:-/root}/${AGENT_HOME_DIRS[0]}"
     # symlink → link_terminal_config wired it to a host-mounted path
-    [ -L "$claude_dir" ] && return 0
+    [ -L "$cfg_dir" ] && return 0
     # direct bind mount the user set up themselves
-    mountpoint -q "$claude_dir" 2>/dev/null && return 0
-    printf '\n\033[33mWARNING\033[0m: ~/.claude is not host-mounted.\n' >&2
-    printf 'Claude memory, settings, and OAuth state will be lost on devcontainer rebuild.\n' >&2
+    mountpoint -q "$cfg_dir" 2>/dev/null && return 0
+    printf '\n\033[33mWARNING\033[0m: ~/%s is not host-mounted.\n' "${AGENT_HOME_DIRS[0]}" >&2
+    printf '%s memory, settings, and login state will be lost on devcontainer rebuild.\n' "$AGENT_LABEL" >&2
     printf 'See https://diamondlightsource.github.io/claude-sandbox/how-to/persist-login-and-memory.html\n\n' >&2
     read -rsp "Press any key to continue..." -n 1 _key </dev/tty
     printf '\n\n' >&2
@@ -733,15 +923,47 @@ if [ "$CLAUDE_SHADOW_SOURCE_ONLY" = "1" ]; then
     return 0 2>/dev/null || exit 0
 fi
 
+# Say so when argv[0] named no agent we know. detect_agent falls back to the
+# claude profile so that sourcing the file (tests, $0 = the test script) and
+# any odd exec still work — but silently treating a renamed symlink as Claude
+# means injecting --no-chrome into something that is not Claude, which surfaces
+# as an unexplained abort from the vendor binary. Warn on the launch path only,
+# where a real user is watching; CLAUDE_SANDBOX_AGENT is the supported way to
+# reach a profile through a name we do not recognise.
+if [ -z "${CLAUDE_SANDBOX_AGENT:-}" ]; then
+    case "${0##*/}" in
+        claude|codex) ;;
+        *) echo "claude-sandbox: invoked as '${0##*/}', which names no known agent — assuming $AGENT_LABEL. Set CLAUDE_SANDBOX_AGENT to choose explicitly." >&2 ;;
+    esac
+fi
+
 # Loud-fail when the real binary is missing — clearer than the
-# downstream errno from bwrap exec'ing a non-existent path.
-if [ ! -x "$REAL_CLAUDE" ]; then
-    echo "claude-sandbox: real Claude binary missing at $REAL_CLAUDE." >&2
-    echo "  Re-run \`./install\` from a fresh clone of claude-sandbox." >&2
+# downstream errno from bwrap exec'ing a non-existent path. The shadow is
+# installed for every supported agent whether or not that agent's binary
+# was fetched, so this is the message a user sees when they run `codex`
+# on a host where only Claude was installed. That is deliberate: the
+# shadow must own the name on $PATH before the vendor's installer can
+# claim it (Invariant 1), so it has to exist first and explain itself.
+if [ ! -x "$AGENT_REAL" ]; then
+    echo "claude-sandbox: real $AGENT_LABEL binary missing at $AGENT_REAL." >&2
+    echo "  Re-run \`./install\` from a fresh clone of claude-sandbox" >&2
+    echo "  (it fetches and relocates every supported agent it can reach)." >&2
     exit 1
 fi
 
-check_dot_claude_persistence
+# Refuse to exec ourselves. If a broken install ever relocates this shadow as
+# the "real" binary, the recursion guard below would exec it, it would exec
+# the same path again, and the session would spin forever — a hang gives the
+# user nothing to go on, so turn it into a one-line error. Cheap: one cmp
+# against a file already in the page cache, only on the launch path.
+if cmp -s "$AGENT_REAL" "$0"; then
+    echo "claude-sandbox: $AGENT_REAL is a copy of this shadow, not the real $AGENT_LABEL binary." >&2
+    echo "  Launching it would loop forever. Re-run \`./install\` to relocate a real one;" >&2
+    echo "  if the download is failing, the sandbox says so at the end of install." >&2
+    exit 1
+fi
+
+check_config_persistence
 
 # Pre-create forge credential dirs so the argv builder's --bind succeeds
 # on first run. Skipped when CLAUDE_SANDBOX_NO_FORGE=1 since those binds
@@ -750,10 +972,17 @@ if [ "${CLAUDE_SANDBOX_NO_FORGE:-}" != "1" ]; then
     mkdir -p "${HOME:-/root}/.config/gh" "${HOME:-/root}/.config/glab-cli"
 fi
 
-# Ensure ~/.claude.json exists for the bind-back. Without this, Claude
-# Code's OAuth token writes into the in-sandbox tmpfs and vanishes on
-# exit. touch is a no-op on an existing file apart from mtime.
-touch "${HOME:-/root}/.claude.json"
+# Ensure the agent's config dir and files exist for the bind-back. Without
+# this the agent's OAuth token (~/.claude.json, ~/.codex/auth.json) writes
+# into the in-sandbox tmpfs and vanishes on exit — and a --bind of a
+# missing source aborts bwrap outright. mkdir/touch are no-ops on existing
+# paths apart from mtime.
+for _agent_dir in "${AGENT_HOME_DIRS[@]}"; do
+    mkdir -p "${HOME:-/root}/$_agent_dir"
+done
+for _agent_file in "${AGENT_HOME_FILES[@]+"${AGENT_HOME_FILES[@]}"}"; do
+    touch "${HOME:-/root}/$_agent_file"
+done
 
 render_gitconfig
 
@@ -766,7 +995,7 @@ if egress_jail_enabled; then
     jail_stage_dns
 fi
 WORKSPACE_ROOT="$(resolve_workspace_root "$PWD")"
-mapfile -t ARGV < <(bwrap_argv_build "$WORKSPACE_ROOT" "$REAL_CLAUDE" "$@")
+mapfile -t ARGV < <(bwrap_argv_build "$WORKSPACE_ROOT" "$AGENT_REAL" "$@")
 
 # Wrap bwrap in script(1) so the sandbox runs inside a freshly-allocated
 # pseudo-terminal. SIGWINCH propagates, job control works, and TIOCSTI
