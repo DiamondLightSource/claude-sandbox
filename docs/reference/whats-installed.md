@@ -22,7 +22,10 @@ message naming the fix.
 | `/usr/local/bin/claude` | `.devcontainer/claude-sandbox/claude-shadow` (verbatim) | Shadow that wraps the real binary in `bwrap`. Falls through to the real binary when `IS_SANDBOX=1` so internal `claude` invocations from a hook don't recurse |
 | `/usr/libexec/claude-sandbox/codex-dist/` | OpenAI installer (`curl -fsSL https://chatgpt.com/codex/install.sh \| sh`), whole release dir relocated | The real Codex CLI package (the client for GPT-6 Astra) — `bin/codex` plus ripgrep and Codex's own bwrap/zsh helpers, which the vendor requires to sit together. Kept off the user's PATH for the same reason as Claude's, and exec'd in place so it is **read-only** inside the sandbox. Best-effort: a failed fetch warns rather than failing the install |
 | `/usr/local/bin/codex` | `.devcontainer/claude-sandbox/claude-shadow` (verbatim — the **same file**) | The same shadow under the other agent's name; it picks its profile from `argv[0]` ({ref}`ADR 18 <adr-multi-agent-shadow>`). Installed even when the Codex binary is not, so the shadow owns the name on `$PATH` before the vendor's installer can claim it — it then loud-fails with instructions rather than letting an unwrapped `codex` run |
-| `/usr/local/bin/claude-sandbox` | `.devcontainer/claude-sandbox/claude-sandbox` (verbatim) | Helper CLI (`gh-auth`, `glab-auth`, `update`, `verify`, `version`) — on PATH so it works after the install clone is deleted |
+| `/usr/local/bin/pi` | `.devcontainer/claude-sandbox/claude-shadow` (same file) | Pi profile of the shared wrapper; always installed, even with `WITH_PI=0` |
+| `/usr/libexec/claude-sandbox/pi-run` | `.devcontainer/claude-sandbox/pi-run` | Fixed launch guard that checks sandbox markers before starting Pi; see [Pi guard limitations](../how-to/use-pi.md#verify-the-sandbox) |
+| `/usr/libexec/claude-sandbox/pi-dist/` | Latest Pi standalone release on fresh install, verified against release checksums; optional `PI_VERSION` pin | Pi executable and assets, read-only inside the sandbox; Linux x64 and arm64. Existing installs are kept on re-run. No separate Node.js runtime needed |
+| `/usr/local/bin/claude-sandbox` | `.devcontainer/claude-sandbox/claude-sandbox` (verbatim) | Helper CLI (`gh-auth`, `glab-auth`, `update`, `verify`, `pi-local`, `version`) — on PATH so it works after the install clone is deleted |
 | `/usr/libexec/claude-sandbox/version` | Stamped by `install.sh` (`git describe` on the installing clone, or the `CLAUDE_SANDBOX_VERSION` build arg) | What `claude-sandbox version` reports. Normally a release tag: `install` checks the newest one out before installing, as does `claude-sandbox update`. A commit hash means the revision was chosen deliberately — `install --here` on a branch or working tree, or a team pin (see [Sandbox a team devcontainer](../how-to/sandbox-a-team-devcontainer.md)) |
 | `/etc/claude-gitconfig` | Generated | Curated gitconfig — regenerated from `git config --get user.{name,email}` on every shadow launch |
 | `/usr/libexec/claude-sandbox/sandbox-verify.sh` | `.devcontainer/claude-sandbox/sandbox-verify.sh` | `SessionStart` guard script — full integrity battery + loud warn when unwrapped. Off-PATH, root-owned, ro inside the sandbox |
@@ -44,7 +47,7 @@ bypass it closes is identical.
 
 ## Both agents, one sandbox
 
-`claude` and `codex` are wrapped by the **same shadow file**, which resolves a
+`claude`, `codex`, and `pi` are wrapped by the **same shadow file**, which resolves a
 per-agent profile from `argv[0]`. The bwrap argv, the egress jail and the
 `script(1)` pty wrap are shared code; only the binary to exec, the `$HOME`
 paths bound for login state, and the injected flags differ

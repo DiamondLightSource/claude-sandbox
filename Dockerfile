@@ -42,6 +42,8 @@ ARG CLAUDE_SANDBOX_VERSION=""
 # with known network access rather than whichever runner happened to build
 # a given tag).
 ARG WITH_CODEX=1
+ARG WITH_PI=1
+ARG PI_VERSION=latest
 
 COPY . /opt/claude-sandbox
 WORKDIR /opt/claude-sandbox
@@ -62,14 +64,19 @@ WORKDIR /opt/claude-sandbox
 RUN bash -c ' \
     set -euo pipefail; \
     export WITH_CODEX="'"$WITH_CODEX"'"; \
+    export WITH_PI="'"$WITH_PI"'"; \
+    export PI_VERSION="'"$PI_VERSION"'"; \
     source .devcontainer/claude-sandbox/install.sh; \
     probe_or_refuse; \
     install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/claude)"; \
     install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/codex)"; \
+    install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/pi)"; \
+    install_file "$SCRIPT_DIR/pi-run" "$(prefixed /usr/libexec/claude-sandbox/pi-run)"; \
     install_file "$SCRIPT_DIR/claude-sandbox" "$(prefixed /usr/local/bin/claude-sandbox)"; \
     apt_install; \
     install_claude_binary; \
     install_codex_binary; \
+    install_pi_binary; \
     ensure_cred_dirs; \
     install_conf; \
     stamp_version; \

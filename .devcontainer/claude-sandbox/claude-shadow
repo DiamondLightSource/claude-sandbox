@@ -91,15 +91,16 @@ detect_agent() {
     local argv0="${1:-}" override="${2:-}"
     if [ -n "$override" ]; then
         case "$override" in
-            claude|codex) printf '%s\n' "$override"; return 0 ;;
+            claude|codex|pi) printf '%s\n' "$override"; return 0 ;;
             *)
-                echo "claude-sandbox: unknown CLAUDE_SANDBOX_AGENT '$override' (expected: claude, codex)." >&2
+                echo "claude-sandbox: unknown CLAUDE_SANDBOX_AGENT '$override' (expected: claude, codex, pi)." >&2
                 return 1
                 ;;
         esac
     fi
     case "${argv0##*/}" in
         codex) printf 'codex\n' ;;
+        pi)    printf 'pi\n' ;;
         *)     printf 'claude\n' ;;
     esac
 }
@@ -182,6 +183,20 @@ agent_profile() {
             # explicit `codex update`.
             AGENT_SETENV=( CODEX_UPDATE_DISABLED 1 )
             AGENT_LABEL="Codex"
+            ;;
+        pi)
+            # A fixed launcher checks the sandbox before starting the standalone
+            # release. Both live under the read-only /usr/libexec tree.
+            AGENT_REAL="/usr/libexec/claude-sandbox/pi-run"
+            AGENT_INNER_REL=""
+            AGENT_BIND_BACK=0
+            AGENT_HOME_DIRS=( .pi )
+            AGENT_HOME_FILES=()
+            AGENT_HOME_TMPFS=()
+            AGENT_INJECT=()
+            AGENT_FILTER_CHROME=0
+            AGENT_SETENV=( PI_SKIP_VERSION_CHECK 1 )
+            AGENT_LABEL="Pi"
             ;;
         *)
             echo "claude-sandbox: unknown agent '$1'." >&2
@@ -431,6 +446,10 @@ bwrap_argv_build() {
     # that variable is detect_agent's override, and a nested `claude` spawned
     # inside a codex session would then re-dispatch to codex.
     argv+=( --setenv IS_SANDBOX_AGENT "$AGENT" )
+    # Discovery runs inside the jail, through the explicitly enabled relay.
+    if local_model_enabled; then
+        argv+=( --setenv CLAUDE_SANDBOX_LOCAL_MODEL_PORT "$CLAUDE_SANDBOX_LOCAL_MODEL_PORT" )
+    fi
     argv+=( --setenv GIT_CONFIG_GLOBAL "$gitconfig_path" )
     argv+=( --setenv GIT_CONFIG_SYSTEM "/dev/null" )
     # Per-agent env the sandbox sets for itself (agent_profile's AGENT_SETENV,
@@ -589,6 +608,10 @@ parse_config() {
                 : "${CLAUDE_SANDBOX_EGRESS_JAIL:=${value:-1}}"
                 export CLAUDE_SANDBOX_EGRESS_JAIL
                 ;;
+            local-model-port)
+                : "${CLAUDE_SANDBOX_LOCAL_MODEL_PORT:=${value:-1920}}"
+                export CLAUDE_SANDBOX_LOCAL_MODEL_PORT
+                ;;
             allow-write)
                 [ -z "$value" ] && continue
                 CLAUDE_SANDBOX_ALLOW_WRITE="${CLAUDE_SANDBOX_ALLOW_WRITE:+${CLAUDE_SANDBOX_ALLOW_WRITE}
@@ -743,7 +766,72 @@ netns_holder() {
                 || echo "claude-sandbox: egress jail — could not route allow-ip $aip" >&2
         done <<< "$CLAUDE_SANDBOX_ALLOW_IP"
     fi
-    exec "$@"
+    if [ -n "${CLAUDE_JAIL_MODEL_SOCKET:-}" ]; then
+        local_model_inner "$@"
+    else
+        exec "$@"
+    fi
+}
+
+# Only Pi sessions may enable the relay. No destination strings reach socat: the host
+# target is always IPv4 loopback and the port is validated before any launch.
+local_model_enabled() {
+    [ "${AGENT:-}" = pi ] && [ "${CLAUDE_SANDBOX_LOCAL_MODEL_PORT:-0}" != 0 ]
+}
+
+validate_local_model_port() {
+    local port="${CLAUDE_SANDBOX_LOCAL_MODEL_PORT:-0}"
+    if ! [[ "$port" =~ ^[1-9][0-9]{0,4}$ ]] || (( port > 65535 )); then
+        echo "claude-sandbox: local-model-port must be 1–65535 (or 0 to disable)." >&2
+        return 1
+    fi
+}
+
+# Each socat owns a new process group, including forked connections. Kill the
+# whole group on exit so neither streaming requests nor listeners outlive Pi.
+stop_relay() {
+    local pid="${1:-}"
+    [ -n "$pid" ] || return 0
+    kill -TERM -- "-$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+}
+
+# Run OUTSIDE the jail. The private pathname socket bridges network namespaces
+# without adding any IP route or mapping the host's entire loopback interface.
+local_model_outer() {
+    command -v socat >/dev/null 2>&1 || jail_fail "needs socat for local-model-port"
+    command -v setsid >/dev/null 2>&1 || jail_fail "needs setsid for local-model-port"
+    CLAUDE_JAIL_MODEL_SOCKET="$CLAUDE_JAIL_DIR/model.sock"
+    export CLAUDE_JAIL_MODEL_SOCKET CLAUDE_SANDBOX_LOCAL_MODEL_PORT
+    setsid socat "UNIX-LISTEN:$CLAUDE_JAIL_MODEL_SOCKET,mode=0600,fork" \
+        "TCP4:127.0.0.1:$CLAUDE_SANDBOX_LOCAL_MODEL_PORT" &
+    model_relay=$!
+    wait_for test -S "$CLAUDE_JAIL_MODEL_SOCKET" \
+        || jail_fail "— local model relay failed to start"
+}
+
+# Run in the HOLDER's netns, before bwrap masks /tmp and enters its PID namespace.
+# The agent sees only this loopback listener, never the host-side Unix socket.
+local_model_inner() {
+    local relay="" child="" rc=0
+    trap 'stop_relay "$relay"; if [ -n "$child" ]; then kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; fi' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM HUP
+    setsid socat "TCP4-LISTEN:$CLAUDE_SANDBOX_LOCAL_MODEL_PORT,bind=127.0.0.1,reuseaddr,fork" \
+        "UNIX-CONNECT:$CLAUDE_JAIL_MODEL_SOCKET" &
+    relay=$!
+    # ss reads the kernel listener table; do not probe by connecting to the
+    # model server or require it to be running just to use a cloud provider.
+    wait_for local_model_listening || jail_fail "— local model listener failed to start"
+    "$@" <&0 &
+    child=$!
+    wait "$child" || rc=$?
+    child=""
+    exit "$rc"
+}
+
+local_model_listening() {
+    ss -H -ltn "sport = :$CLAUDE_SANDBOX_LOCAL_MODEL_PORT" | grep -q '127.0.0.1:'
 }
 
 # egress_jail_enabled: ADR 0015 — the jail is ON by default. Only an explicit
@@ -810,14 +898,25 @@ netns_launch() {
     [ -e /dev/net/tun ] \
         || jail_fail "needs /dev/net/tun — add --device=/dev/net/tun to the container"
 
-    CLAUDE_JAIL_READY="$(mktemp -u "${TMPDIR:-/tmp}/claude-jail-ready.XXXXXX")"
+    # Always under /tmp, which bwrap masks. Never honour a TMPDIR inside the
+    # writable workspace for the socket or namespace readiness handshake.
+    CLAUDE_JAIL_DIR="$(mktemp -d /tmp/claude-jail.XXXXXX)"
+    local model_relay="" holder=""
+    trap 'stop_relay "$model_relay"; if [ -n "$holder" ]; then kill "$holder" 2>/dev/null || true; wait "$holder" 2>/dev/null || true; fi; rm -rf "$CLAUDE_JAIL_DIR"; rm -f "${CLAUDE_SANDBOX_JAIL_RESOLV:-}"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM HUP
+    CLAUDE_JAIL_READY="$CLAUDE_JAIL_DIR/ready"
     export CLAUDE_JAIL_READY
-    rm -f "$CLAUDE_JAIL_READY"
+    unset CLAUDE_JAIL_MODEL_SOCKET
+    if local_model_enabled; then
+        validate_local_model_port || exit 1
+        local_model_outer
+    fi
 
     # The holder runs in a fresh `bash -c`, so every function it calls must be
     # exported too — not just netns_holder, but the helpers it reaches:
     # jail_fail, wait_for, route_field.
-    export -f netns_holder jail_fail wait_for route_field
+    export -f netns_holder jail_fail wait_for route_field local_model_inner local_model_listening stop_relay
     export JAIL_DNS_FWD
     # Explicit <&0 keeps the holder's stdin on the terminal: bash redirects a
     # background job's stdin to /dev/null otherwise, which would break Claude's
@@ -825,7 +924,7 @@ netns_launch() {
     # holder shares the shell's process group (the terminal's foreground group)
     # — no SIGTTIN/SIGTTOU when it (and the nested script(1)/bwrap) use the tty.
     unshare -rn bash -c 'netns_holder "$@"' _ "$@" <&0 &
-    local holder=$!
+    holder=$!
 
     wait_for test -e "/proc/$holder/ns/net" \
         || jail_fail "— holder netns never appeared" "$holder"
@@ -851,14 +950,20 @@ netns_launch() {
     # replies to come from JAIL_DNS_FWD. A direct query to resolver #1 gets a
     # reply from an unexpected source and the kernel drops it on a connected
     # socket (issue #11).
-    if ! pasta --config-net --ipv4-only --dns-forward "$JAIL_DNS_FWD" --quiet --log-file /tmp/claude-pasta.log "$holder" 2>>/tmp/claude-pasta.log; then
+    # pasta defaults to automatic port forwarding in BOTH directions and maps
+    # the gateway to host loopback. Neither is part of the route allowlist:
+    # -T auto would expose unrelated localhost services (and occupy our relay's
+    # port), while gateway mapping reaches host services through the pinned gw.
+    # Disable those shortcuts for every agent; the optional relay is explicit.
+    if ! pasta --config-net --ipv4-only --no-map-gw -t none -u none -T none -U none \
+        --dns-forward "$JAIL_DNS_FWD" --quiet --log-file /tmp/claude-pasta.log "$holder" 2>>/tmp/claude-pasta.log; then
         jail_fail "— pasta failed to attach to the netns (see /tmp/claude-pasta.log)" "$holder"
     fi
     : > "$CLAUDE_JAIL_READY"
 
     local rc=0
     wait "$holder" || rc=$?
-    rm -f "$CLAUDE_JAIL_READY" "${CLAUDE_SANDBOX_JAIL_RESOLV:-}"
+    holder=""
     exit "$rc"
 }
 
@@ -932,7 +1037,7 @@ fi
 # reach a profile through a name we do not recognise.
 if [ -z "${CLAUDE_SANDBOX_AGENT:-}" ]; then
     case "${0##*/}" in
-        claude|codex) ;;
+        claude|codex|pi) ;;
         *) echo "claude-sandbox: invoked as '${0##*/}', which names no known agent — assuming $AGENT_LABEL. Set CLAUDE_SANDBOX_AGENT to choose explicitly." >&2 ;;
     esac
 fi
