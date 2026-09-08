@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
-# UserPromptSubmit hook (user-scope, GLOBAL). Fail-closed gate: blocks
-# every prompt unless the claude-sandbox bwrap shadow is in effect
-# (IS_SANDBOX=1, set only by the bwrap launcher).
+# UserPromptSubmit hook (GLOBAL). Fail-closed gate: blocks every prompt
+# unless the claude-sandbox bwrap shadow is in effect (IS_SANDBOX=1, set only
+# by the bwrap launcher).
+#
+# Serves BOTH agents. Claude Code reaches it through managed-settings
+# (/etc/claude-code/managed-settings.json); the Codex CLI reaches it through
+# its managed requirements (/etc/codex/requirements.toml, passing
+# `--agent codex`). The contract is identical on both sides — UserPromptSubmit
+# is the one event that can stop a turn before the model runs, and exit 2
+# blocks it with stderr shown to the user — which is why one script serves
+# both rather than two that can drift apart.
 #
 # This is the ONE mechanism that can actually STOP work when Claude is
 # running unwrapped — SessionStart hooks can only warn. It is lean by
@@ -50,15 +58,35 @@ gate_allows() {
     return 1
 }
 
+# agent_label ARGS...: read an optional `--agent NAME` out of the hook's argv
+# and render the name for the block message. Parsed HERE, inside the function,
+# not at file scope: tests source this file to unit-test gate_allows(), and a
+# top-level read of "$@" would see the sourcing script's arguments.
+# Presentation only — the gate's DECISION never depends on it.
+agent_label() {
+    local a
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --agent) shift; case "${1:-}" in codex) a=Codex ;; *) a=Claude ;; esac ;;
+        esac
+        shift || break
+    done
+    printf '%s\n' "${a:-Claude}"
+}
+
 gate_main() {
+    local label; label="$(agent_label "$@")"
+    local binary; if [ "$label" = "Codex" ]; then binary="codex"; else binary="claude"; fi
+
     # UserPromptSubmit delivers JSON on stdin; drain it when piped so the
     # writer never blocks. We don't need its contents.
     [ -t 0 ] || cat >/dev/null 2>&1 || true
 
     gate_allows "$ALLOW_UNWRAPPED_FLAG" && exit 0
 
-    # Exit 2 blocks the prompt and surfaces stderr to the user.
-    echo "BLOCKED: Claude is running OUTSIDE the claude-sandbox bwrap shadow (IS_SANDBOX unset) — host credentials are NOT isolated. A Claude Code self-update can re-create ~/.local/bin/claude and bypass the shadow; re-run claude-sandbox/install, then relaunch claude. (To work unwrapped anyway, the host operator can: sudo touch /etc/claude-code/allow-unwrapped.)" >&2
+    # Exit 2 blocks the prompt and surfaces stderr to the user. Both agents
+    # honour that contract.
+    echo "BLOCKED: $label is running OUTSIDE the claude-sandbox bwrap shadow (IS_SANDBOX unset) — host credentials are NOT isolated. An agent self-update can re-create ~/.local/bin/$binary and bypass the shadow; re-run claude-sandbox/install, then relaunch $binary. (To work unwrapped anyway, the host operator can: sudo touch /etc/claude-code/allow-unwrapped.)" >&2
     exit 2
 }
 
@@ -67,5 +95,5 @@ gate_main() {
 # script is invoked, NOT an environment variable — so a confined Claude cannot
 # set anything to skip the gate.
 if [ "${BASH_SOURCE[0]:-}" = "${0:-}" ]; then
-    gate_main
+    gate_main "$@"
 fi

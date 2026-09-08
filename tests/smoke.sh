@@ -369,7 +369,7 @@ fi
 BATTERY_OUT="$(env -u IS_SANDBOX bash "$BATTERY_DEST" 2>/dev/null)"
 BATTERY_RC=$?
 if [ "$BATTERY_RC" -ne 0 ] \
-        && printf '%s\n' "$BATTERY_OUT" | grep -qx '/verify-sandbox: 20 checks' \
+        && printf '%s\n' "$BATTERY_OUT" | grep -qx '/verify-sandbox: 21 checks' \
         && printf '%s\n' "$BATTERY_OUT" | grep -qE '^  Summary: [0-9]+ PASS / [0-9]+ FAIL$'; then
     pass
 else
@@ -428,6 +428,164 @@ if command -v bwrap >/dev/null 2>&1 && [ "${IS_SANDBOX:-}" != "1" ]; then
     else
         fail "bwrap --ro-bind / / -- /bin/true failed (runner cannot enter a sandbox)"
     fi
+fi
+
+# --- Codex CLI: same shadow, same guard, delivered through /etc/codex ---
+# The sandbox wraps more than one agent, and the whole design rests on the
+# codex path being the SAME machinery rather than a parallel copy. These
+# assertions lock that.
+
+# The codex shadow is the SAME FILE as the claude shadow (it dispatches on
+# argv[0]). Byte-equality is the assertion: a divergent copy is the failure
+# mode this design exists to prevent.
+CODEX_SHADOW="$PREFIX/usr/local/bin/codex"
+CLAUDE_SHADOW_DEST="$PREFIX/usr/local/bin/claude"
+if [ -x "$CODEX_SHADOW" ] && cmp -s "$CODEX_SHADOW" "$CLAUDE_SHADOW_DEST"; then
+    pass
+else
+    fail "codex shadow missing at $CODEX_SHADOW, or has diverged from the claude shadow"
+fi
+
+# Codex's managed layer carries the guard. requirements.toml is the hard,
+# admin-only tier — the /etc/codex analogue of managed-settings.json.
+CODEX_REQ="$PREFIX/etc/codex/requirements.toml"
+CODEX_MGD="$PREFIX/etc/codex/managed_config.toml"
+expect_file "$CODEX_REQ" "codex requirements.toml missing at $CODEX_REQ"
+expect_file "$CODEX_MGD" "codex managed_config.toml missing at $CODEX_MGD"
+for pat in '\[\[hooks.SessionStart\]\]' '\[\[hooks.UserPromptSubmit\]\]' \
+           'sandbox-verify.sh --agent codex' 'sandbox-gate.sh --agent codex'; do
+    if grep -qE "$pat" "$CODEX_REQ" 2>/dev/null; then
+        pass
+    else
+        fail "codex requirements.toml missing: $pat"
+    fi
+done
+# Hook commands must point at the absolute /usr/libexec scripts (root-owned,
+# off-PATH, ro inside the sandbox), never at a sandbox-writable path.
+if grep -q 'command = "bash /usr/libexec/claude-sandbox/' "$CODEX_REQ" 2>/dev/null; then
+    pass
+else
+    fail "codex guard hooks do not point at /usr/libexec/claude-sandbox"
+fi
+# allow_managed_hooks_only would silence the owner's OWN hooks — same call as
+# allowManagedHooksOnly on the Claude side (Invariant 5). Must stay absent.
+if grep -q 'allow_managed_hooks_only' "$CODEX_REQ" 2>/dev/null; then
+    fail "codex requirements.toml sets allow_managed_hooks_only (silences the owner's own hooks)"
+else
+    pass
+fi
+# Updater disabled: a self-update re-creates ~/.local/bin/codex and re-arms
+# the bypass.
+if grep -q 'check_for_update_on_startup = false' "$CODEX_MGD" 2>/dev/null; then
+    pass
+else
+    fail "codex managed_config.toml does not disable the startup update check"
+fi
+
+# install_codex_binary must NEVER relocate the claude-sandbox shadow as the
+# "real" codex binary. The shadow is on the search path by construction
+# (main() installs it at /usr/local/bin/codex first), so if the vendor
+# download leaves nothing behind, the candidate search falls through to it.
+# Relocating it makes the shadow exec itself forever — a HANG, with no error
+# to go on. Regression test for a marker-grep self-check that stopped
+# matching when the shadow's header was reworded.
+SELF_PREFIX="$(mktemp -d)"
+SELF_HOME="$(mktemp -d)"
+register_cleanup "$SELF_PREFIX" "$SELF_HOME"
+mkdir -p "$SELF_HOME/.local/bin"
+# The one candidate on the search path is a copy of our own shadow.
+cp "$REPO_ROOT/.devcontainer/claude-sandbox/claude-shadow" "$SELF_HOME/.local/bin/codex"
+chmod 0755 "$SELF_HOME/.local/bin/codex"
+SELF_OUT="$( (
+    # shellcheck source=../.devcontainer/claude-sandbox/install.sh
+    source "$REPO_ROOT/.devcontainer/claude-sandbox/install.sh"
+    SMOKE=0; WITH_CODEX=1; PREFIX="$SELF_PREFIX"; HOME="$SELF_HOME"
+    # Vendor installer "succeeds" but produces no binary of its own.
+    curl() { return 0; }
+    install_codex_binary
+) 2>&1 || true )"
+# Assert the GUARD FIRED, not merely that some path is absent. An earlier
+# version of this test looked for a copy of the shadow at
+# /usr/libexec/claude-sandbox/codex — a path install_codex_binary never
+# writes (codex ships as a package, so the binary lands under
+# codex-dist/bin/) — so the assertion passed vacuously and would have kept
+# passing if the shadow HAD been relocated.
+case "$SELF_OUT" in
+    *"is the claude-sandbox"*"shadow itself"*) pass ;;
+    *) fail "install_codex_binary did not refuse to relocate the shadow as codex: $SELF_OUT" ;;
+esac
+# ...and that nothing shadow-shaped landed anywhere under the install prefix,
+# whatever the layout: the real destination, the historical one, or any other.
+SELF_LIBEXEC="$SELF_PREFIX/usr/libexec/claude-sandbox"
+SELF_PLANTED=0
+if [ -d "$SELF_LIBEXEC" ]; then
+    while IFS= read -r cand; do
+        if cmp -s "$cand" "$REPO_ROOT/.devcontainer/claude-sandbox/claude-shadow"; then
+            SELF_PLANTED=1
+        fi
+    done < <(find "$SELF_LIBEXEC" -type f 2>/dev/null)
+fi
+if [ "$SELF_PLANTED" = 0 ]; then
+    pass
+else
+    fail "install_codex_binary relocated the shadow under $SELF_LIBEXEC (infinite exec loop)"
+fi
+
+# Second line of defence: even if something did point the shadow at a copy of
+# itself, launching must ERROR rather than spin. A hang is the worst possible
+# failure here because it tells the user nothing.
+LOOP_DIR="$(mktemp -d)"
+register_cleanup "$LOOP_DIR"
+sed "s|AGENT_REAL=\"/usr/libexec/claude-sandbox/codex-dist/bin/codex\"|AGENT_REAL=\"$LOOP_DIR/real\"|" \
+    "$REPO_ROOT/.devcontainer/claude-sandbox/claude-shadow" > "$LOOP_DIR/codex"
+chmod 0755 "$LOOP_DIR/codex"
+cp "$LOOP_DIR/codex" "$LOOP_DIR/real"
+LOOP_OUT="$(env -u IS_SANDBOX CLAUDE_SANDBOX_AGENT=codex timeout 10 "$LOOP_DIR/codex" 2>&1 || true)"
+case "$LOOP_OUT" in
+    *"is a copy of this shadow"*) pass ;;
+    *) fail "shadow did not refuse to exec a copy of itself (hang risk): $LOOP_OUT" ;;
+esac
+
+# A requirements.toml we did NOT write (a site's real Codex policy) must be
+# left untouched, with a warning — never bricked. Same call the non-JSON
+# managed-settings path makes.
+FOREIGN_PREFIX="$(mktemp -d)"
+register_cleanup "$FOREIGN_PREFIX"
+mkdir -p "$FOREIGN_PREFIX/etc/codex"
+FOREIGN_REQ="$FOREIGN_PREFIX/etc/codex/requirements.toml"
+printf '# ACME Corp Codex policy\nsandbox_mode = "read-only"\n' > "$FOREIGN_REQ"
+FOREIGN_BEFORE="$(cksum < "$FOREIGN_REQ")"
+CLAUDE_SANDBOX_SMOKE=1 INSTALL_PREFIX="$FOREIGN_PREFIX" INSTALL_USER_HOME="$(mktemp -d)" \
+    bash "$REPO_ROOT/.devcontainer/claude-sandbox/install.sh" >/dev/null 2>&1
+if [ "$(cksum < "$FOREIGN_REQ")" = "$FOREIGN_BEFORE" ]; then
+    pass
+else
+    fail "install clobbered a foreign /etc/codex/requirements.toml"
+fi
+
+# The gate serves codex with the same fail-closed contract: exit 2 blocks a
+# prompt (the one Codex event that can stop a turn before the model runs),
+# exit 0 when wrapped.
+echo '{}' | env -u IS_SANDBOX -u CLAUDE_CODE_REMOTE bash "$GATE_DEST" --agent codex >/dev/null 2>&1
+[ "$?" -eq 2 ] && pass || fail "gate did not fail-closed (exit 2) for an unwrapped codex"
+echo '{}' | env -u CLAUDE_CODE_REMOTE IS_SANDBOX=1 bash "$GATE_DEST" --agent codex >/dev/null 2>&1
+[ "$?" -eq 0 ] && pass || fail "gate did not pass (exit 0) for a wrapped codex"
+# The block message must name Codex, so a user knows which agent was stopped.
+# Captured, not piped: the suite runs under `pipefail`, and the gate's
+# deliberate exit 2 would otherwise decide the pipeline's status instead of
+# grep's.
+G_MSG="$(echo '{}' | env -u IS_SANDBOX -u CLAUDE_CODE_REMOTE bash "$GATE_DEST" --agent codex 2>&1 >/dev/null || true)"
+case "$G_MSG" in
+    *"Codex is running OUTSIDE"*) pass ;;
+    *) fail "gate's block message does not name Codex: $G_MSG" ;;
+esac
+# The SessionStart verifier must NOT emit Claude's JSON hook shape to codex —
+# codex would render it as literal text. stderr is the portable channel.
+V_OUT="$(env -u IS_SANDBOX -u CLAUDE_CODE_REMOTE bash "$VERIFY_DEST" --agent codex 2>/dev/null </dev/null)"
+if [ -z "$V_OUT" ]; then
+    pass
+else
+    fail "verifier wrote Claude-shaped JSON to stdout for codex: $V_OUT"
 fi
 
 finish smoke.sh

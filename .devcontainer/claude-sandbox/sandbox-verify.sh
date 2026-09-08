@@ -18,18 +18,34 @@
 # there.
 set -uo pipefail
 
+# Which agent invoked us. Claude Code reaches this hook through
+# managed-settings; the Codex CLI through /etc/codex/requirements.toml, which
+# passes `--agent codex`. Affects the LABEL and the OUTPUT SHAPE only — every
+# assertion below is identical for both, because the sandbox they run in is.
+AGENT=claude
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --agent) shift; case "${1:-}" in codex) AGENT=codex ;; esac ;;
+    esac
+    shift || break
+done
+if [ "$AGENT" = codex ]; then AGENT_LABEL=Codex; else AGENT_LABEL=Claude; fi
+
 # SessionStart delivers a JSON event on stdin. Drain it (only when stdin
 # is a pipe, not a tty) so the writer never blocks, then ignore it.
 [ -t 0 ] || cat >/dev/null 2>&1 || true
 
 [ "${CLAUDE_CODE_REMOTE:-}" = "true" ] && exit 0
 
-# emit: surface a message to the user (systemMessage) AND to Claude
-# (additionalContext). Uses jq for safe JSON when available; falls back
-# to stderr (which SessionStart shows to the user) if jq is missing.
+# emit: surface a message to the user AND to the agent. Claude Code consumes
+# a specific JSON shape on stdout (systemMessage + hookSpecificOutput), so we
+# keep emitting exactly that for claude. We do NOT guess an equivalent shape
+# for codex: unrecognised JSON on stdout would be shown to the user as literal
+# JSON, or dropped. stderr is surfaced for both, so codex takes that path —
+# less pretty, never wrong. jq-less hosts fall back to stderr too.
 emit() {
     local msg="$1" ctx="$2"
-    if command -v jq >/dev/null 2>&1; then
+    if [ "$AGENT" = claude ] && command -v jq >/dev/null 2>&1; then
         jq -nc --arg msg "$msg" --arg ctx "$ctx" \
             '{systemMessage:$msg, hookSpecificOutput:{hookEventName:"SessionStart", additionalContext:$ctx}}'
     else
@@ -37,13 +53,13 @@ emit() {
     fi
 }
 
-REINSTALL='Re-run claude-sandbox/install (the official Claude Code auto-updater can re-create ~/.local/bin/claude and silently bypass the shadow), then relaunch claude.'
+REINSTALL='Re-run claude-sandbox/install (a vendor auto-updater can re-create ~/.local/bin/<agent> and silently bypass the shadow), then relaunch the agent.'
 
 # The single load-bearing assertion: IS_SANDBOX=1 is set only by the
 # bwrap launcher. Unset == we are NOT inside the shadow.
 if [ "${IS_SANDBOX:-}" != "1" ]; then
     emit \
-        "⚠️  claude-sandbox: Claude is running OUTSIDE the bwrap shadow — host credentials, env vars and dotfiles are NOT isolated. ${REINSTALL}" \
+        "⚠️  claude-sandbox: ${AGENT_LABEL} is running OUTSIDE the bwrap shadow — host credentials, env vars and dotfiles are NOT isolated. ${REINSTALL}" \
         "SECURITY WARNING: IS_SANDBOX is not set, so this session is NOT inside the claude-sandbox bwrap jail. Host credentials are reachable. ${REINSTALL}"
     exit 0
 fi
@@ -56,6 +72,9 @@ problems=()
 [ -z "${GH_TOKEN:-}" ]                               || problems+=("GH_TOKEN leaked into the sandbox")
 [ -z "${GITHUB_TOKEN:-}" ]                           || problems+=("GITHUB_TOKEN leaked into the sandbox")
 [ -z "${ANTHROPIC_API_KEY:-}" ]                      || problems+=("ANTHROPIC_API_KEY leaked into the sandbox")
+# Checked for BOTH agents, not just codex: an OpenAI key on the host is a
+# credential the jail must not hand to any session, whichever agent is running.
+[ -z "${OPENAI_API_KEY:-}" ]                         || problems+=("OPENAI_API_KEY leaked into the sandbox")
 [ -z "${SSH_AUTH_SOCK:-}" ]                          || problems+=("SSH_AUTH_SOCK leaked into the sandbox")
 [ -z "${DISPLAY:-}" ]                                || problems+=("DISPLAY leaked into the sandbox")
 [ "${GIT_CONFIG_GLOBAL:-}" = "/etc/claude-gitconfig" ] || problems+=("GIT_CONFIG_GLOBAL is not /etc/claude-gitconfig")

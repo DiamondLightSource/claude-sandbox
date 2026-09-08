@@ -75,6 +75,7 @@ assert_contains scenario1 "$ARGV1" "/root"
 assert_contains scenario1 "$ARGV1" "USER"
 assert_contains scenario1 "$ARGV1" "root"
 assert_contains scenario1 "$ARGV1" "IS_SANDBOX"
+assert_pair scenario1 "$ARGV1" "IS_SANDBOX_AGENT" "claude"
 assert_contains scenario1 "$ARGV1" "GIT_CONFIG_GLOBAL"
 assert_contains scenario1 "$ARGV1" "/etc/claude-gitconfig"
 assert_contains scenario1 "$ARGV1" "GIT_CONFIG_SYSTEM"
@@ -561,5 +562,102 @@ assert_eq scenario13-search \
     "OVERRIDE:nameserver 192.0.2.53search a.example b.exampleoptions timeout:1" \
     "$(stage_dns_with | tr -d '\n')"
 rm -f "$FAKE_RESOLV"
+
+# --- Scenario 14: multi-agent profiles (claude + codex) ---
+# The shadow is installed under BOTH names and picks its profile from
+# argv[0]. These assertions lock the two things that must differ (which
+# binary is exec'd, which $HOME paths carry the login) and the much longer
+# list that must NOT (every isolation primitive).
+
+# 14a: argv[0] dispatch. detect_agent is the whole of the decision.
+assert_eq scenario14a-claude  claude "$(detect_agent /usr/local/bin/claude  '')"
+assert_eq scenario14a-codex   codex  "$(detect_agent /usr/local/bin/codex   '')"
+# Anything unrecognised (a test runner's $0, a rename) falls back to claude.
+assert_eq scenario14a-default claude "$(detect_agent /tmp/bwrap_argv.sh     '')"
+# The override wins, but only for names in the closed set.
+assert_eq scenario14a-override codex "$(detect_agent /usr/local/bin/claude  codex)"
+if detect_agent /usr/local/bin/claude "/bin/sh" >/dev/null 2>&1; then
+    fail "scenario14a — CLAUDE_SANDBOX_AGENT accepted an out-of-set value"
+else
+    pass
+fi
+
+# 14b: the codex profile binds ~/.codex and execs the codex binary.
+CODEXHOME="$(mktemp -d)"
+register_cleanup "$CODEXHOME"
+mkdir -p "$CODEXHOME/.codex" "$CODEXHOME/.claude" "$CODEXHOME/.cache"
+touch "$CODEXHOME/.claude.json"
+# agent_profile mutates globals; the claude profile is restored at the end
+# of the scenario so later scenarios keep the default contract.
+agent_profile codex
+ARGV14="$(HOME="$CODEXHOME" CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
+    bwrap_argv_build "$CODEXHOME" "$AGENT_REAL")"
+
+# Codex is exec'd IN PLACE from its root-owned /usr/libexec package, which is
+# already visible via --ro-bind / /. Two things follow, and both are the point:
+#   - no bind-back, so the package's internal layout (ripgrep, its own
+#     bwrap/zsh helpers) stays intact next to the binary;
+#   - the binary we exec is READ-ONLY in the session, so an in-session
+#     self-update cannot rewrite it — unlike Claude's rw bind-back.
+assert_contains scenario14b "$ARGV14" "/usr/libexec/claude-sandbox/codex-dist/bin/codex"
+assert_not_contains scenario14b "$ARGV14" "$CODEXHOME/.local/bin/codex"
+assert_contains scenario14b "$ARGV14" "$CODEXHOME/.codex"
+# Claude's login state is NOT bound into a codex session, and vice versa:
+# each agent sees only its own credentials.
+assert_not_contains scenario14b "$ARGV14" "$CODEXHOME/.claude"
+assert_not_contains scenario14b "$ARGV14" "$CODEXHOME/.claude.json"
+assert_not_contains scenario14b "$ARGV14" "$CODEXHOME/.local/bin/claude"
+# --no-chrome is Claude-only; injecting it would abort codex.
+assert_not_contains scenario14b "$ARGV14" "--no-chrome"
+# Shared, non-agent-specific binds still apply.
+assert_contains scenario14b "$ARGV14" "$CODEXHOME/.cache"
+# The vendor unpacks the codex binary INSIDE ~/.codex (which is bound rw), so
+# a writable copy of the agent's own binary would otherwise sit in its own
+# session. It must be tmpfs-masked, and the mask must come AFTER the bind it
+# covers — bwrap applies argv in order, so a mask hoisted above the bind would
+# be silently lifted by it.
+assert_contains scenario14b "$ARGV14" "$CODEXHOME/.codex/packages"
+assert_order scenario14b "$ARGV14" "$CODEXHOME/.codex" "$CODEXHOME/.codex/packages"
+
+# 14c: every isolation primitive is identical to the claude path — the
+# whole reason this is one file and not two.
+for tok in --ro-bind --dev --tmpfs --cap-drop ALL --unshare-user-try \
+           --unshare-pid --unshare-ipc --unshare-uts --unshare-cgroup-try \
+           --die-with-parent --clearenv; do
+    assert_contains scenario14c "$ARGV14" "$tok"
+done
+assert_contains scenario14c "$ARGV14" "IS_SANDBOX"
+assert_contains scenario14c "$ARGV14" "GIT_CONFIG_GLOBAL"
+# The in-sandbox verifier needs to know whose session it is: check 03
+# asserts the EXACT contents of $HOME, and the expected set is per-agent.
+assert_pair scenario14c "$ARGV14" "IS_SANDBOX_AGENT" "codex"
+# Must NOT be the CLAUDE_SANDBOX_AGENT override: a nested `claude` spawned
+# inside a codex session would then re-dispatch itself to codex.
+assert_not_contains scenario14c "$ARGV14" "CLAUDE_SANDBOX_AGENT"
+assert_not_contains scenario14c "$ARGV14" "--new-session"
+agent_profile claude
+
+# 14d: CODEX_HOME can never be forwarded by pass-env — it would point
+# Codex's config + auth.json at an unbound tmpfs path and lose the login.
+ARGV14D="$(HOME=/root CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
+    CODEX_HOME=/tmp/evil CLAUDE_SANDBOX_AGENT=codex \
+    CLAUDE_SANDBOX_PASS_ENV="CODEX_HOME,CLAUDE_SANDBOX_AGENT" \
+    bwrap_argv_build /workspaces/foo /usr/libexec/claude-sandbox/codex)"
+assert_not_contains scenario14d "$ARGV14D" "CODEX_HOME"
+assert_not_contains scenario14d "$ARGV14D" "/tmp/evil"
+
+# 14e: nor can IS_SANDBOX_AGENT. It is emitted ABOVE the pass-env loop and a
+# later --setenv of the same name wins, so forwarding it would let the conf
+# overwrite the sandbox's own value — and it is what battery check 03 reads to
+# decide WHICH agent's config dir may legitimately sit under $HOME. Forge it
+# and check 03 stops noticing the OTHER agent's credentials in the session.
+# Blocked for exactly the reason IS_SANDBOX is.
+ARGV14E="$(HOME=/root CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
+    IS_SANDBOX_AGENT=codex \
+    CLAUDE_SANDBOX_PASS_ENV="IS_SANDBOX_AGENT" \
+    bwrap_argv_build /workspaces/foo /usr/libexec/claude-sandbox/claude)"
+# Exactly one --setenv for it, carrying the sandbox's own value (claude).
+assert_eq scenario14e-once 1 "$(grep -cx 'IS_SANDBOX_AGENT' <<<"$ARGV14E")"
+assert_pair scenario14e "$ARGV14E" "IS_SANDBOX_AGENT" "claude"
 
 finish bwrap_argv.sh

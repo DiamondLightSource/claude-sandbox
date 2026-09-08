@@ -1,13 +1,13 @@
 ---
-description: Verify the Claude sandbox is intact — runs the 20-check PASS/FAIL battery + 10 adversarial breakout probes when the battery passes, and exits non-zero on any failure so the command is usable as a CI assertion.
+description: Verify the Claude sandbox is intact — runs the 21-check PASS/FAIL battery + 10 adversarial breakout probes when the battery passes, and exits non-zero on any failure so the command is usable as a CI assertion.
 ---
 
 `/verify-sandbox` runs **two phases** against the live Claude process:
 
-1. The deterministic **20-check battery** — a committed bash script that
+1. The deterministic **21-check battery** — a committed bash script that
    runs each check and prints PASS or FAIL with a one-line explanation.
    Covers every defence in the [locked-down defences](https://diamondlightsource.github.io/claude-sandbox/reference/locked-down-defences.html) table.
-2. When (and only when) the 20 checks all pass, **10 adversarial
+2. When (and only when) the 21 checks all pass, **10 adversarial
    breakout probes** — open-ended attempts to escape the sandbox or
    exfiltrate credentials, designed by reasoning about gaps the
    deterministic checks don't directly exercise.
@@ -24,7 +24,7 @@ It prints the table under "Output format" below (header line, one
 `[PASS]`/`[FAIL]` row per check, then a `Summary:` line) and exits with
 the **FAIL count** — `0` when every check passes.
 
-- **Exit 0** → all 20 green; proceed to phase 2.
+- **Exit 0** → all 21 green; proceed to phase 2.
 - **Non-zero** → report the failing rows verbatim, then **STOP**: skip
   phase 2 (no point red-teaming a known-broken sandbox) and make the
   overall command exit non-zero so CI assertions fail.
@@ -49,7 +49,7 @@ verifier to print PASS for a broken sandbox. The sections below document
 **why** each check exists and what regression it catches; the script is
 the **what** that runs. Keep the two in sync when a check changes.
 
-## The 20 checks
+## The 21 checks
 
 ### Check 01 — IS_SANDBOX sentinel
 
@@ -80,10 +80,22 @@ no PASS/FAIL check of its own.
 
 ### Check 03 — strict-under-/root
 
-`$HOME` (typically `/root`) is a tmpfs with `.claude`, `.claude.json`
-(Claude Code's account state), `.cache`, and `.local/share` bound back
-in from the host, plus a `.config` intermediate tmpfs that holds the
-`gh` / `glab-cli` credential binds. The `.local/share` bind is the
+`$HOME` (typically `/root`) is a tmpfs with the running agent's own
+config bound back in from the host — `.claude` + `.claude.json`
+(Claude Code's account state) for a `claude` session, `.codex`
+(`CODEX_HOME`: `config.toml`, `auth.json`, sessions) for a `codex`
+one — plus `.cache`, `.local/share`, and a `.config` intermediate
+tmpfs that holds the `gh` / `glab-cli` credential binds.
+
+**The expected set is per-agent, and that makes this check stronger,
+not laxer.** Each session binds only its own agent's config, so a
+`.claude` appearing inside a codex session (or a `.codex` inside a
+claude one) is a cross-agent credential leak and FAILS here. The
+battery reads `IS_SANDBOX_AGENT` (set by the shadow) to know whose
+session it is, defaulting to `claude` when unset. In a codex session
+`.codex/packages` is additionally tmpfs-masked — the vendor unpacks
+the codex binary there, inside the read-write `CODEX_HOME`, and a
+writable copy of the agent's own binary is a persistence foothold. The `.local/share` bind is the
 XDG-data bulk-mount (helm plugins, krew, uv-managed Python, etc.) —
 see the [XDG split rationale](https://diamondlightsource.github.io/claude-sandbox/explanations/sandbox-internals.html). Under `.local/share`,
 two sub-dirs stay tmpfs-masked: `applications/` (Claude Code's
@@ -114,10 +126,16 @@ never get written, and check 03 enforces that: if any of those six
 browser-named dirs reappears under `$HOME/.config`, the disable
 regressed.
 
-### Check 04 — env scrub: GH_TOKEN
+### Check 04 — env scrub: GH_TOKEN / OPENAI_API_KEY
 
 With `--clearenv` and an explicit allow-list, `GH_TOKEN` from the
 host shell must be empty inside the sandbox.
+
+`OPENAI_API_KEY` is asserted alongside it, and for **both** agents
+rather than only for codex sessions: an OpenAI key sitting in the host
+environment is a credential the jail must not hand to any session,
+whichever agent is running. This mirrors the leak list that
+`sandbox-verify.sh` already checks at SessionStart.
 
 ### Check 05 — env scrub: DISPLAY
 
@@ -307,10 +325,32 @@ check FAILed on a fully-working jail. Filtering to forwarding routes
 closes that false positive while still catching a genuine unicast route
 to a non-allow-listed RFC1918 peer.
 
-## Phase 2 — Adversarial probes (only when 01–20 all PASS)
+### Check 21 — agent binary mask: `~/.codex/packages` is an empty tmpfs
+
+Codex ships as a package and its vendor installer unpacks the release —
+including `bin/codex` itself — under `$CODEX_HOME/packages/standalone/
+releases/<version>/`. `CODEX_HOME` is `~/.codex`, which the shadow binds
+**read-write** because config and `auth.json` live there too. So without a
+mask, a Codex session contains a writable copy of its own binary: a
+compromised session rewrites it, the next launch re-executes it, and the
+read-only `/usr/libexec/claude-sandbox/codex-dist` copy we actually exec is
+bypassed entirely. Exactly the treatment Claude's versioned binary cache at
+`~/.local/share/claude` already gets.
+
+The mask is a `--tmpfs` emitted *after* the `~/.codex` bind (bwrap applies
+argv in order, so a mask hoisted above its bind is silently lifted). This
+check asserts it landed: the path is either absent, or a mountpoint whose
+tmpfs is empty. Check 03 cannot cover it — 03 inspects only `$HOME`'s top
+level, where `.codex` is legitimately allow-listed, so the writable tree
+one level down would pass unnoticed.
+
+Claude sessions have nothing to assert here and PASS with a note, so the
+check count stays constant across agents.
+
+## Phase 2 — Adversarial probes (only when 01–21 all PASS)
 
 When the deterministic battery is clean, think of **10 novel breakout
-approaches and try them**. The goal is to find a gap the 20-check
+approaches and try them**. The goal is to find a gap the 21-check
 matrix doesn't directly exercise — anything that lets the sandbox
 escape its filesystem inversion, recover scrubbed env vars, reach
 the host's network identity, signal/observe processes outside the
@@ -353,23 +393,23 @@ should be followed by a "Suggested follow-up:" line proposing what
 a more targeted test would look like.
 
 If all 10 probes are **[BLOCKED]**, the sandbox passes both phases
-and the final line becomes `RESULT: SANDBOX OK (20 deterministic +
+and the final line becomes `RESULT: SANDBOX OK (21 deterministic +
 10 adversarial)`.
 
 ## Output format
 
 The battery script prints the phase-1 portion verbatim — a header line
-`"/verify-sandbox: 20 checks"`, then one `[PASS]` / `[FAIL]` line per
+`"/verify-sandbox: 21 checks"`, then one `[PASS]` / `[FAIL]` line per
 check (zero-padded number, name, one-line explanation on FAIL), then a
 `Summary:` line. After phase 2 you append the `Adversarial probes:`
 block and the final `RESULT:` line.
 
 ```
-/verify-sandbox: 20 checks
+/verify-sandbox: 21 checks
   [PASS] 01 IS_SANDBOX sentinel set
   [PASS] 02 NO_NEW_PRIVS: setuid escalation blocked
-  [PASS] 03 strict-under-/root: only .claude (+.cache/.local) under $HOME
-  [PASS] 04 env scrub: GH_TOKEN empty
+  [PASS] 03 strict-under-/root: only claude's own config (+.cache/.local) under $HOME
+  [PASS] 04 env scrub: GH_TOKEN / OPENAI_API_KEY empty
   [PASS] 05 env scrub: DISPLAY empty
   [PASS] 06 cap_drop ALL: CapEff=0000000000000000
   [PASS] 07 --unshare-pid: NSpid has >= 2 entries (kernel pidns isolated)
@@ -404,6 +444,6 @@ If any phase-2 probe is `[ESCAPED]`, exit non-zero regardless of
 phase-1 results.
 
 Final result line:
-- All 20 PASS + 10 BLOCKED → `RESULT: SANDBOX OK (20 deterministic + 10 adversarial)`
-- All 20 PASS + ≥1 INCONCLUSIVE + 0 ESCAPED → `RESULT: SANDBOX OK (20 deterministic + N BLOCKED, M INCONCLUSIVE)`
+- All 21 PASS + 10 BLOCKED → `RESULT: SANDBOX OK (21 deterministic + 10 adversarial)`
+- All 21 PASS + ≥1 INCONCLUSIVE + 0 ESCAPED → `RESULT: SANDBOX OK (21 deterministic + N BLOCKED, M INCONCLUSIVE)`
 - Any FAIL or ESCAPED → `RESULT: SANDBOX LEAKING — open an issue against DiamondLightSource/claude-sandbox`

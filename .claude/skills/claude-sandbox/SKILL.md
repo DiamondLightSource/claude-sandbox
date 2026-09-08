@@ -13,7 +13,7 @@ model: [threat model](https://diamondlightsource.github.io/claude-sandbox/explan
 script `.devcontainer/claude-sandbox/verify-sandbox-battery.sh`, run by
 absolute path from `/usr/libexec/claude-sandbox`).
 
-**Why the 20-check battery is a committed script, not inline in the
+**Why the 21-check battery is a committed script, not inline in the
 command markdown** (refuse a "simplify it back inline" request): slash
 commands substitute `$1`…`$9` as positional args, so the awk field refs
 the checks need were silently blanked when injected from the .md —
@@ -25,13 +25,75 @@ places it via `install_guard_scripts`; the smoke test asserts
 placement/mode and that it runs-to-format-and-exits-nonzero outside a
 sandbox.
 
-## Invariant 1 — plain `claude` MUST resolve to the shadow
+## Invariant 0 — ONE shadow file, many agents, dispatching on `argv[0]`
+
+The sandbox wraps Claude Code **and** OpenAI's Codex CLI (the client
+for GPT-6 Astra). `install.sh` places the *same* `claude-shadow` at
+`/usr/local/bin/claude` and `/usr/local/bin/codex`; `detect_agent`
+picks the profile from the name it was invoked as, and
+`agent_profile` holds everything that differs — the real binary, the
+`$HOME` login paths, the injected flags (`--no-chrome` is Claude-only
+and would abort codex), and the per-agent `--setenv` list. See
+{ref}`ADR 18 <adr-multi-agent-shadow>`.
+
+**Refuse as regressions:**
+- A separate `codex-shadow` (or any per-agent copy of the bwrap argv
+  builder). Duplicating ~800 security-critical lines rebuilds exactly
+  the surface Reversal 1 walked back from, and the copies drift
+  silently — a hardening fix lands in one and quietly not the other.
+- Binding `~/.claude` into a codex session or `~/.codex` into a
+  claude one. Each agent sees only its own credentials; that
+  separation is the point.
+- Dropping the `~/.codex/packages` tmpfs mask, or moving it above
+  the `~/.codex` bind. The vendor unpacks the codex binary INSIDE
+  `CODEX_HOME`, so without the mask a compromised session has a
+  writable copy of its own binary to re-enter through.
+- Relocating `bin/codex` alone. Codex is a PACKAGE — the vendor's own
+  validity check requires `codex-package.json`, `bin/codex`,
+  `bin/codex-code-mode-host`, `codex-path/rg` (ripgrep) and
+  `codex-resources/bwrap` together — so `install.sh` copies the whole
+  release dir to `/usr/libexec/claude-sandbox/codex-dist/` (resolving
+  the vendor's symlink first; relocating the link relocates nothing)
+  and the shadow execs it IN PLACE, no bind-back. Don't "simplify"
+  that to a single-file bind: it strips codex of its search tool and
+  sandbox helpers, and it would make the exec'd binary rw in-session.
+- Removing `CODEX_NON_INTERACTIVE=1` or `TAR_OPTIONS=--no-same-owner`
+  from the vendor-installer invocation. The first prompts on
+  `/dev/tty` (piping to `sh` does NOT make it unattended); the second
+  is why tar fails under a rootless container — the tarball carries
+  uid/gid 1001 and tar-as-root cannot restore that ownership, so the
+  whole install aborts. Both were found the hard way.
+- Making `CLAUDE_SANDBOX_AGENT` accept anything outside the closed
+  `claude|codex` set, or letting it name a binary path.
+- Installing the `codex` shadow *conditionally* on the codex binary
+  being present. The shadow must own the name on `$PATH` before the
+  vendor's installer can claim it (Invariant 1 applies identically);
+  an unbacked shadow loud-fails, an unshadowed binary escapes.
+- Adding an agent by touching the argv builder rather than adding a
+  profile entry.
+
+Codex's guard is Invariant 5's twin, one tier over:
+`/etc/codex/requirements.toml` (hard, admin-only) carries the same
+two hooks; `/etc/codex/managed_config.toml` disables the update
+check. **Do not** set `allow_managed_hooks_only` — same call as
+`allowManagedHooksOnly`. TOML is *owned, not merged* (bash-only, no
+jq for TOML): a `requirements.toml` we did not write is left alone
+with a warning, never half-parsed.
+
+`tests/bwrap_argv.sh` scenario 14 and the codex block at the end of
+`tests/smoke.sh` guard all of this — including that the two installed
+shadows are byte-identical.
+
+## Invariant 1 — plain `claude` / `codex` MUST resolve to the shadow
 
 Anthropic's `curl install.sh` drops the real binary at
 `~/.local/bin/claude` AND prepends `$HOME/.local/bin` to the user's
 shell rc. After the next shell, `which claude` resolves past the
 bwrap shadow at `/usr/local/bin/claude` → **sandbox escape via
-plain `claude`**.
+plain `claude`**. OpenAI's `chatgpt.com/codex/install.sh` behaves the
+same way, so `install_codex_binary` performs the same relocation, to
+`/usr/libexec/claude-sandbox/codex-dist/bin/codex` (the whole release
+package, not a bare binary — see Invariant 0).
 
 `install_claude_binary` fixes this by relocating the real binary to
 `/usr/libexec/claude-sandbox/claude` (off the user's PATH). The
@@ -534,7 +596,8 @@ image/launcher topics. Touch the root `Dockerfile`, `container/*`, or
 
 | Concern                       | File                                                |
 |-------------------------------|-----------------------------------------------------|
-| bwrap argv construction       | `.devcontainer/claude-sandbox/claude-shadow`        |
+| bwrap argv construction + agent profiles | `.devcontainer/claude-sandbox/claude-shadow` (installed as BOTH `claude` and `codex`) |
+| Codex managed guard (`/etc/codex/*.toml`) | `wire_codex_managed` in `.devcontainer/claude-sandbox/install.sh` |
 | Installer (relocate + wire)   | `.devcontainer/claude-sandbox/install.sh`           |
 | Root-shim installer entry     | `install`                                           |
 | bwrap argv unit tests         | `tests/bwrap_argv.sh`                               |

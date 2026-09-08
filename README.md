@@ -75,7 +75,8 @@ each image records the launcher version it was tested with, and
 
 ## What you get
 
-- A shadow `claude` that wraps the real binary in `bwrap` (`--ro-bind / /`,
+- A shadow `claude` **and `codex`** — the same shadow file under both names,
+  dispatching on `argv[0]` — that wraps the real binary in `bwrap` (`--ro-bind / /`,
   `--tmpfs $HOME`, `--clearenv`, `--cap-drop ALL`, PID/IPC/UTS namespaces,
   TIOCSTI defence) so host credentials and IDE bridges are unreachable.
 - A per-process **egress jail** (ADR 0015, on by default) that runs Claude in
@@ -88,6 +89,12 @@ each image records the launcher version it was tested with, and
   if Claude is ever launched outside the shadow.
 - **Refusal-on-failure**: if the host can't run unprivileged user namespaces the
   installer refuses, rather than install a sandbox that isn't one.
+- **More than one agent**: OpenAI's Codex CLI (the client for GPT-6 Astra) gets
+  the same jail, the same egress allowlist and the same fail-closed guard —
+  delivered through Codex's own admin tier at `/etc/codex/requirements.toml`.
+  Each agent sees only its own credentials. Skip the download with
+  `WITH_CODEX=0 ./install`; the codex shadow and guard are installed regardless,
+  so an unwrapped `codex` can never quietly appear on `$PATH`.
 
 How and why it works: the [architecture overview][arch], the
 [threat model][threat], and the [network egress jail decision (ADR 0015)][jail].
