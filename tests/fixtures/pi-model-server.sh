@@ -16,13 +16,18 @@ if [[ "$request" != 'POST /v1/chat/completions '* ]]; then
     exit 0
 fi
 if jq -e 'any(.messages[]; .role == "tool")' <<< "$body" >/dev/null; then
+    jq '[.messages[] | select(.role == "tool")]' <<< "$body" > /tmp/pi-search-results.json
     jq -r '.messages[] | select(.role == "tool") | .content' <<< "$body" >&2
     delta='{"role":"assistant","content":"LOCAL_MODEL_OK"}'
     finish=stop
 else
     command='bash /usr/libexec/claude-sandbox/verify-sandbox-battery.sh > /work/battery && test ! -e "$HOME/.claude" && test ! -e "$HOME/.codex" && test ! -e /tmp/outer-only && ! touch /usr/libexec/claude-sandbox/pi-dist/write-probe && printf PI_TOOL_OK > /work/tool-proof'
     args="$(jq -nc --arg command "$command" '{command:$command}')"
-    delta="$(jq -nc --arg args "$args" '{role:"assistant",tool_calls:[{index:0,id:"call_1",type:"function",function:{name:"bash",arguments:$args}}]}')"
+    delta="$(jq -nc --arg args "$args" '{role:"assistant",tool_calls:[
+        {index:0,id:"call_find",type:"function",function:{name:"find",arguments:"{\"pattern\":\"search-fixture.txt\",\"path\":\"/work\"}"}},
+        {index:1,id:"call_grep",type:"function",function:{name:"grep",arguments:"{\"pattern\":\"SEARCH_TOOL_OK\",\"path\":\"/work/search-fixture.txt\"}"}},
+        {index:2,id:"call_1",type:"function",function:{name:"bash",arguments:$args}}
+    ]}')"
     finish=tool_calls
 fi
 chunk="$(jq -nc --argjson delta "$delta" --arg finish "$finish" '{id:"test",object:"chat.completion.chunk",created:0,model:"local-test",choices:[{index:0,delta:$delta,finish_reason:$finish}]}')"

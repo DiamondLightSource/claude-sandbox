@@ -5,6 +5,12 @@ Code and Codex. The installer includes a pinned standalone release for Linux
 x64 and arm64. `WITH_PI=0 ./install` skips the download; the `pi` wrapper
 remains installed and reports that the binary is missing.
 
+The installer also provides `ripgrep` and `fd-find` (`fdfind` on Debian/Ubuntu),
+which Pi uses for searching. This avoids downloading and extracting those tools
+inside the sandbox on first launch. For an existing container showing search-tool
+download errors, run `apt-get update && apt-get install -y ripgrep fd-find` from
+a normal container terminal outside Pi, then restart Pi.
+
 ## Start Pi and choose a cloud provider
 
 From a normal devcontainer terminal, run `pi`. With the published image:

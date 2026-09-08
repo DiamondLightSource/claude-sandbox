@@ -94,7 +94,11 @@ apt_install() {
     # devcontainer.json runArg this installer cannot add (see claude-shadow's
     # netns_launch error message and claude-sandbox.conf).
     apt-get install -y -qq --no-install-recommends \
-        bubblewrap jq curl ca-certificates git nodejs gh passt socat iproute2
+        bubblewrap jq curl ca-certificates git nodejs gh passt socat iproute2 \
+        ripgrep fd-find
+    # Pi recognises Debian/Ubuntu's fdfind name directly. Installing its search
+    # tools here avoids first-run downloads whose tar ownership cannot be
+    # restored inside the sandbox's single-UID user namespace.
     # glab isn't in every Ubuntu repo; install-try.
     apt-get install -y -qq --no-install-recommends glab 2>/dev/null || true
 }

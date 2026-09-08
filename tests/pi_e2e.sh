@@ -3,6 +3,8 @@
 # The Container workflow runs this against the actual built image on both archs.
 set -euo pipefail
 test -x /usr/libexec/claude-sandbox/pi-dist/pi
+rg --version >/dev/null
+fdfind --version >/dev/null
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 tmp="$(mktemp -d)"
 server=""
@@ -12,6 +14,7 @@ cleanup() {
 }
 trap cleanup EXIT
 mkdir -p /work "$HOME/.pi/agent"
+printf 'SEARCH_TOOL_OK\n' > /work/search-fixture.txt
 git config --global user.name 'Pi integration test'
 git config --global user.email 'pi-test@example.invalid'
 touch /tmp/outer-only
@@ -28,11 +31,16 @@ export CLAUDE_SANDBOX_LOCAL_MODEL_PORT=1920
 # Avoid catalog/version traffic in this test. The production profile leaves
 # catalog refresh enabled so cloud logins can discover their available models.
 export PI_OFFLINE=1 CLAUDE_SANDBOX_PASS_ENV=PI_OFFLINE
-timeout 60 pi --provider lllm2 --model local-test --no-session \
+rc=0
+# Keep the terminal's foreground process group under podman -t. Plain timeout
+# creates a background group, so script(1)'s terminal setup stops on SIGTTOU.
+timeout --foreground 60 pi --provider lllm2 --model local-test --no-session --tools bash,find,grep \
     --no-extensions --no-skills --no-prompt-templates --no-themes \
-    -p 'Run the sandbox checks using your bash tool.' > "$tmp/output" 2>&1
+    -p 'Find and search the fixture, then run the sandbox checks using your bash tool.' > "$tmp/output" 2>&1 || rc=$?
 cat "$tmp/output"
+test "$rc" -eq 0
 cat /work/battery
 test "$(cat /work/tool-proof)" = PI_TOOL_OK
 grep -q LOCAL_MODEL_OK "$tmp/output"
+jq -e 'length == 3 and .[0].content == "search-fixture.txt" and (.[1].content | contains("SEARCH_TOOL_OK"))' /tmp/pi-search-results.json >/dev/null
 echo 'pi_e2e.sh: real Pi streamed a tool call through the jailed localhost relay; all sandbox checks passed'
