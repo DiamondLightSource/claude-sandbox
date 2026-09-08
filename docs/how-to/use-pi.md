@@ -60,55 +60,50 @@ devcontainer already uses `--net=host`. With the published-image launcher use
 `--host-net`; an ordinary bridge container's `127.0.0.1` refers to itself.
 The inner bwrap network jail remains enabled.
 
-1. Outside the sandbox, add this to `/etc/claude-sandbox.conf` in the
-   devcontainer. To retain it across rebuilds, also set it in the clone's
-   `.devcontainer/claude-sandbox.conf` used by the installer:
+With lllm2 running, start Pi:
 
-   ```ini
-   local-model-port = 1920
-   ```
+```bash
+pi --provider lllm2
+# Or run pi and select lllm2 in /model.
+# Published image:
+claude-container --host-net --agent pi
+```
 
-   For the published-image launcher, put the line in the host's
-   `~/.config/claude-sandbox.conf`, mounted read-only by the launcher.
-   Alternatively set `CLAUDE_SANDBOX_LOCAL_MODEL_PORT=1920` in the launching
-   terminal. An explicit `0` disables the relay and overrides the config file.
+The shipped `.devcontainer/claude-sandbox.conf` sets `local-model-port = 1920`.
+At each Pi launch, the helper queries `/v1/models` for the single loaded model
+and `/props` for its actual per-slot context allocation. It refreshes the
+`lllm2` entry in `~/.pi/agent/models.json`, preserving other providers and
+local credentials/compatibility overrides. Changing the model in lllm2 needs
+no manual model ID edit: restart Pi to discover it. Discovery does not change
+your selected cloud provider. If the server is unavailable, startup continues
+quietly and the existing model configuration is kept.
 
-2. Get the served model ID from a normal terminal sharing the server's
-   network namespace:
+If you change the model while Pi is open, run `!claude-sandbox pi-local`, then
+use `/model` to reload the configuration and select the new model. From an
+ordinary devcontainer terminal, the refresh command is `claude-sandbox pi-local`.
 
-   ```bash
-   curl --noproxy '*' -fsS http://127.0.0.1:1920/v1/models | jq -r '.data[].id'
-   ```
+For an existing container, set `local-model-port = 1920` in
+`/etc/claude-sandbox.conf` outside the sandbox. Set a different port there if
+needed, or `0` to disable both discovery and the relay. Retain changes across
+rebuilds in the clone's `.devcontainer/claude-sandbox.conf`. For the
+published-image launcher, use the host's `~/.config/claude-sandbox.conf`,
+mounted read-only by the launcher. The launching terminal's
+`CLAUDE_SANDBOX_LOCAL_MODEL_PORT` overrides the file. Restart Pi after changing
+the port. An explicit refresh outside Pi can use `claude-sandbox pi-local --port PORT`.
 
-3. Configure Pi with that ID and the **actual context allocated in lllm2**.
-   For example, if the running model has 32768 tokens of context:
+For servers without llama.cpp's `/props` endpoint, configure manually:
 
-   ```bash
-   claude-sandbox pi-local 'MODEL_ID_FROM_ABOVE' 32768
-   ```
+```bash
+claude-sandbox pi-local 'MODEL_ID' 32768 1920
+```
 
-   Run this in the devcontainer or in Pi's shell (`!claude-sandbox pi-local …`).
-   It adds/replaces only the `lllm2` provider in `~/.pi/agent/models.json`,
-   preserving other providers. A third argument selects a different port; it
-   must match `local-model-port`. Re-run after changing the served model ID or
-   context allocation. Other OpenAI-compatible servers can use this command,
-   or Pi's [custom model configuration](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/models.md).
+Supply the actual allocated context and matching relay port. See also Pi's
+[custom model configuration](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/models.md).
+Small contexts may require adjusting Pi's compaction settings; allow room for
+tools, instructions and replies. Tool calling depends on the model and chat
+template; validate an actual file edit or shell tool call with your model.
 
-4. Start a new Pi session, then select `lllm2` in `/model`:
-
-   ```bash
-   pi
-   # Published image:
-   claude-container --host-net --agent pi
-   ```
-
-   `/model` switches between configured local and cloud models and reloads
-   `models.json`. Small context allocations may require adjusting Pi's
-   compaction settings; allow room for tools, instructions and replies.
-   Tool calling depends on the model and chat template; validate an actual
-   file edit or shell tool call with your model.
-
-The relay is opt-in, applies only to Pi, and exposes exactly one TCP port from
+The relay applies only to Pi and exposes exactly one TCP port from
 the outer container's IPv4 loopback to the same port on Pi's loopback. It uses
 a private Unix socket between two `socat` processes; it adds no LAN route and
 does not expose other localhost ports or the workbench UI. Relay listeners and

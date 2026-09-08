@@ -21,8 +21,9 @@ Commands:
   update                Clone and install the latest claude-sandbox release
   verify [--agent NAME] Launch a sandboxed session running the integrity battery
                         (NAME: claude, the default, codex, or pi)
+  pi-local [--port PORT] Discover the running lllm2 model and context (port 1920)
   pi-local MODEL CONTEXT [PORT]
-                        Configure Pi's lllm2 provider (PORT defaults to 1920)
+                        Configure Pi's lllm2 provider manually
   version               Show the installed claude-sandbox version
   help                  Show this help
 EOF
@@ -183,18 +184,31 @@ cmd_verify() {
     exec claude "$VERIFY_PROMPT"
 }
 
-# Explicit configuration command: preserve other providers and refuse malformed
-# JSON. Context is supplied by the operator from the running server's settings;
-# a model's training context is not its actual allocated llama.cpp context.
+# Discover lllm2's single loaded model and actual per-slot context. The manual
+# form remains available for servers without llama.cpp's /props endpoint.
 cmd_pi_local() (
-    if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
-        echo 'Usage: claude-sandbox pi-local MODEL CONTEXT [PORT]' >&2
+    local model="" context="" port="${CLAUDE_SANDBOX_LOCAL_MODEL_PORT:-1920}" discover=false dir file tmp
+    case "$#" in
+        0) discover=true ;;
+        2) if [ "$1" = --port ]; then port="$2"; discover=true; else model="$1"; context="$2"; fi ;;
+        3) model="$1"; context="$2"; port="$3" ;;
+        *) echo 'Usage: claude-sandbox pi-local [--port PORT] or pi-local MODEL CONTEXT [PORT]' >&2; exit 2 ;;
+    esac
+    if ! [[ "$port" =~ ^[1-9][0-9]{0,4}$ ]] || (( port > 65535 )); then
+        echo 'claude-sandbox: local model port must be 1–65535.' >&2
         exit 2
     fi
-    local model="$1" context="$2" port="${3:-1920}" dir file tmp
-    if [ -z "$model" ] || ! [[ "$context" =~ ^[1-9][0-9]{3,6}$ ]] \
-        || ! [[ "$port" =~ ^[1-9][0-9]{0,4}$ ]] || (( port > 65535 )); then
-        echo 'claude-sandbox: supply a model ID, context of 1000–9999999 tokens, and port 1–65535.' >&2
+    if "$discover"; then
+        if ! model="$(curl --noproxy '*' -fs --connect-timeout 1 --max-time 3 "http://127.0.0.1:$port/v1/models" \
+            | jq -er '.data | select(length == 1) | .[0].id | select(type == "string" and length > 0)')" \
+            || ! context="$(curl --noproxy '*' -fs --connect-timeout 1 --max-time 3 "http://127.0.0.1:$port/props" \
+            | jq -er '.default_generation_settings.n_ctx | select(type == "number" and . == floor)')"; then
+            echo "claude-sandbox: could not discover one loaded model and its context on port $port; existing Pi configuration kept. Start a model in lllm2, or use pi-local MODEL CONTEXT [PORT]." >&2
+            exit 1
+        fi
+    fi
+    if [ -z "$model" ] || ! [[ "$context" =~ ^[1-9][0-9]{2,6}$ ]] || (( context < 512 )); then
+        echo 'claude-sandbox: supply a model ID and context of 512–9999999 tokens.' >&2
         exit 2
     fi
     umask 077
@@ -211,17 +225,19 @@ cmd_pi_local() (
     fi
     local result
     result="$(jq --arg model "$model" --argjson context "$context" --arg port "$port" '
-        .providers.lllm2 = {
+        .providers.lllm2 = ((.providers.lllm2 // {}) + {
             baseUrl: ("http://127.0.0.1:" + $port + "/v1"),
-            api: "openai-completions", apiKey: "local",
-            compat: {supportsDeveloperRole: false, supportsReasoningEffort: false},
-            models: [{id: $model, name: ("Local (lllm2): " + $model),
+            api: "openai-completions", apiKey: (.providers.lllm2.apiKey // "local"),
+            compat: ({supportsDeveloperRole: false, supportsReasoningEffort: false} + (.providers.lllm2.compat // {})),
+            models: [((.providers.lllm2.models // [] | map(select(.id == $model)) | first) // {}) +
+                     {id: $model, name: ("Local (lllm2): " + $model),
                       contextWindow: $context, maxTokens: ([$context / 4 | floor, 4096] | min)}]
-        }' "$file")"
+        })' "$file")"
     printf '%s\n' "$result" > "$tmp"
     mv "$tmp" "$dir/models.json"
     echo "Configured Pi's lllm2 provider at http://127.0.0.1:$port/v1."
-    echo "Enable local-model-port = $port in /etc/claude-sandbox.conf outside the sandbox, then launch pi and select /model."
+    echo "Select lllm2 in Pi's /model picker, or launch pi --provider lllm2."
+    echo "The relay setting in /etc/claude-sandbox.conf must match port $port (shipped default: 1920)."
 )
 
 cmd_version() {

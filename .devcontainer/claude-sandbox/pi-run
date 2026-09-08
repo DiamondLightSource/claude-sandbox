@@ -14,4 +14,10 @@ fi
 bash /usr/libexec/claude-sandbox/sandbox-verify.sh --agent pi </dev/null
 export PI_CODING_AGENT_DIR="$HOME/.pi/agent"
 export PI_SKIP_VERSION_CHECK=1
+# Refresh the local provider at each launch so switching models in lllm2 does
+# not leave Pi using an old model ID or context size. Offline servers must not
+# prevent a cloud session from starting, and failed discovery preserves config.
+if [ "${CLAUDE_SANDBOX_LOCAL_MODEL_PORT:-0}" != 0 ]; then
+    claude-sandbox pi-local --port "$CLAUDE_SANDBOX_LOCAL_MODEL_PORT" >/dev/null 2>&1 || true
+fi
 exec "$real" "$@"

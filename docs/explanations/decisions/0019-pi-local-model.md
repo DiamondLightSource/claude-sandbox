@@ -27,12 +27,16 @@ installer re-run, as with Claude and Codex. `PI_VERSION` optionally pins a
 release. Devcontainers install during `postCreate`; the separate published
 image installs at image build time.
 Bind and persist only Pi's store for Pi sessions. Use Pi's own authentication
-and model picker, and provide a helper to configure lllm2 without guessing its
-allocated context window. A fixed Bash launcher checks the sandbox markers
+and model picker. At Pi startup, query lllm2's `/v1/models` and `/props` through
+the relay to refresh the model ID and actual per-slot context window in Pi's
+local provider. Failed discovery preserves existing configuration and does not
+prevent cloud sessions. Keep a manual helper for other compatible servers.
+A fixed Bash launcher checks the sandbox markers
 before starting Pi; it is a launch guard, not a managed per-prompt hook.
 
 Add `local-model-port` in the operator-controlled sandbox configuration,
-disabled by default and used only for Pi. A host-side `socat` forwards a private
+set to `1920` in the shipped file and used only for Pi; `0` disables the relay
+and discovery. A host-side `socat` forwards a private
 Unix socket to the configured port on `127.0.0.1`. A second `socat` in the
 holder's network namespace forwards a loopback listener to that socket. bwrap
 masks the host socket under `/tmp`; both relays remain outside the agent's PID

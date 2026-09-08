@@ -11,10 +11,23 @@ while IFS= read -r header; do
 done
 body=""
 if (( length > 0 )); then IFS= read -r -N "$length" body; fi
+model="$(cat /tmp/pi-model-id)"
+context="$(cat /tmp/pi-model-context)"
+case "$request" in
+    'GET /v1/models '*)
+        printf 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n'
+        jq -nc --arg model "$model" '{data:[{id:$model}]}'
+        exit 0 ;;
+    'GET /props '*)
+        printf 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n'
+        jq -nc --argjson context "$context" '{default_generation_settings:{n_ctx:$context}}'
+        exit 0 ;;
+esac
 if [[ "$request" != 'POST /v1/chat/completions '* ]]; then
     printf 'HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
     exit 0
 fi
+jq -e --arg model "$model" '.model == $model' <<< "$body" >/dev/null
 if jq -e 'any(.messages[]; .role == "tool")' <<< "$body" >/dev/null; then
     jq '[.messages[] | select(.role == "tool")]' <<< "$body" > /tmp/pi-search-results.json
     jq -r '.messages[] | select(.role == "tool") | .content' <<< "$body" >&2
@@ -30,6 +43,6 @@ else
     ]}')"
     finish=tool_calls
 fi
-chunk="$(jq -nc --argjson delta "$delta" --arg finish "$finish" '{id:"test",object:"chat.completion.chunk",created:0,model:"local-test",choices:[{index:0,delta:$delta,finish_reason:$finish}]}')"
+chunk="$(jq -nc --argjson delta "$delta" --arg finish "$finish" --arg model "$model" '{id:"test",object:"chat.completion.chunk",created:0,model:$model,choices:[{index:0,delta:$delta,finish_reason:$finish}]}')"
 printf 'HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n'
 printf 'data: %s\n\ndata: [DONE]\n\n' "$chunk"

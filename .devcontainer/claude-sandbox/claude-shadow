@@ -446,6 +446,10 @@ bwrap_argv_build() {
     # that variable is detect_agent's override, and a nested `claude` spawned
     # inside a codex session would then re-dispatch to codex.
     argv+=( --setenv IS_SANDBOX_AGENT "$AGENT" )
+    # Discovery runs inside the jail, through the explicitly enabled relay.
+    if local_model_enabled; then
+        argv+=( --setenv CLAUDE_SANDBOX_LOCAL_MODEL_PORT "$CLAUDE_SANDBOX_LOCAL_MODEL_PORT" )
+    fi
     argv+=( --setenv GIT_CONFIG_GLOBAL "$gitconfig_path" )
     argv+=( --setenv GIT_CONFIG_SYSTEM "/dev/null" )
     # Per-agent env the sandbox sets for itself (agent_profile's AGENT_SETENV,
@@ -769,7 +773,7 @@ netns_holder() {
     fi
 }
 
-# Only Pi sessions may opt in. No destination strings reach socat: the host
+# Only Pi sessions may enable the relay. No destination strings reach socat: the host
 # target is always IPv4 loopback and the port is validated before any launch.
 local_model_enabled() {
     [ "${AGENT:-}" = pi ] && [ "${CLAUDE_SANDBOX_LOCAL_MODEL_PORT:-0}" != 0 ]

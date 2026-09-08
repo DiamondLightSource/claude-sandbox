@@ -35,10 +35,14 @@ for agent in claude codex; do
 done
 agent_profile pi
 unset CLAUDE_SANDBOX_LOCAL_MODEL_PORT
-if local_model_enabled; then fail 'relay enabled by default'; else pass; fi
+if local_model_enabled; then fail 'relay enabled without configuration'; else pass; fi
+parse_config "$REPO_ROOT/.devcontainer/claude-sandbox.conf"
+assert_eq shipped-relay-port 1920 "$CLAUDE_SANDBOX_LOCAL_MODEL_PORT"
+argv="$(bwrap_argv_build /repo "$AGENT_REAL")"
+assert_pair discovery-port "$argv" CLAUDE_SANDBOX_LOCAL_MODEL_PORT 1920
 printf 'local-model-port = 1920\n' > "$tmp/conf"
 parse_config "$tmp/conf"
-assert_parse relay-opt-in local_model_enabled
+assert_parse relay-configured local_model_enabled
 assert_parse valid-port validate_local_model_port
 export CLAUDE_SANDBOX_LOCAL_MODEL_PORT=0
 parse_config "$tmp/conf"
@@ -48,6 +52,7 @@ for port in -1 65536 '1920,fork' localhost:1920 01920 99999999999999999999; do
         fail "accepted invalid relay port: $port"
     else pass; fi
 done
+unset CLAUDE_SANDBOX_LOCAL_MODEL_PORT
 
 cli="$REPO_ROOT/.devcontainer/claude-sandbox/claude-sandbox"
 printf '{"providers":{"other":{"apiKey":"preserve"}}}\n' > "$HOME/.pi/agent/models.json"
@@ -62,6 +67,43 @@ assert_eq invalid-config-preserved 'broken JSON' "$(cat "$HOME/.pi/agent/models.
 rm "$HOME/.pi/agent/models.json"
 bash "$cli" pi-local first-run 32768 >/dev/null
 jq_check first-run '.providers.lllm2.models[0].id == "first-run"' "$HOME/.pi/agent/models.json"
+
+# Deterministic discovery responses; real HTTP and startup are covered by pi_e2e.
+curl() {
+    printf '%s\n' "${@: -1}" >> "$PI_TEST_HTTP/calls"
+    case "${@: -1}" in
+        */v1/models) cat "$PI_TEST_HTTP/models" ;;
+        */props) cat "$PI_TEST_HTTP/props" ;;
+        *) return 1 ;;
+    esac
+}
+export -f curl
+export PI_TEST_HTTP="$tmp"
+printf '{"data":[{"id":"discovered"}]}\n' > "$tmp/models"
+printf '{"default_generation_settings":{"n_ctx":65536}}\n' > "$tmp/props"
+bash "$cli" pi-local >/dev/null
+jq_check discovered '.providers.lllm2.models[0].id == "discovered" and .providers.lllm2.models[0].contextWindow == 65536' "$HOME/.pi/agent/models.json"
+# Preserve user credentials/compatibility overrides and unrelated providers.
+jq '.providers.lllm2.apiKey = "custom" | .providers.lllm2.compat.supportsDeveloperRole = true | .providers.other = {apiKey:"keep"}' "$HOME/.pi/agent/models.json" > "$tmp/custom"
+cp "$tmp/custom" "$HOME/.pi/agent/models.json"
+printf '{"data":[{"id":"changed"}]}\n' > "$tmp/models"
+bash "$cli" pi-local --port 8080 >/dev/null
+jq_check rediscovered '.providers.lllm2.models | length == 1' "$HOME/.pi/agent/models.json"
+jq_check preserved '.providers.lllm2.models[0].id == "changed" and .providers.lllm2.baseUrl == "http://127.0.0.1:8080/v1" and .providers.lllm2.apiKey == "custom" and .providers.lllm2.compat.supportsDeveloperRole and .providers.other.apiKey == "keep"' "$HOME/.pi/agent/models.json"
+assert_contains discovery-custom-port "$(cat "$tmp/calls")" http://127.0.0.1:8080/props
+cp "$HOME/.pi/agent/models.json" "$tmp/before"
+for response in '{"data":[]}' '{"data":[{"id":"a"},{"id":"b"}]}' 'broken JSON'; do
+    printf '%s\n' "$response" > "$tmp/models"
+    if bash "$cli" pi-local >/dev/null 2>&1; then fail 'accepted unavailable/ambiguous model'; else pass; fi
+    assert_parse discovery-failure-preserves cmp -s "$tmp/before" "$HOME/.pi/agent/models.json"
+done
+printf '{"data":[{"id":"changed"}]}\n' > "$tmp/models"
+for response in '{}' '{"default_generation_settings":{"n_ctx":12.5}}' '{"default_generation_settings":{"n_ctx":0}}'; do
+    printf '%s\n' "$response" > "$tmp/props"
+    if bash "$cli" pi-local >/dev/null 2>&1; then fail 'accepted invalid context'; else pass; fi
+    assert_parse context-failure-preserves cmp -s "$tmp/before" "$HOME/.pi/agent/models.json"
+done
+unset -f curl
 
 rc=0
 env -u IS_SANDBOX -u IS_SANDBOX_AGENT bash "$REPO_ROOT/.devcontainer/claude-sandbox/pi-run" >/dev/null 2>&1 || rc=$?
