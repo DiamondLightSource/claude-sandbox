@@ -504,6 +504,23 @@ Verified against glab 1.36 / gh 2.45 while fixing #11-adjacent breakage:
   for the *real* login writes their token to a throwaway dir and the sandbox
   never sees it (happened).
 
+**GitLab token scoping** — GitLab has **no fine-grained-PAT equivalent
+covering a chosen SET of repos**. The options are one project (project access
+token), one group (group access token), or everything you can see (personal
+token). Don't describe a GitLab PAT as "fine-grained": it isn't, and the
+wording oversells the isolation.
+
+`cmd_glab_auth` therefore reads the CWD's `origin` remote
+(`_git_remote_hostpath`) and links to that project's own
+`/-/settings/access_tokens` page, warning and falling back to the
+instance-wide personal page when the folder is not a project on the target
+host. Recommend **role Developer + scope `api`**: `api` alone covers git over
+HTTPS (`read_repository`/`write_repository` add nothing beside it), and the
+*role* is what stops the token changing project settings or reading CI/CD
+variables. Parsing is covered by `tests/cli_remote_url.sh`, which sources the
+CLI via its source guard and shadows `git` — misparsing is silent and sends
+users to mint a credential for the wrong project.
+
 ## Running the test suites from inside a jailed session
 
 `tests/smoke.sh` run as-is inside a jailed claude cascade-fails ~21

@@ -17,7 +17,9 @@ Usage: claude-sandbox <command> [args]
 
 Commands:
   gh-auth               Authenticate gh with a GitHub PAT (kept out of shell history)
-  glab-auth [hostname]  Authenticate glab with a GitLab PAT (default hostname: gitlab.diamond.ac.uk)
+  glab-auth [hostname]  Authenticate glab with a GitLab token — run it from inside the
+                        checkout you want Claude to push to and it offers a project-scoped
+                        token (default hostname: gitlab.diamond.ac.uk)
   update                Clone and install the latest claude-sandbox release
   verify                Launch a sandboxed claude session running the integrity battery
   version               Show the installed claude-sandbox version
@@ -54,22 +56,100 @@ EOF
 
 # Authenticate glab CLI with a GitLab PAT (token not stored in shell history)
 # and pin the instance to HTTPS, so glab never drives git over SSH.
+# _git_remote_hostpath — print "<host>\t<group>/<project>" for the CWD's
+# `origin` remote. Handles https://, ssh:// and scp-like (git@host:path)
+# forms; strips any user@, :port and .git suffix. Silent and non-zero when
+# there is no repo, no `origin`, or the URL is not one of those shapes —
+# every caller treats that as "cannot scope to a project" and says so.
+_git_remote_hostpath() {
+    local url host path rest
+    url="$(git remote get-url origin 2>/dev/null)" || return 1
+    case "$url" in
+        *://*)
+            rest="${url#*://}"
+            rest="${rest#*@}"
+            # Bail before splitting: a URL with no path would otherwise
+            # yield host==path and produce a nonsense token page.
+            case "$rest" in */*) ;; *) return 1 ;; esac
+            host="${rest%%/*}"
+            host="${host%%:*}"
+            path="${rest#*/}"
+            ;;
+        *@*:*)
+            host="${url%%:*}"
+            host="${host##*@}"
+            path="${url#*:}"
+            ;;
+        *) return 1 ;;
+    esac
+    path="${path%.git}"
+    path="${path#/}"
+    path="${path%/}"
+    [ -n "$host" ] && [ -n "$path" ] || return 1
+    printf '%s\t%s\n' "$host" "$path"
+}
+
 cmd_glab_auth() {
-    local hostname="${1:-gitlab.diamond.ac.uk}" url t
-    # Derive the PAT page from the instance being authenticated. A hardcoded
-    # gitlab.com URL sends self-hosted users to the wrong site to mint a token
-    # that is then offered to a different instance.
-    url=$'\e[4;36m'"https://$hostname/-/user_settings/personal_access_tokens"$'\e[0m'
-    cat <<EOF
-Create or renew a fine-grained PAT at:
+    local hostname="${1:-gitlab.diamond.ac.uk}" url t hp rhost rpath
+    # Prefer a PROJECT access token scoped to the repo in this folder: it
+    # reaches only that project, so a leaked one cannot touch anything else
+    # the user can see. GitLab has no fine-grained-PAT equivalent covering a
+    # chosen SET of projects — it is one token per project, or a personal
+    # token covering everything — so the folder's own remote is the only
+    # signal we have about which project to scope to.
+    hp="$(_git_remote_hostpath || true)"
+    rhost="${hp%%$'\t'*}"
+    rpath="${hp#*$'\t'}"
+
+    if [ -n "$hp" ] && [ "$rhost" = "$hostname" ]; then
+        # Derive the page from the instance AND the project being worked on.
+        # A hardcoded gitlab.com URL sends self-hosted users to the wrong site
+        # to mint a token that is then offered to a different instance.
+        url=$'\e[4;36m'"https://$hostname/$rpath/-/settings/access_tokens"$'\e[0m'
+        cat <<EOF
+This folder's origin is $rpath on $hostname.
+
+Create or renew a PROJECT access token at:
   $url
 
-Recommended scopes for a sandboxed Claude Code:
-  - api, read_repository, write_repository
-  - Short expiration so a leaked token expires quickly
+Recommended settings for a sandboxed Claude Code:
+  - Role: Developer  — pushes unprotected branches and opens MRs; cannot
+                       change project settings or read CI/CD variables
+  - Scopes: api      — the only one needed; it covers git over HTTPS, so
+                       read_repository / write_repository add nothing
+  - Expiration: short (e.g. 30 days) so a leaked token expires quickly
+
+This token reaches ONLY this project, which is the point. Creating one
+needs Maintainer or Owner on the project.
 
 EOF
-    read -sp "GitLab PAT for $hostname: " t && echo
+    else
+        if [ -z "$hp" ]; then
+            echo "WARNING: this folder has no git 'origin' remote, so there is no"
+            echo "  project to scope a token to."
+        else
+            echo "WARNING: this folder's origin is $rpath on $rhost — not a"
+            echo "  $hostname project, so it has no $hostname token page."
+            if [ "$rhost" = "github.com" ]; then
+                echo "  For a github.com remote you want \`claude-sandbox gh-auth\` instead."
+            fi
+        fi
+        url=$'\e[4;36m'"https://$hostname/-/user_settings/personal_access_tokens"$'\e[0m'
+        cat <<EOF
+  Re-run this from inside a checkout of the $hostname project you want
+  Claude to reach and it will link you straight to that project's own
+  access-token page, which is the scoping you actually want.
+
+Falling back to a PERSONAL access token. It reaches EVERY project you can
+see on $hostname, so a leak is correspondingly worse:
+  $url
+
+If you must use one: scope \`api\`, and the shortest expiration you can
+tolerate.
+
+EOF
+    fi
+    read -sp "GitLab token for $hostname: " t && echo
     echo "$t" | glab auth login --stdin --hostname "$hostname"
     unset t
     # glab has no `auth login --git-protocol` flag (it does not exist in glab
@@ -148,16 +228,22 @@ cmd_version() {
     fi
 }
 
-case "${1:-help}" in
-    gh-auth)              shift; cmd_gh_auth "$@" ;;
-    glab-auth)            shift; cmd_glab_auth "$@" ;;
-    update)               shift; cmd_update "$@" ;;
-    verify)               shift; cmd_verify "$@" ;;
-    version|--version|-v) cmd_version ;;
-    help|-h|--help)       usage ;;
-    *)
-        echo "claude-sandbox: unknown command '$1'" >&2
-        usage >&2
-        exit 2
-        ;;
-esac
+# Source guard: tests source this file to exercise the pure helpers
+# (_git_remote_hostpath) without dispatching a command. Same pattern as
+# install.sh's, for the same reason — one implementation, no test copy of
+# the logic that can drift from it.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    case "${1:-help}" in
+        gh-auth)              shift; cmd_gh_auth "$@" ;;
+        glab-auth)            shift; cmd_glab_auth "$@" ;;
+        update)               shift; cmd_update "$@" ;;
+        verify)               shift; cmd_verify "$@" ;;
+        version|--version|-v) cmd_version ;;
+        help|-h|--help)       usage ;;
+        *)
+            echo "claude-sandbox: unknown command '$1'" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+fi
