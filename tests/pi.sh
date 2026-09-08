@@ -87,6 +87,7 @@ assert_eq pi-shared "$tmp/shared/.pi" "$(readlink "$HOME/.pi")"
 # stub: valid checksums install assets; corrupt downloads preserve the old tree.
 (
     export CLAUDE_SANDBOX_SMOKE=0 WITH_PI=1 INSTALL_PREFIX="$tmp/release-install"
+    unset PI_VERSION
     source "$REPO_ROOT/.devcontainer/claude-sandbox/install.sh"
     mkdir -p "$tmp/archive/pi"
     printf '#!/bin/sh\necho fake-pi\n' > "$tmp/archive/pi/pi"
@@ -96,6 +97,11 @@ assert_eq pi-shared "$tmp/shared/.pi" "$(readlink "$HOME/.pi")"
     digest="$(sha256sum "$tmp/pi.tar.gz" | cut -d ' ' -f1)"
     printf '%s  pi-linux-x64.tar.gz\n%s  pi-linux-arm64.tar.gz\n' "$digest" "$digest" > "$tmp/checksums"
     curl() {
+        printf '%s\n' "$*" >> "$tmp/curl-calls"
+        if [ "$1" = -fsSLI ]; then
+            printf 'https://github.com/earendil-works/pi/releases/tag/v0.85.1'
+            return 0
+        fi
         local url="${4}" output="${6}"
         case "$url" in
             */SHA256SUMS) cp "$tmp/checksums" "$output" ;;
@@ -106,9 +112,19 @@ assert_eq pi-shared "$tmp/shared/.pi" "$(readlink "$HOME/.pi")"
     test -x "$PREFIX/usr/libexec/claude-sandbox/pi-dist/pi"
     test -f "$PREFIX/usr/libexec/claude-sandbox/pi-dist/asset"
     test ! -e "$HOME/.local/bin/pi"
-    printf corrupt > "$tmp/pi.tar.gz"
-    PI_VERSION=invalid-download
-    install_pi_binary 2>/dev/null
     test "$(cat "$PREFIX/usr/libexec/claude-sandbox/pi-dist/.sandbox-version")" = 0.85.1
+    test "$(wc -l < "$tmp/curl-calls")" -eq 3
+    # Re-running in an existing container must not fetch/check for upgrades.
+    install_pi_binary
+    test "$(wc -l < "$tmp/curl-calls")" -eq 3
+    # An explicit pin bypasses latest lookup and can deliberately change version.
+    PI_VERSION=0.85.2
+    install_pi_binary
+    test "$(wc -l < "$tmp/curl-calls")" -eq 5
+    test "$(cat "$PREFIX/usr/libexec/claude-sandbox/pi-dist/.sandbox-version")" = 0.85.2
+    printf corrupt > "$tmp/pi.tar.gz"
+    PI_VERSION=0.85.3
+    install_pi_binary 2>/dev/null
+    test "$(cat "$PREFIX/usr/libexec/claude-sandbox/pi-dist/.sandbox-version")" = 0.85.2
 ) && pass || fail 'Pi release install or corrupt-download preservation failed'
 finish pi.sh

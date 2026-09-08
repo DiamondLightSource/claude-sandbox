@@ -18,9 +18,14 @@ equivalent to the managed prompt-hook policies used by Claude and Codex.
 
 ## Decision
 
-Extend ADR 0018's shared shadow with a Pi profile. Install a pinned,
+Extend ADR 0018's shared shadow with a Pi profile. Install the current,
 checksum-verified standalone release under the read-only `/usr/libexec` tree;
 keep the wrapper on PATH even when its optional download is skipped or fails.
+Resolve the latest release once on a fresh installation, then fetch its archive
+and checksums from that same tag. Existing installations are kept on an
+installer re-run, as with Claude and Codex. `PI_VERSION` optionally pins a
+release. Devcontainers install during `postCreate`; the separate published
+image installs at image build time.
 Bind and persist only Pi's store for Pi sessions. Use Pi's own authentication
 and model picker, and provide a helper to configure lllm2 without guessing its
 allocated context window. A fixed Bash launcher checks the sandbox markers

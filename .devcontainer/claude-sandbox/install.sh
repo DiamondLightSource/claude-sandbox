@@ -25,8 +25,10 @@
 #                                    vendor's installer can claim it
 #                                    (Invariant 1), so opting out here only
 #                                    skips the download.
-#   WITH_PI=0                        skip the pinned Pi standalone download;
+#   WITH_PI=0                        skip the Pi standalone download;
 #                                    its shadow and launch guard stay installed.
+#   PI_VERSION=0.85.1                optional release pin (default: latest on a
+#                                    fresh install; keep existing installations).
 #   STATUS=1                         force-overwrite the user-scope
 #                                    statusline script from the clone's
 #                                    copy, instead of seed-only-if-absent.
@@ -51,9 +53,9 @@ USER_HOME="${INSTALL_USER_HOME:-$HOME}"
 SMOKE="${CLAUDE_SANDBOX_SMOKE:-0}"
 WITH_CODEX="${WITH_CODEX:-1}"
 WITH_PI="${WITH_PI:-1}"
-# Pin the standalone release: it includes its runtime and assets, so Debian's
-# nodejs version does not constrain Pi. Upgrade deliberately with validation.
-PI_VERSION="0.85.1"
+# Like Claude and Codex, fresh containers install the current release during
+# postCreate. The standalone release includes its runtime and assets.
+PI_VERSION="${PI_VERSION:-latest}"
 FORCE_STATUSLINE="${STATUS:-0}"
 ALLOW_UNWRAPPED="${DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED:-0}"
 
@@ -325,20 +327,36 @@ install_codex_binary() {
 # never puts an unwrapped pi on PATH or mutates the user's shell startup files.
 install_pi_binary() (
     [ "$SMOKE" != 1 ] && [ "$WITH_PI" = 1 ] || return 0
-    local arch asset stage dest base checksum
+    local arch asset stage dest base checksum version release_url
     case "$(uname -m)" in
         x86_64) arch=x64 ;;
         aarch64|arm64) arch=arm64 ;;
         *) echo 'claude-sandbox: WARNING — Pi standalone supports Linux x64/arm64; skipping.' >&2; return 0 ;;
     esac
     dest="$(prefixed /usr/libexec/claude-sandbox/pi-dist)"
-    if [ -x "$dest/pi" ] && [ "$(cat "$dest/.sandbox-version" 2>/dev/null)" = "$PI_VERSION" ]; then
+    if [ -x "$dest/pi" ] && { [ "$PI_VERSION" = latest ] \
+        || [ "$(cat "$dest/.sandbox-version" 2>/dev/null)" = "$PI_VERSION" ]; }; then
+        return 0
+    fi
+    version="$PI_VERSION"
+    if [ "$version" = latest ]; then
+        # Resolve ONCE, then fetch the archive and checksums from the same tag.
+        # The release-page redirect avoids GitHub's anonymous API rate limit.
+        if ! release_url="$(curl -fsSLI --retry 2 -o /dev/null -w '%{url_effective}' \
+            https://github.com/earendil-works/pi/releases/latest)"; then
+            echo 'claude-sandbox: WARNING — could not resolve the latest Pi release; existing installation preserved.' >&2
+            return 0
+        fi
+        version="${release_url#https://github.com/earendil-works/pi/releases/tag/v}"
+    fi
+    if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]; then
+        echo 'claude-sandbox: WARNING — invalid Pi release version; existing installation preserved.' >&2
         return 0
     fi
     stage="$(mktemp -d)"
     trap 'rm -rf "$stage"' EXIT
     asset="pi-linux-$arch.tar.gz"
-    base="https://github.com/earendil-works/pi/releases/download/v$PI_VERSION"
+    base="https://github.com/earendil-works/pi/releases/download/v$version"
     if ! curl -fLSs --retry 2 "$base/$asset" -o "$stage/$asset" \
         || ! curl -fLSs --retry 2 "$base/SHA256SUMS" -o "$stage/SHA256SUMS"; then
         echo 'claude-sandbox: WARNING — Pi download failed; its shadow remains installed.' >&2
@@ -356,7 +374,7 @@ install_pi_binary() (
     mkdir -p "$(dirname "$dest")"
     rm -rf "$dest"
     mv "$stage/pi" "$dest"
-    printf '%s\n' "$PI_VERSION" > "$dest/.sandbox-version"
+    printf '%s\n' "$version" > "$dest/.sandbox-version"
 )
 
 # install_file: byte-stable copy of src → dst at mode 0755. Refuses

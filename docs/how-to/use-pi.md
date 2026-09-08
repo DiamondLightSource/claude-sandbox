@@ -1,9 +1,18 @@
 # Use Pi with OpenAI, Anthropic, or lllm2
 
 [Pi](https://pi.dev/) uses the same bwrap wrapper and network jail as Claude
-Code and Codex. The installer includes a pinned standalone release for Linux
-x64 and arm64. `WITH_PI=0 ./install` skips the download; the `pi` wrapper
+Code and Codex. On a fresh devcontainer, `postCreate` installs the latest Pi
+standalone release for Linux x64 and arm64, alongside Claude and Codex. The
+developer image contains no agent installation step, so new agent releases do
+not require a new developer image. Re-running the installer keeps an existing
+Pi installation; rebuilding the devcontainer installs the then-current release.
+`PI_VERSION=0.85.1 ./install` optionally selects a specific release instead.
+`WITH_PI=0 ./install` skips the download; the `pi` wrapper
 remains installed and reports that the binary is missing.
+
+The separate published `claude-sandbox` image runs the same installer at image
+build time and includes the agents. Its Pi version can also be selected with
+the `PI_VERSION` build argument.
 
 The installer also provides `ripgrep` and `fd-find` (`fdfind` on Debian/Ubuntu),
 which Pi uses for searching. This avoids downloading and extracting those tools
@@ -125,7 +134,9 @@ the same battery and report the result; it needs a working selected model.
 Pi's standalone release and fixed launcher live under
 `/usr/libexec/claude-sandbox`, read-only inside the sandbox. The launcher checks
 the sandbox markers before running Pi, and startup version checks are disabled.
-Update Pi through the sandbox installer when its pinned release changes.
+Rebuild the devcontainer to install the latest Pi, or select an explicit
+`PI_VERSION` through the installer. In the published-image workflow, pull a new
+image and recreate the container.
 
 Pi does not have the managed prompt-hook tier used by the Claude and Codex
 integrations. Its guard is at launch; this integration does not claim to stop

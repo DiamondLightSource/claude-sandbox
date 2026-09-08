@@ -43,6 +43,7 @@ ARG CLAUDE_SANDBOX_VERSION=""
 # a given tag).
 ARG WITH_CODEX=1
 ARG WITH_PI=1
+ARG PI_VERSION=latest
 
 COPY . /opt/claude-sandbox
 WORKDIR /opt/claude-sandbox
@@ -64,6 +65,7 @@ RUN bash -c ' \
     set -euo pipefail; \
     export WITH_CODEX="'"$WITH_CODEX"'"; \
     export WITH_PI="'"$WITH_PI"'"; \
+    export PI_VERSION="'"$PI_VERSION"'"; \
     source .devcontainer/claude-sandbox/install.sh; \
     probe_or_refuse; \
     install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/claude)"; \
