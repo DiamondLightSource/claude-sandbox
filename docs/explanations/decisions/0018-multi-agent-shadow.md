@@ -149,8 +149,12 @@ managed-settings path already makes.
     Consequently, `codex-launch` runs inside bwrap and supervises a foreground
     app-server for `codex agents`, connecting the client with `--remote` over
     a private socket in the sandbox's `/tmp`. Configuration overrides are
-    forwarded to the server. The helper cleans up on client exit or a
-    termination signal. Explicit remote connections and other commands pass
+    forwarded to the server, and `--cd` sets its working directory. Both fresh
+    launches and nested spawns use this helper, with the binary path supplied
+    by the shadow. The helper cleans up on client exit or a termination
+    signal, escalating from TERM to KILL after two seconds. Unsupported agents
+    options produce a warning before native startup. Explicit remote
+    connections and other commands pass
     through. This server is scoped to one invocation and its workspace;
     sharing a persistent server across sandbox launches is not implemented.
     Foreground startup uses the relocated binary directly, so it requires

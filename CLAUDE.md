@@ -2,7 +2,7 @@
 
 Bash-only. No Python package, no uv, no pytest — don't add them back.
 
-The **one** allowed Python is the documentation toolchain, fully isolated
+Python is allowed in the documentation toolchain, fully isolated
 to `docs/` (`docs/requirements.txt`: Sphinx + MyST + pydata theme + mermaid).
 It builds `docs/` to HTML for GitHub Pages and touches nothing in the
 security-critical core — no `pyproject.toml`, no `uv.lock`, no `src/`, no
@@ -11,6 +11,10 @@ grow past that boundary. Contributors may *run* that toolchain with
 `uvx --with-requirements docs/requirements.txt ...` (adds no repo files;
 `docs/requirements.txt` stays the pinned source of truth and CI still
 uses `pip`) — that is not a route to a `uv.lock` or a `pyproject.toml`.
+
+The Unix-socket fixture in `tests/codex_launch.sh` may also use Python's
+standard library. This test-only exception adds no Python package or runtime
+dependency to the installed sandbox.
 
 - Docs (Diátaxis, Sphinx): `docs/` → published to GitHub Pages by
   `.github/workflows/docs.yml`. Build locally: `python -m venv .venv-docs

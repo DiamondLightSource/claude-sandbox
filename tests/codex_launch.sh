@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Exercise the supervisor with a real Unix socket and a fake Codex process.
 set -uo pipefail
+command -v python3 >/dev/null 2>&1 || { echo 'codex_launch.sh: python3 is required for the Unix-socket test fixture' >&2; exit 1; }
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$REPO_ROOT/tests/lib.sh"
 MOCK_DIR="$(mktemp -d)"
@@ -15,13 +16,21 @@ if [ "$1" = app-server ]; then
         exit 3
     fi
     printf '%s\n' "${!#}" >"$MOCK_DIR/endpoint"
-    exec node -e '
-        const fs = require("fs"), net = require("net");
-        const server = net.createServer().listen(process.argv[1].slice(7));
-        process.on("SIGTERM", () => {
-            fs.writeFileSync(process.env.MOCK_DIR + "/stopped", "yes");
-            server.close(() => process.exit(0));
-        });
+    printf '%s\n' "$PWD" >"$MOCK_DIR/server-cwd"
+    exec python3 -c '
+import os, signal, socket, sys
+from pathlib import Path
+def stop(signum, frame):
+    if os.environ.get("MOCK_STUBBORN") == "1":
+        return
+    Path(os.environ["MOCK_DIR"], "stopped").write_text("yes")
+    sys.exit(0)
+signal.signal(signal.SIGTERM, stop)
+server = socket.socket(socket.AF_UNIX)
+server.bind(sys.argv[1][7:])
+server.listen()
+while True:
+    signal.pause()
     ' "${!#}"
 fi
 if [ "${!#}" = "$(cat "$MOCK_DIR/endpoint" 2>/dev/null)" ]; then
@@ -36,8 +45,7 @@ exit 7
 MOCK
 chmod +x "$MOCK_DIR/codex"
 run_launch() {
-    bash -c 'source "$1"; shift; codex_launch "$@"' test \
-        "$REPO_ROOT/.devcontainer/claude-sandbox/codex-launch" "$MOCK_DIR/codex" "$@"
+    "$REPO_ROOT/.devcontainer/claude-sandbox/codex-launch" "$MOCK_DIR/codex" "$@"
 }
 
 run_launch -c 'model="test model"' agents --no-alt-screen
@@ -47,6 +55,24 @@ endpoint="$(cat "$MOCK_DIR/endpoint")"
 assert_eq runtime-cleaned no "$(test -e "${endpoint#unix://}" && echo yes || echo no)"
 assert_eq config-forwarded 2 "$(grep -cx 'model="test model"' "$MOCK_DIR/args")"
 assert_eq local-connection 1 "$(grep -cx -- '--remote' "$MOCK_DIR/args")"
+
+mkdir -p "$MOCK_DIR/work space"
+run_launch -C "$MOCK_DIR/work space" agents
+assert_eq cd-exit 7 "$?"
+assert_eq server-cwd "$MOCK_DIR/work space" "$(cat "$MOCK_DIR/server-cwd")"
+( cd "$MOCK_DIR" && run_launch agents '--cd=work space' )
+assert_eq relative-cd-exit 7 "$?"
+assert_eq relative-server-cwd "$MOCK_DIR/work space" "$(cat "$MOCK_DIR/server-cwd")"
+run_launch agents --cd "$MOCK_DIR/missing" >"$MOCK_DIR/cd-error" 2>&1
+assert_eq bad-cd-exit 1 "$?"
+
+run_launch --profile foo agents >"$MOCK_DIR/unsupported" 2>&1
+assert_eq unsupported-exit 7 "$?"
+if [[ "$(cat "$MOCK_DIR/unsupported")" == *'unsupported agents option --profile'* ]]; then
+    pass
+else
+    fail 'unsupported agents options did not explain native fallback'
+fi
 
 for args in 'agents --help' 'agents --remote=unix:///explicit' 'exec agents' '--version'; do
     : >"$MOCK_DIR/args"
@@ -79,4 +105,29 @@ assert_eq signal-exit 143 "$?"
 assert_eq signal-server-stopped yes "$(cat "$MOCK_DIR/stopped")"
 endpoint="$(cat "$MOCK_DIR/endpoint")"
 assert_eq signal-runtime-cleaned no "$(test -e "${endpoint#unix://}" && echo yes || echo no)"
+
+# A TERM-resistant server must be killed rather than hang the launcher.
+SECONDS=0
+MOCK_STUBBORN=1 timeout 8 "$REPO_ROOT/.devcontainer/claude-sandbox/codex-launch" \
+    "$MOCK_DIR/codex" agents
+assert_eq stubborn-client-exit 7 "$?"
+if [ "$SECONDS" -lt 8 ]; then pass; else fail 'server cleanup exceeded deadline'; fi
+endpoint="$(cat "$MOCK_DIR/endpoint")"
+assert_eq stubborn-runtime-cleaned no "$(test -e "${endpoint#unix://}" && echo yes || echo no)"
+
+# Exercise the shadow's real IS_SANDBOX recursion guard without nesting bwrap.
+# Rewrite only installed locations to fixtures, so no system files are touched.
+cat >"$MOCK_DIR/launcher" <<'LAUNCHER'
+#!/usr/bin/env bash
+printf '%s\n' "$@"
+LAUNCHER
+chmod +x "$MOCK_DIR/launcher"
+sed -e "s|/usr/libexec/claude-sandbox/codex-launch|$MOCK_DIR/launcher|g" \
+    -e "s|/usr/libexec/claude-sandbox/codex-dist/bin/codex|$MOCK_DIR/codex|g" \
+    "$REPO_ROOT/.devcontainer/claude-sandbox/claude-shadow" >"$MOCK_DIR/shadow"
+nested="$(IS_SANDBOX=1 CLAUDE_SHADOW_SOURCE_ONLY=0 CLAUDE_SANDBOX_AGENT=codex \
+    bash "$MOCK_DIR/shadow" agents --no-alt-screen)"
+assert_eq nested-launch "$MOCK_DIR/codex
+agents
+--no-alt-screen" "$nested"
 finish codex_launch.sh
