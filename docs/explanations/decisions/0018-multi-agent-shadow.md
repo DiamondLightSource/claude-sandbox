@@ -149,6 +149,15 @@ managed-settings path already makes.
     install path used by `codex agents` to start app-server, including the
     package's `codex` entry point and resource siblings, without exposing
     the host's writable package cache.
+    The managed daemon also reads `/proc/<pid>/stat` using sandbox-local
+    PIDs, which do not match the outer procfs retained by the sandbox.
+    Consequently, `codex-launch` runs inside bwrap and supervises a foreground
+    app-server for `codex agents`, connecting the client with `--remote` over
+    a private socket in the sandbox's `/tmp`. Configuration overrides are
+    forwarded to the server. The helper cleans up on client exit or a
+    termination signal. Explicit remote connections and other commands pass
+    through. This server is scoped to one invocation and its workspace;
+    sharing a persistent server across sandbox launches is not implemented.
   - By the time `install_codex_binary` runs, `link_terminal_config` has usually
     already symlinked `~/.codex` into the **shared cross-container store** — so
     letting the vendor unpack there would push a versioned release tree, tens

@@ -599,7 +599,7 @@ ARGV14="$(HOME="$CODEXHOME" CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig 
 #     stays intact both here and at the standalone daemon path;
 #   - the binary we exec is READ-ONLY in the session, so an in-session
 #     self-update cannot rewrite it — unlike Claude's rw bind-back.
-assert_contains scenario14b "$ARGV14" "/usr/libexec/claude-sandbox/codex-dist/bin/codex"
+assert_pair scenario14b "$ARGV14" "--" "/usr/libexec/claude-sandbox/codex-launch"
 assert_not_contains scenario14b "$ARGV14" "$CODEXHOME/.local/bin/codex"
 assert_contains scenario14b "$ARGV14" "$CODEXHOME/.codex"
 # Claude's login state is NOT bound into a codex session, and vice versa:

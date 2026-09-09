@@ -531,6 +531,9 @@ bwrap_argv_build() {
 
     # Exec via the in-sandbox conventional path so the agent's argv[0]
     # matches what its official installer would have placed.
+    if [ "$AGENT" = codex ]; then
+        inner=/usr/libexec/claude-sandbox/codex-launch
+    fi
     argv+=( -- "$inner" \
         "${AGENT_INJECT[@]+"${AGENT_INJECT[@]}"}" "${user_args[@]+"${user_args[@]}"}" )
     printf '%s\n' "${argv[@]}"

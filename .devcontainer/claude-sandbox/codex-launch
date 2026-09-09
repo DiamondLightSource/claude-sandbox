@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# Runs INSIDE bwrap. Avoid the managed daemon's /proc/<local-pid> lookup:
+# this sandbox retains outer procfs while isolating the PID namespace.
+set -euo pipefail
+
+codex_launch() {
+    local binary="$1"; shift
+    local -a original=( "$@" ) server_options=()
+    local agents=0
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            -h|--help|--remote|--remote=*|--remote-auth-token-env|--remote-auth-token-env=*)
+                exec "$binary" "${original[@]}" ;;
+            -c|--config|--enable|--disable)
+                [ "$#" -ge 2 ] || exec "$binary" "${original[@]}"
+                server_options+=( "$1" "$2" ); shift 2 ;;
+            --config=*|--enable=*|--disable=*)
+                server_options+=( "$1" ); shift ;;
+            -C|--cd)
+                [ "$#" -ge 2 ] || exec "$binary" "${original[@]}"
+                shift 2 ;;
+            --cd=*|--no-alt-screen) shift ;;
+            agents)
+                [ "$agents" = 0 ] || exec "$binary" "${original[@]}"
+                agents=1; shift ;;
+            *) exec "$binary" "${original[@]}" ;;
+        esac
+    done
+    [ "$agents" = 1 ] || exec "$binary" "${original[@]}"
+
+    # /tmp is private to this bwrap invocation. Never publish a server socket
+    # in shared CODEX_HOME, where another workspace could connect to it.
+    local runtime server_pid="" client_pid=""
+    runtime="$(mktemp -d /tmp/codex-agents.XXXXXX)"
+    cleanup() {
+        trap - EXIT
+        if [ -n "$client_pid" ]; then
+            kill "$client_pid" 2>/dev/null || true
+            wait "$client_pid" 2>/dev/null || true
+        fi
+        if [ -n "$server_pid" ]; then
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+        fi
+        rm -rf -- "$runtime"
+    }
+    trap cleanup EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'exit 129' HUP
+    "$binary" app-server "${server_options[@]}" --listen "unix://$runtime/server.sock" \
+        >"$runtime/server.log" 2>&1 &
+    server_pid=$!
+    local attempt
+    for attempt in {1..100}; do
+        [ -S "$runtime/server.sock" ] && break
+        if ! kill -0 "$server_pid" 2>/dev/null; then
+            echo 'claude-sandbox: Codex app-server exited during startup.' >&2
+            cat "$runtime/server.log" >&2
+            exit 1
+        fi
+        sleep 0.1
+    done
+    if [ ! -S "$runtime/server.sock" ]; then
+        echo 'claude-sandbox: timed out waiting for Codex app-server.' >&2
+        cat "$runtime/server.log" >&2
+        exit 1
+    fi
+    # Explicit stdin keeps the background child attached to the terminal;
+    # wait lets the supervisor handle signals and preserve the client's status.
+    "$binary" "${original[@]}" --remote "unix://$runtime/server.sock" <&0 &
+    client_pid=$!
+    local status=0
+    wait "$client_pid" || status=$?
+    client_pid=""
+    exit "$status"
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    codex_launch /usr/libexec/claude-sandbox/codex-dist/bin/codex "$@"
+fi

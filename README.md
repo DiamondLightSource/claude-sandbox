@@ -95,9 +95,11 @@ each image records the launcher version it was tested with, and
   Each agent sees only its own credentials. Skip the download with
   `WITH_CODEX=0 ./install`; the codex shadow and guard are installed regardless,
   so an unwrapped `codex` can never quietly appear on `$PATH`.
-  `codex agents` can find its app-server through a read-only mount of the
-  installed package at `~/.codex/packages/standalone/current`; no separate
-  in-session installation is needed.
+  `codex agents` automatically starts a private app-server inside its sandbox
+  and stops it when you exit. This avoids daemon PID tracking, which is
+  incompatible with the container's procfs view. Explicit `--remote`
+  connections use the server you specify. The automatic server belongs to
+  this invocation; it is not shared across terminals.
 
 How and why it works: the [architecture overview][arch], the
 [threat model][threat], and the [network egress jail decision (ADR 0015)][jail].
