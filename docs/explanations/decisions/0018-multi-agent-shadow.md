@@ -159,6 +159,16 @@ managed-settings path already makes.
     sharing a persistent server across sandbox launches is not implemented.
     Foreground startup uses the relocated binary directly, so it requires
     neither the managed standalone installation path nor a package bind-back.
+    **The Unix socket has no application-level authentication.** Its access
+    boundary is the sandbox's private `/tmp` and the mode-0700 directory
+    created by `mktemp`, not a token or a client identity check. Another
+    process running as the same user inside that sandbox can discover the
+    socket, connect to app-server, and exercise its capabilities with the
+    server's credentials and workspace access. This is accepted: processes
+    within one sandbox share a trust boundary; the socket does not isolate
+    the interface from tools, hooks, or subagents in that sandbox. It must
+    not be moved into shared `CODEX_HOME` or exposed over a network listener
+    without revisiting authentication and cross-workspace access.
   - By the time `install_codex_binary` runs, `link_terminal_config` has usually
     already symlinked `~/.codex` into the **shared cross-container store** — so
     letting the vendor unpack there would push a versioned release tree, tens
