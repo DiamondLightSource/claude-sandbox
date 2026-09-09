@@ -144,12 +144,7 @@ managed-settings path already makes.
     tmpfs-masks `~/.codex/packages` — the same treatment Claude's versioned
     binary cache at `~/.local/share/claude` gets. The mask is emitted after the
     bind it covers, because bwrap applies argv in order.
-    After that mask, the relocated package is mounted read-only at
-    `~/.codex/packages/standalone/current`. This supplies the fixed managed
-    install path used by `codex agents` to start app-server, including the
-    package's `codex` entry point and resource siblings, without exposing
-    the host's writable package cache.
-    The managed daemon also reads `/proc/<pid>/stat` using sandbox-local
+    The managed daemon reads `/proc/<pid>/stat` using sandbox-local
     PIDs, which do not match the outer procfs retained by the sandbox.
     Consequently, `codex-launch` runs inside bwrap and supervises a foreground
     app-server for `codex agents`, connecting the client with `--remote` over
@@ -158,6 +153,8 @@ managed-settings path already makes.
     termination signal. Explicit remote connections and other commands pass
     through. This server is scoped to one invocation and its workspace;
     sharing a persistent server across sandbox launches is not implemented.
+    Foreground startup uses the relocated binary directly, so it requires
+    neither the managed standalone installation path nor a package bind-back.
   - By the time `install_codex_binary` runs, `link_terminal_config` has usually
     already symlinked `~/.codex` into the **shared cross-container store** — so
     letting the vendor unpack there would push a versioned release tree, tens

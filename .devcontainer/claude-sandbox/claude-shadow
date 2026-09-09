@@ -143,8 +143,7 @@ agent_profile() {
             # (ripgrep at codex-path/rg, its own bwrap/zsh under
             # codex-resources/). So the whole release directory is relocated
             # and we exec IN PLACE from it: /usr/libexec is already visible
-            # inside the sandbox via --ro-bind / /. A read-only alias also
-            # supplies the standalone daemon path. The layout stays intact.
+            # inside the sandbox via --ro-bind / /. The layout stays intact.
             # This is strictly better
             # than Claude's bind-back — the binary we exec is READ-ONLY in the
             # session, so an in-session self-update cannot rewrite it.
@@ -308,14 +307,6 @@ bwrap_argv_build() {
     for mask_rel in "${AGENT_HOME_TMPFS[@]+"${AGENT_HOME_TMPFS[@]}"}"; do
         argv+=( --tmpfs "$home/$mask_rel" )
     done
-    # `codex agents` starts app-server from this fixed standalone path.
-    # Expose the relocated package AFTER masking the writable vendor cache,
-    # keeping the binary and its resource siblings together and read-only.
-    # CODEX_HOME is scrubbed, so Codex uses this same $HOME/.codex location.
-    if [ "$AGENT" = "codex" ]; then
-        argv+=( --ro-bind "${AGENT_REAL%/bin/codex}"
-            "$home/.codex/packages/standalone/current" )
-    fi
     # $HOME/.local/share bulk-bound for host XDG data dirs (helm
     # plugins, krew, uv Python, etc.). Two sub-dirs need to stay
     # ephemeral via tmpfs overlays:
