@@ -143,9 +143,9 @@ agent_profile() {
             # Codex ships as a package — the binary needs its siblings
             # (ripgrep at codex-path/rg, its own bwrap/zsh under
             # codex-resources/). So the whole release directory is relocated
-            # and we exec IN PLACE from it, with no bind-back: /usr/libexec is
-            # already visible inside the sandbox via --ro-bind / /, and the
-            # package's internal layout stays intact. This is strictly better
+            # and we exec IN PLACE from it: /usr/libexec is already visible
+            # inside the sandbox via --ro-bind / /. The layout stays intact.
+            # This is strictly better
             # than Claude's bind-back — the binary we exec is READ-ONLY in the
             # session, so an in-session self-update cannot rewrite it.
             AGENT_REAL="/usr/libexec/claude-sandbox/codex-dist/bin/codex"
@@ -219,12 +219,22 @@ agent_inner_path() {
     fi
 }
 
+# One dispatch path for both fresh sandboxes and already-sandboxed spawns.
+# Pass the real executable explicitly so the launcher has no relocation path.
+agent_exec_argv() {
+    if [ "$AGENT" = codex ]; then
+        printf '%s\n' /usr/libexec/claude-sandbox/codex-launch "$AGENT_REAL"
+    else
+        agent_inner_path "$1"
+    fi
+}
+
 AGENT="$(detect_agent "${0:-claude}" "${CLAUDE_SANDBOX_AGENT:-}")" || exit 1
 agent_profile "$AGENT" || exit 1
 
 # Recursion guard: if IS_SANDBOX=1 is already set we are inside the
-# sandbox (e.g. a hook or skill spawned the agent), so fall through to
-# the real binary directly. Inside the sandbox the real binary is
+# sandbox (e.g. a hook or skill spawned the agent), so use the same agent
+# dispatch without nesting bwrap. Inside the sandbox Claude's real binary is
 # bind-mounted at $HOME/$AGENT_INNER_REL — exec that path so argv[0]
 # matches the conventional install location. Claude's --no-chrome
 # injection (via filter_chrome_args) applies here too so a nested spawn
@@ -235,7 +245,8 @@ if [ "$CLAUDE_SHADOW_SOURCE_ONLY" != "1" ] && [ "${IS_SANDBOX:-}" = "1" ]; then
     else
         _filtered=( "$@" )
     fi
-    exec "$(agent_inner_path "${HOME:-/root}")" \
+    mapfile -t _agent_command < <(agent_exec_argv "${HOME:-/root}")
+    exec "${_agent_command[@]}" \
         "${AGENT_INJECT[@]+"${AGENT_INJECT[@]}"}" "${_filtered[@]+"${_filtered[@]}"}"
 fi
 
@@ -541,7 +552,9 @@ bwrap_argv_build() {
 
     # Exec via the in-sandbox conventional path so the agent's argv[0]
     # matches what its official installer would have placed.
-    argv+=( -- "$inner" \
+    local -a agent_command=()
+    mapfile -t agent_command < <(agent_exec_argv "$home")
+    argv+=( -- "${agent_command[@]}" \
         "${AGENT_INJECT[@]+"${AGENT_INJECT[@]}"}" "${user_args[@]+"${user_args[@]}"}" )
     printf '%s\n' "${argv[@]}"
 }

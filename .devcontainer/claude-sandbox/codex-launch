@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# Runs INSIDE bwrap. Avoid the managed daemon's /proc/<local-pid> lookup:
+# this sandbox retains outer procfs while isolating the PID namespace.
+set -euo pipefail
+
+codex_launch() {
+    local binary="$1"; shift
+    local -a original=( "$@" ) server_options=()
+    local agents=0 server_cwd="$PWD"
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            -h|--help|--remote|--remote=*|--remote-auth-token-env|--remote-auth-token-env=*)
+                exec "$binary" "${original[@]}" ;;
+            -c|--config|--enable|--disable)
+                [ "$#" -ge 2 ] || exec "$binary" "${original[@]}"
+                server_options+=( "$1" "$2" ); shift 2 ;;
+            --config=*|--enable=*|--disable=*)
+                server_options+=( "$1" ); shift ;;
+            -C|--cd)
+                [ "$#" -ge 2 ] || exec "$binary" "${original[@]}"
+                server_cwd="$2"; shift 2 ;;
+            --cd=*) server_cwd="${1#--cd=}"; shift ;;
+            --no-alt-screen) shift ;;
+            agents)
+                [ "$agents" = 0 ] || exec "$binary" "${original[@]}"
+                agents=1; shift ;;
+            *)
+                if [ "$agents" = 1 ] || [[ "$1" == -* ]]; then
+                    local arg
+                    for arg in "${original[@]}"; do
+                        if [ "$arg" = agents ]; then
+                            printf 'claude-sandbox: unsupported agents option %q; using native Codex startup, which may fail with sandbox procfs.\n' "$1" >&2
+                            break
+                        fi
+                    done
+                fi
+                exec "$binary" "${original[@]}" ;;
+        esac
+    done
+    [ "$agents" = 1 ] || exec "$binary" "${original[@]}"
+
+    # /tmp is private to this bwrap invocation. Never publish a server socket
+    # in shared CODEX_HOME, where another workspace could connect to it.
+    local runtime server_pid="" client_pid=""
+    runtime="$(mktemp -d /tmp/codex-agents.XXXXXX)"
+    cleanup() {
+        trap - EXIT
+        trap '' INT TERM HUP
+        local pid attempt alive
+        for pid in "$client_pid" "$server_pid"; do
+            [ -z "$pid" ] || kill -TERM "$pid" 2>/dev/null || true
+        done
+        # Bound graceful shutdown to two seconds, then reap both children.
+        for attempt in {1..20}; do
+            alive=0
+            for pid in "$client_pid" "$server_pid"; do
+                if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then alive=1; fi
+            done
+            [ "$alive" = 1 ] || break
+            sleep 0.1
+        done
+        for pid in "$client_pid" "$server_pid"; do
+            if [ -n "$pid" ]; then
+                kill -KILL "$pid" 2>/dev/null || true
+                wait "$pid" 2>/dev/null || true
+            fi
+        done
+        rm -rf -- "$runtime"
+    }
+    trap cleanup EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'exit 129' HUP
+    ( cd -- "$server_cwd" && exec "$binary" app-server "${server_options[@]}" --listen "unix://$runtime/server.sock" ) \
+        >"$runtime/server.log" 2>&1 &
+    server_pid=$!
+    local attempt
+    for attempt in {1..100}; do
+        [ -S "$runtime/server.sock" ] && break
+        if ! kill -0 "$server_pid" 2>/dev/null; then
+            echo 'claude-sandbox: Codex app-server exited during startup.' >&2
+            cat "$runtime/server.log" >&2
+            exit 1
+        fi
+        sleep 0.1
+    done
+    if [ ! -S "$runtime/server.sock" ]; then
+        echo 'claude-sandbox: timed out waiting for Codex app-server.' >&2
+        cat "$runtime/server.log" >&2
+        exit 1
+    fi
+    # Explicit stdin keeps the background child attached to the terminal;
+    # wait lets the supervisor handle signals and preserve the client's status.
+    "$binary" "${original[@]}" --remote "unix://$runtime/server.sock" <&0 &
+    client_pid=$!
+    local status=0
+    wait "$client_pid" || status=$?
+    client_pid=""
+    exit "$status"
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    codex_launch "$@"
+fi

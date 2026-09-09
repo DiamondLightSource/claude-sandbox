@@ -144,6 +144,31 @@ managed-settings path already makes.
     tmpfs-masks `~/.codex/packages` — the same treatment Claude's versioned
     binary cache at `~/.local/share/claude` gets. The mask is emitted after the
     bind it covers, because bwrap applies argv in order.
+    The managed daemon reads `/proc/<pid>/stat` using sandbox-local
+    PIDs, which do not match the outer procfs retained by the sandbox.
+    Consequently, `codex-launch` runs inside bwrap and supervises a foreground
+    app-server for `codex agents`, connecting the client with `--remote` over
+    a private socket in the sandbox's `/tmp`. Configuration overrides are
+    forwarded to the server, and `--cd` sets its working directory. Both fresh
+    launches and nested spawns use this helper, with the binary path supplied
+    by the shadow. The helper cleans up on client exit or a termination
+    signal, escalating from TERM to KILL after two seconds. Unsupported agents
+    options produce a warning before native startup. Explicit remote
+    connections and other commands pass
+    through. This server is scoped to one invocation and its workspace;
+    sharing a persistent server across sandbox launches is not implemented.
+    Foreground startup uses the relocated binary directly, so it requires
+    neither the managed standalone installation path nor a package bind-back.
+    **The Unix socket has no application-level authentication.** Its access
+    boundary is the sandbox's private `/tmp` and the mode-0700 directory
+    created by `mktemp`, not a token or a client identity check. Another
+    process running as the same user inside that sandbox can discover the
+    socket, connect to app-server, and exercise its capabilities with the
+    server's credentials and workspace access. This is accepted: processes
+    within one sandbox share a trust boundary; the socket does not isolate
+    the interface from tools, hooks, or subagents in that sandbox. It must
+    not be moved into shared `CODEX_HOME` or exposed over a network listener
+    without revisiting authentication and cross-workspace access.
   - By the time `install_codex_binary` runs, `link_terminal_config` has usually
     already symlinked `~/.codex` into the **shared cross-container store** — so
     letting the vendor unpack there would push a versioned release tree, tens

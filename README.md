@@ -95,6 +95,11 @@ each image records the launcher version it was tested with, and
   Each agent sees only its own credentials. Skip the download with
   `WITH_CODEX=0 ./install`; the codex shadow and guard are installed regardless,
   so an unwrapped `codex` can never quietly appear on `$PATH`.
+  `codex agents` automatically starts a private app-server inside its sandbox
+  and stops it when you exit. This avoids daemon PID tracking, which is
+  incompatible with the container's procfs view. Explicit `--remote`
+  connections use the server you specify. The automatic server belongs to
+  this invocation; it is not shared across terminals.
 - **Pi with cloud or local models**: run `pi` (or `claude-container --agent pi`),
   authenticate OpenAI or Anthropic with `/login`, and switch using `/model`.
   A localhost relay defaults to port 1920 and discovers lllm2's model and

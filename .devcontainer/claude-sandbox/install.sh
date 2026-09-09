@@ -646,6 +646,7 @@ USER_SL_CMD='bash $HOME/.claude/statusline-command.sh'
 # battery rides along for the same tamper-resistance (it's not a hook,
 # just an off-PATH script the command invokes by absolute path).
 install_guard_scripts() {
+    install_file "$SCRIPT_DIR/codex-launch" "$(prefixed "$GUARD_LIBEXEC/codex-launch")"
     install_file "$SCRIPT_DIR/sandbox-verify.sh"          "$(prefixed "$VERIFY_PATH")"
     install_file "$SCRIPT_DIR/sandbox-gate.sh"            "$(prefixed "$GATE_PATH")"
     install_file "$SCRIPT_DIR/verify-sandbox-battery.sh"  "$(prefixed "$BATTERY_PATH")"

@@ -37,6 +37,11 @@ if ! run_install; then
 fi
 
 # Shadow placement.
+if [ -x "$PREFIX/usr/libexec/claude-sandbox/codex-launch" ]; then
+    pass
+else
+    fail "Codex launcher helper was not installed executable"
+fi
 SHADOW_DEST="$PREFIX/usr/local/bin/claude"
 if [ -f "$SHADOW_DEST" ]; then
     pass

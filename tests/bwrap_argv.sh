@@ -595,11 +595,12 @@ ARGV14="$(HOME="$CODEXHOME" CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig 
 
 # Codex is exec'd IN PLACE from its root-owned /usr/libexec package, which is
 # already visible via --ro-bind / /. Two things follow, and both are the point:
-#   - no bind-back, so the package's internal layout (ripgrep, its own
-#     bwrap/zsh helpers) stays intact next to the binary;
+#   - the package's internal layout (ripgrep, its own bwrap/zsh helpers)
+#     stays intact at the relocated path;
 #   - the binary we exec is READ-ONLY in the session, so an in-session
 #     self-update cannot rewrite it — unlike Claude's rw bind-back.
-assert_contains scenario14b "$ARGV14" "/usr/libexec/claude-sandbox/codex-dist/bin/codex"
+assert_pair scenario14b "$ARGV14" "--" "/usr/libexec/claude-sandbox/codex-launch"
+assert_pair scenario14b "$ARGV14" "/usr/libexec/claude-sandbox/codex-launch" "$AGENT_REAL"
 assert_not_contains scenario14b "$ARGV14" "$CODEXHOME/.local/bin/codex"
 assert_contains scenario14b "$ARGV14" "$CODEXHOME/.codex"
 # Claude's login state is NOT bound into a codex session, and vice versa:
@@ -618,6 +619,11 @@ assert_contains scenario14b "$ARGV14" "$CODEXHOME/.cache"
 # be silently lifted by it.
 assert_contains scenario14b "$ARGV14" "$CODEXHOME/.codex/packages"
 assert_order scenario14b "$ARGV14" "$CODEXHOME/.codex" "$CODEXHOME/.codex/packages"
+
+# Foreground app-server bypasses managed installation discovery. Keep the
+# vendor cache masked, with no package mounted back into it.
+assert_not_contains scenario14b-standalone "$ARGV14" "$CODEXHOME/.codex/packages/standalone/current"
+assert_not_contains scenario1-standalone "$ARGV1" "/root/.codex/packages/standalone/current"
 
 # 14c: every isolation primitive is identical to the claude path — the
 # whole reason this is one file and not two.

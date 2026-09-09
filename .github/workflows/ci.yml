@@ -50,6 +50,9 @@ jobs:
           mkdir -p "$HOME/.claude" "$HOME/.cache"
           CLAUDE_SANDBOX_SMOKE=1 bash tests/bwrap_argv.sh
 
+      - name: Run Codex launcher lifecycle tests
+        run: bash tests/codex_launch.sh
+
       # Which git ref `install` selects, and when it refuses to select one.
       # Hermetic — builds its own throwaway origin+clone with synthetic tags,
       # so it never touches this checkout. `sudo` only to clear the shim's own
