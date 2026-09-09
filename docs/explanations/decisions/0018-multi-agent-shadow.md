@@ -144,6 +144,11 @@ managed-settings path already makes.
     tmpfs-masks `~/.codex/packages` — the same treatment Claude's versioned
     binary cache at `~/.local/share/claude` gets. The mask is emitted after the
     bind it covers, because bwrap applies argv in order.
+    After that mask, the relocated package is mounted read-only at
+    `~/.codex/packages/standalone/current`. This supplies the fixed managed
+    install path used by `codex agents` to start app-server, including the
+    package's `codex` entry point and resource siblings, without exposing
+    the host's writable package cache.
   - By the time `install_codex_binary` runs, `link_terminal_config` has usually
     already symlinked `~/.codex` into the **shared cross-container store** — so
     letting the vendor unpack there would push a versioned release tree, tens
