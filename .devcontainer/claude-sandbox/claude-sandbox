@@ -231,7 +231,7 @@ cmd_pi_local() (
             compat: ({supportsDeveloperRole: false, supportsReasoningEffort: false} + (.providers.lllm2.compat // {})),
             models: [((.providers.lllm2.models // [] | map(select(.id == $model)) | first) // {}) +
                      {id: $model, name: ("Local (lllm2): " + $model),
-                      contextWindow: $context, maxTokens: ([$context / 4 | floor, 4096] | min)}]
+                      contextWindow: $context, maxTokens: ([$context / 4 | floor, 32000] | min)}]
         })' "$file")"
     printf '%s\n' "$result" > "$tmp"
     mv "$tmp" "$dir/models.json"
