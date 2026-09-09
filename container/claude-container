@@ -11,9 +11,9 @@
 # host-credential mount.
 #
 # Usage: claude-container [OPTIONS] [AGENT_ARGS...]
-#   --agent NAME    which sandboxed agent to run: claude (default) or codex
-#                   (OpenAI's Codex CLI). Both are wrapped by the same shadow
-#                   inside the image, so either way the session is jailed
+#   --agent NAME    which sandboxed agent to run: claude (default), codex, pi
+#                   All use the same sandbox. Pi supports cloud and local models.
+#                   See the use-pi guide for the localhost model relay.
 #   --recreate      remove and recreate the project container (e.g. after
 #                   a `podman pull`); forge auth must be re-done after
 #   --host-net      create with --network=host (EPICS CA broadcast, X11)
@@ -38,7 +38,7 @@ set -euo pipefail
 
 # Bump when this script meaningfully changes. CI bakes the version into
 # the image as a label, so warn_if_outdated can compare script vs image.
-VERSION="0.2.0"
+VERSION="0.3.0"
 
 IMAGE="${CLAUDE_SANDBOX_IMAGE:-ghcr.io/diamondlightsource/claude-sandbox:latest}"
 ENGINE="${CLAUDE_SANDBOX_ENGINE:-podman}"
@@ -90,9 +90,9 @@ while [ $# -gt 0 ]; do
             # Which sandboxed agent to run in the image. Both are wrapped by
             # the same shadow inside; this only chooses the command.
             case "${2:-}" in
-                claude|codex) agent="$2"; agent_explicit=1; shift 2 ;;
+                claude|codex|pi) agent="$2"; agent_explicit=1; shift 2 ;;
                 *)
-                    echo "claude-container: --agent needs claude or codex" >&2
+                    echo "claude-container: --agent needs claude, codex, or pi" >&2
                     exit 1
                     ;;
             esac

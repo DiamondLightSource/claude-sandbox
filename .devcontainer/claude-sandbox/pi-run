@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Root-owned entry point for Pi. Pi has no equivalent of Codex's managed
+# requirements tier: this is a launch guard, not a vendor-enforced prompt hook.
+set -euo pipefail
+if [ "${IS_SANDBOX:-}" != 1 ] || [ "${IS_SANDBOX_AGENT:-}" != pi ]; then
+    echo 'claude-sandbox: Pi must be started through the sandboxed pi command.' >&2
+    exit 2
+fi
+real=/usr/libexec/claude-sandbox/pi-dist/pi
+if [ ! -x "$real" ]; then
+    echo 'claude-sandbox: Pi is not installed; re-run ./install with WITH_PI=1.' >&2
+    exit 1
+fi
+bash /usr/libexec/claude-sandbox/sandbox-verify.sh --agent pi </dev/null
+export PI_CODING_AGENT_DIR="$HOME/.pi/agent"
+export PI_SKIP_VERSION_CHECK=1
+# Refresh the local provider at each launch so switching models in lllm2 does
+# not leave Pi using an old model ID or context size. Offline servers must not
+# prevent a cloud session from starting, and failed discovery preserves config.
+if [ "${CLAUDE_SANDBOX_LOCAL_MODEL_PORT:-0}" != 0 ]; then
+    claude-sandbox pi-local --port "$CLAUDE_SANDBOX_LOCAL_MODEL_PORT" >/dev/null 2>&1 || true
+fi
+exec "$real" "$@"

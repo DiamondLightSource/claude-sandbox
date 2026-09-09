@@ -100,6 +100,13 @@ each image records the launcher version it was tested with, and
   incompatible with the container's procfs view. Explicit `--remote`
   connections use the server you specify. The automatic server belongs to
   this invocation; it is not shared across terminals.
+- **Pi with cloud or local models**: run `pi` (or `claude-container --agent pi`),
+  authenticate OpenAI or Anthropic with `/login`, and switch using `/model`.
+  A localhost relay defaults to port 1920 and discovers lllm2's model and
+  context at startup, keeping the network jail enabled. Pi has its own
+  persistent credentials and a launch guard. See [Use Pi](docs/how-to/use-pi.md)
+  for setup and guard limitations.
+  `WITH_PI=0 ./install` skips downloading Pi.
 
 How and why it works: the [architecture overview][arch], the
 [threat model][threat], and the [network egress jail decision (ADR 0015)][jail].

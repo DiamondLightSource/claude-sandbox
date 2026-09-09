@@ -68,6 +68,9 @@ jobs:
           mkdir -p "$HOME/.claude" "$HOME/.cache"
           CLAUDE_SANDBOX_SMOKE=1 sudo -E bash tests/smoke.sh
 
+      - name: Run Pi profile and configuration tests
+        run: bash tests/pi.sh
+
   egress-jail:
     # Exercises the egress-jail netns routing enforcement (ADR 0015 / issue #56),
     # which the rest of CI never touches: smoke.sh stays outside the netns and
@@ -92,7 +95,7 @@ jobs:
           # passt provides `pasta` (the live leg); iproute2 (`ip`) and
           # util-linux (`unshare`) are normally preinstalled — install to be safe.
           sudo apt-get install -y -qq --no-install-recommends \
-            passt iproute2 util-linux
+            passt iproute2 util-linux socat curl
 
       # Ubuntu 24.04 runners ship kernel.apparmor_restrict_unprivileged_userns=1,
       # which blocks the `unshare -rn` the holder needs. Relax it (mirrors the
@@ -117,6 +120,11 @@ jobs:
           # makes green mean "the assertions actually ran".
           EGRESS_JAIL_REQUIRE: 1
         run: bash tests/egress_jail.sh
+
+      - name: Run localhost model relay tests
+        env:
+          EGRESS_JAIL_REQUIRE: 1
+        run: bash tests/local_model.sh
 
   lint:
     runs-on: ubuntu-latest
