@@ -3,7 +3,9 @@
 
 ## Status
 
-Proposed.
+Proposed. Superseded in part by {ref}`adr-local-port-all-agents` (ADR 20):
+the relay is no longer Pi-only or single-port, though its mechanism and the
+discovery step are unchanged.
 
 ## Context
 

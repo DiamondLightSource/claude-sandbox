@@ -62,6 +62,33 @@ restores the shipped defaults, so re-apply afterwards (teams bake a
 persistent conf in at install time — see
 [Sandbox a team devcontainer](sandbox-a-team-devcontainer.md)).
 
+## Reach services on the host's loopback
+
+`allow-ip` cannot reach `127.0.0.1`: loopback is not routable through the
+gateway, and the jail disables pasta's port forwarding. What the jail offers
+instead is a relay for chosen TCP ports from the outer container's loopback to
+the same ports on the agent's loopback ({ref}`adr-local-port-all-agents`).
+The shipped conf relays `1920`, lllm2's model API, through `local-model-port`.
+Add ports with `local-port`, one per line, in `/etc/claude-sandbox.conf`:
+
+```ini
+local-port = 8082    # lllm2 panel and its experiments API
+local-port = 5432    # a local database the agent may query
+```
+
+For one session, add ports through the environment instead of editing the
+root-owned conf; the two are merged:
+
+```bash
+CLAUDE_SANDBOX_LOCAL_PORTS=8082 claude
+```
+
+The outer container must share the services' network namespace: this
+repository's devcontainer uses `--net=host`, and the published-image launcher
+has `--host-net`. Each relayed port exposes the whole service behind it, so
+list only what you would hand the agent outright. Every other localhost port
+stays unreachable, and the relays stop with the session.
+
 ## A note on Channel Access for Claude
 
 Claude's private netns has no LAN broadcast domain, so EPICS Channel Access
