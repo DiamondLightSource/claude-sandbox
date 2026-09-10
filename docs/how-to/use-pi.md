@@ -103,11 +103,11 @@ Small contexts may require adjusting Pi's compaction settings; allow room for
 tools, instructions and replies. Tool calling depends on the model and chat
 template; validate an actual file edit or shell tool call with your model.
 
-The relay exposes exactly one TCP port from the outer container's IPv4
-loopback to the same port on Pi's loopback (Claude and Codex sessions get the
-same relay; see [Reach a service on the host's loopback](network-egress-jail.md#reach-a-service-on-the-hosts-loopback)). It uses
+The relay exposes the model port from the outer container's IPv4 loopback to
+the same port on Pi's loopback, together with any `local-port` entries (every
+agent gets the same relay set; see [Reach services on the host's loopback](network-egress-jail.md#reach-services-on-the-hosts-loopback)). It uses
 a private Unix socket between two `socat` processes; it adds no LAN route and
-does not expose other localhost ports or the workbench UI. Relay listeners and
+does not expose other localhost ports. Relay listeners and
 connections stop when the session exits. The model server may be off while
 using a cloud provider. Access covers **all HTTP paths on the selected port**;
 this is not a filter for individual API operations.

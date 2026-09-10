@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Real pasta/netns relay: one localhost port, streaming, routes and cleanup.
+# Real pasta/netns relay: two localhost ports, streaming, routes and cleanup.
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$REPO_ROOT/tests/lib.sh"
@@ -12,26 +12,33 @@ if ! unshare -rn true 2>/dev/null || [ ! -e /dev/net/tun ]; then
 fi
 for dep in socat pasta ss curl; do command -v "$dep" >/dev/null; done
 tmp="$(mktemp -d)"
-server="" other=""
-trap 'stop_relay "$server"; stop_relay "$other"; rm -rf "$tmp"' EXIT
+server="" other="" second=""
+trap 'stop_relay "$server" "$other" "$second"; rm -rf "$tmp"' EXIT
 export CLAUDE_SANDBOX_LOCAL_MODEL_PORT=31920
+export CLAUDE_SANDBOX_LOCAL_PORTS=31922
 unset CLAUDE_SANDBOX_ALLOW_IP
+assert_eq relay-set $'31920\n31922' "$(local_ports)"
 setsid socat TCP4-LISTEN:31920,bind=127.0.0.1,reuseaddr,fork EXEC:/bin/cat &
 server=$!
 setsid socat TCP4-LISTEN:31921,bind=127.0.0.1,reuseaddr,fork EXEC:/bin/cat &
 other=$!
-wait_for local_model_listening
+setsid socat TCP4-LISTEN:31922,bind=127.0.0.1,reuseaddr,fork "EXEC:/bin/echo second-port" &
+second=$!
+wait_for local_model_listening 31920
+wait_for local_model_listening 31922
 printf 'echo-test\n' | socat - TCP4:127.0.0.1:31921 > "$tmp/outside"
 assert_eq host-other-listener echo-test "$(cat "$tmp/outside")"
 
 cat > "$tmp/probe" <<'PROBE'
 #!/usr/bin/env bash
 set -euo pipefail
-echo "socket=$CLAUDE_JAIL_MODEL_SOCKET"
+echo "socket=$CLAUDE_JAIL_RELAY_DIR/31920.sock"
 # More than one socket buffer, in both directions: covers streaming bodies.
 expected="$(head -c 262144 /dev/zero | sha256sum)"
 actual="$(head -c 262144 /dev/zero | socat - TCP4:127.0.0.1:31920 | sha256sum)"
 [ "$expected" = "$actual" ]
+# The local-port entry is relayed alongside the model port.
+[ "$(socat - TCP4:127.0.0.1:31922 < /dev/null)" = second-port ]
 if timeout 2 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31921' 2>/dev/null; then
     echo 'Unexpected reach to a different host-loopback port' >&2
     exit 1
@@ -44,8 +51,10 @@ fi
 ip route show | grep -q '^blackhole 10.0.0.0/8'
 ip route show | grep -q '^blackhole 192.168.0.0/16'
 ip route show | grep -q '^blackhole 100.64.0.0/10'
-# Loopback-only listener, no relay listening on the pasta-facing interface.
+# Loopback-only listeners, no relay listening on the pasta-facing interface.
 ss -H -ltn 'sport = :31920' | grep -q '127.0.0.1:31920'
+ss -H -ltn 'sport = :31922' | grep -q '127.0.0.1:31922'
+[ "$(ss -H -ltn 'sport = :31922' | grep -vc '127.0.0.1:')" = 0 ]
 echo RELAY_OK
 exit 17
 PROBE
@@ -71,7 +80,7 @@ assert_eq offline-local-server 19 "$rc"
 assert_contains cloud "$(< "$tmp/cloud")" CLOUD_OK
 
 # Interrupt a live launch and ensure both listeners and connections disappear.
-(netns_launch bash -c 'echo "socket=$CLAUDE_JAIL_MODEL_SOCKET"; sleep 60') > "$tmp/signal" 2>> "$tmp/log" &
+(netns_launch bash -c 'echo "socket=$CLAUDE_JAIL_RELAY_DIR/31920.sock"; sleep 60') > "$tmp/signal" 2>> "$tmp/log" &
 launch=$!
 wait_for grep -q '^socket=' "$tmp/signal"
 kill -TERM "$launch"

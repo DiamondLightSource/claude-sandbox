@@ -11,7 +11,7 @@ register_cleanup "$tmp"
 export HOME="$tmp/home"
 mkdir -p "$HOME/.pi/agent" "$HOME/.claude" "$HOME/.codex" "$HOME/.cache"
 touch "$HOME/.claude.json"
-unset CLAUDE_SANDBOX_ALLOW_WRITE CLAUDE_SANDBOX_PASS_ENV CLAUDE_SANDBOX_NO_FORGE
+unset CLAUDE_SANDBOX_ALLOW_WRITE CLAUDE_SANDBOX_PASS_ENV CLAUDE_SANDBOX_NO_FORGE CLAUDE_SANDBOX_LOCAL_PORTS
 
 assert_eq detect-pi pi "$(detect_agent /usr/local/bin/pi '')"
 agent_profile pi
@@ -52,8 +52,31 @@ for port in -1 65536 '1920,fork' localhost:1920 01920 99999999999999999999; do
     if CLAUDE_SANDBOX_LOCAL_MODEL_PORT="$port" validate_local_model_port 2>/dev/null; then
         fail "accepted invalid relay port: $port"
     else pass; fi
+    if CLAUDE_SANDBOX_LOCAL_MODEL_PORT=0 CLAUDE_SANDBOX_LOCAL_PORTS="8082 $port" validate_local_model_port 2>/dev/null; then
+        fail "accepted invalid local-port entry: $port"
+    else pass; fi
 done
 unset CLAUDE_SANDBOX_LOCAL_MODEL_PORT
+
+# Relay set (ADR 0020): model port plus local-port entries, merged with the
+# environment, deduplicated, and still relayed when the model port is 0.
+printf 'local-model-port = 1920\nlocal-port = 8082\nlocal-port = 1920\nlocal-port = 9000\n' > "$tmp/conf"
+parse_config "$tmp/conf"
+assert_eq relay-set $'1920\n8082\n9000' "$(local_ports)"
+assert_parse relay-set-valid validate_local_model_port
+unset CLAUDE_SANDBOX_LOCAL_MODEL_PORT CLAUDE_SANDBOX_LOCAL_PORTS
+export CLAUDE_SANDBOX_LOCAL_PORTS='8082,9000 8082'
+parse_config "$tmp/conf"
+assert_eq relay-env-merge $'1920\n8082\n9000' "$(local_ports)"
+unset CLAUDE_SANDBOX_LOCAL_MODEL_PORT CLAUDE_SANDBOX_LOCAL_PORTS
+export CLAUDE_SANDBOX_LOCAL_MODEL_PORT=0
+parse_config "$tmp/conf"
+assert_eq relay-without-model-port $'8082\n1920\n9000' "$(local_ports)"
+assert_parse relay-without-model-port-enabled local_model_enabled
+argv="$(bwrap_argv_build /repo "$AGENT_REAL")"
+assert_not_contains no-discovery-without-model-port "$argv" CLAUDE_SANDBOX_LOCAL_MODEL_PORT
+unset CLAUDE_SANDBOX_LOCAL_MODEL_PORT CLAUDE_SANDBOX_LOCAL_PORTS
+if CLAUDE_SANDBOX_LOCAL_MODEL_PORT=0 local_model_enabled; then fail 'relay enabled with nothing configured'; else pass; fi
 
 cli="$REPO_ROOT/.devcontainer/claude-sandbox/claude-sandbox"
 printf '{"providers":{"other":{"apiKey":"preserve"}}}\n' > "$HOME/.pi/agent/models.json"

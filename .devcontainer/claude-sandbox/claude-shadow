@@ -457,8 +457,8 @@ bwrap_argv_build() {
     # that variable is detect_agent's override, and a nested `claude` spawned
     # inside a codex session would then re-dispatch to codex.
     argv+=( --setenv IS_SANDBOX_AGENT "$AGENT" )
-    # Pi's discovery runs inside the jail, through the explicitly enabled relay.
-    if local_model_enabled; then
+    # Pi's discovery runs inside the jail, through the relayed model port.
+    if [ "${CLAUDE_SANDBOX_LOCAL_MODEL_PORT:-0}" != 0 ]; then
         argv+=( --setenv CLAUDE_SANDBOX_LOCAL_MODEL_PORT "$CLAUDE_SANDBOX_LOCAL_MODEL_PORT" )
     fi
     argv+=( --setenv GIT_CONFIG_GLOBAL "$gitconfig_path" )
@@ -622,8 +622,19 @@ parse_config() {
                 export CLAUDE_SANDBOX_EGRESS_JAIL
                 ;;
             local-model-port)
+                # The port Pi discovers a model on; always part of the relay set
+                # (ADR 0020). 0 drops it and Pi's discovery. Env wins over conf.
                 : "${CLAUDE_SANDBOX_LOCAL_MODEL_PORT:=${value:-1920}}"
                 export CLAUDE_SANDBOX_LOCAL_MODEL_PORT
+                ;;
+            local-port)
+                # Extra outer-loopback TCP ports relayed into the jail (ADR 0020).
+                # Repeatable; accumulated like allow-ip, and merged with any
+                # CLAUDE_SANDBOX_LOCAL_PORTS already in the environment.
+                [ -z "$value" ] && continue
+                CLAUDE_SANDBOX_LOCAL_PORTS="${CLAUDE_SANDBOX_LOCAL_PORTS:+${CLAUDE_SANDBOX_LOCAL_PORTS}
+}${value}"
+                export CLAUDE_SANDBOX_LOCAL_PORTS
                 ;;
             allow-write)
                 [ -z "$value" ] && continue
@@ -779,64 +790,106 @@ netns_holder() {
                 || echo "claude-sandbox: egress jail — could not route allow-ip $aip" >&2
         done <<< "$CLAUDE_SANDBOX_ALLOW_IP"
     fi
-    if [ -n "${CLAUDE_JAIL_MODEL_SOCKET:-}" ]; then
+    if [ -n "${CLAUDE_JAIL_LOCAL_PORTS:-}" ]; then
         local_model_inner "$@"
     else
         exec "$@"
     fi
 }
 
-# Every agent gets the relay when a port is configured (ADR 0020; ADR 0019 had
-# it Pi-only). No destination strings reach socat: the host target is always
-# IPv4 loopback and the port is validated before any launch.
+# The relay set (ADR 0020): local-model-port (Pi's discovery port, shipped 1920)
+# plus every local-port entry, deduplicated, one line per port. Entries may be
+# separated by newlines (conf accumulation), spaces or commas (the env var).
+# Every agent gets the relay when the set is non-empty (ADR 0019 had it
+# Pi-only). No destination strings reach socat: the host target is always
+# IPv4 loopback and every port is validated before any launch.
+# local-port entries as words: newline (conf), space or comma (env) separated.
+local_port_words() {
+    printf '%s' "${CLAUDE_SANDBOX_LOCAL_PORTS:-}" | tr ',\n' '  '
+}
+
+local_ports() {
+    local p seen=" "
+    for p in "${CLAUDE_SANDBOX_LOCAL_MODEL_PORT:-0}" $(local_port_words); do
+        [ "$p" = 0 ] && continue
+        case "$seen" in *" $p "*) continue ;; esac
+        seen="$seen$p "
+        printf '%s\n' "$p"
+    done
+}
+
 local_model_enabled() {
-    [ "${CLAUDE_SANDBOX_LOCAL_MODEL_PORT:-0}" != 0 ]
+    [ -n "$(local_ports)" ]
 }
 
+# Validates the raw configuration, not the deduplicated set, so a bad entry is
+# named by its key. Only local-model-port may be 0.
 validate_local_model_port() {
-    local port="${CLAUDE_SANDBOX_LOCAL_MODEL_PORT:-0}"
-    if ! [[ "$port" =~ ^[1-9][0-9]{0,4}$ ]] || (( port > 65535 )); then
+    local port="${CLAUDE_SANDBOX_LOCAL_MODEL_PORT:-0}" ok=0
+    if [ "$port" != 0 ] && ! valid_tcp_port "$port"; then
         echo "claude-sandbox: local-model-port must be 1–65535 (or 0 to disable)." >&2
-        return 1
+        ok=1
     fi
+    for port in $(local_port_words); do
+        if ! valid_tcp_port "$port"; then
+            echo "claude-sandbox: local-port entries must be 1–65535, got '$port'." >&2
+            ok=1
+        fi
+    done
+    return "$ok"
 }
 
-# Each socat owns a new process group, including forked connections. Kill the
-# whole group on exit so neither streaming requests nor listeners outlive the agent.
+valid_tcp_port() {
+    [[ "$1" =~ ^[1-9][0-9]{0,4}$ ]] && (( $1 <= 65535 ))
+}
+
+# Each socat owns a new process group, including forked connections. Kill every
+# group on exit so neither streaming requests nor listeners outlive the agent.
 stop_relay() {
-    local pid="${1:-}"
-    [ -n "$pid" ] || return 0
-    kill -TERM -- "-$pid" 2>/dev/null || true
-    wait "$pid" 2>/dev/null || true
+    local pid
+    for pid in "$@"; do
+        [ -n "$pid" ] || continue
+        kill -TERM -- "-$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+    done
 }
 
-# Run OUTSIDE the jail. The private pathname socket bridges network namespaces
-# without adding any IP route or mapping the host's entire loopback interface.
+# Run OUTSIDE the jail. One private pathname socket per port bridges the network
+# namespaces without adding any IP route or mapping the host's entire loopback
+# interface. Sockets live in CLAUDE_JAIL_RELAY_DIR under /tmp, which bwrap masks.
 local_model_outer() {
-    command -v socat >/dev/null 2>&1 || jail_fail "needs socat for local-model-port"
-    command -v setsid >/dev/null 2>&1 || jail_fail "needs setsid for local-model-port"
-    CLAUDE_JAIL_MODEL_SOCKET="$CLAUDE_JAIL_DIR/model.sock"
-    export CLAUDE_JAIL_MODEL_SOCKET CLAUDE_SANDBOX_LOCAL_MODEL_PORT
-    setsid socat "UNIX-LISTEN:$CLAUDE_JAIL_MODEL_SOCKET,mode=0600,fork" \
-        "TCP4:127.0.0.1:$CLAUDE_SANDBOX_LOCAL_MODEL_PORT" &
-    model_relay=$!
-    wait_for test -S "$CLAUDE_JAIL_MODEL_SOCKET" \
-        || jail_fail "— local model relay failed to start"
+    command -v socat >/dev/null 2>&1 || jail_fail "needs socat for local-port relays"
+    command -v setsid >/dev/null 2>&1 || jail_fail "needs setsid for local-port relays"
+    local port
+    CLAUDE_JAIL_RELAY_DIR="$CLAUDE_JAIL_DIR/relay"
+    CLAUDE_JAIL_LOCAL_PORTS="$(local_ports | tr '\n' ' ')"
+    mkdir -m 0700 "$CLAUDE_JAIL_RELAY_DIR"
+    export CLAUDE_JAIL_RELAY_DIR CLAUDE_JAIL_LOCAL_PORTS
+    for port in $CLAUDE_JAIL_LOCAL_PORTS; do
+        setsid socat "UNIX-LISTEN:$CLAUDE_JAIL_RELAY_DIR/$port.sock,mode=0600,fork" \
+            "TCP4:127.0.0.1:$port" &
+        model_relay="$model_relay $!"
+        wait_for test -S "$CLAUDE_JAIL_RELAY_DIR/$port.sock" \
+            || jail_fail "— loopback relay for port $port failed to start"
+    done
 }
 
 # Run in the HOLDER's netns, before bwrap masks /tmp and enters its PID namespace.
-# The agent sees only this loopback listener, never the host-side Unix socket.
+# The agent sees only these loopback listeners, never the host-side Unix sockets.
 local_model_inner() {
-    local relay="" child="" rc=0
-    trap 'stop_relay "$relay"; if [ -n "$child" ]; then kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; fi' EXIT
+    local relay="" child="" rc=0 port
+    trap 'stop_relay $relay; if [ -n "$child" ]; then kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; fi' EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM HUP
-    setsid socat "TCP4-LISTEN:$CLAUDE_SANDBOX_LOCAL_MODEL_PORT,bind=127.0.0.1,reuseaddr,fork" \
-        "UNIX-CONNECT:$CLAUDE_JAIL_MODEL_SOCKET" &
-    relay=$!
-    # ss reads the kernel listener table; do not probe by connecting to the
-    # model server or require it to be running just to use a cloud provider.
-    wait_for local_model_listening || jail_fail "— local model listener failed to start"
+    for port in $CLAUDE_JAIL_LOCAL_PORTS; do
+        setsid socat "TCP4-LISTEN:$port,bind=127.0.0.1,reuseaddr,fork" \
+            "UNIX-CONNECT:$CLAUDE_JAIL_RELAY_DIR/$port.sock" &
+        relay="$relay $!"
+        # ss reads the kernel listener table; do not probe by connecting to the
+        # service or require it to be running just to use a cloud provider.
+        wait_for local_model_listening "$port" \
+            || jail_fail "— loopback listener for port $port failed to start"
+    done
     "$@" <&0 &
     child=$!
     wait "$child" || rc=$?
@@ -845,7 +898,7 @@ local_model_inner() {
 }
 
 local_model_listening() {
-    ss -H -ltn "sport = :$CLAUDE_SANDBOX_LOCAL_MODEL_PORT" | grep -q '127.0.0.1:'
+    ss -H -ltn "sport = :$1" | grep -q '127.0.0.1:'
 }
 
 # egress_jail_enabled: ADR 0015 — the jail is ON by default. Only an explicit
@@ -916,14 +969,14 @@ netns_launch() {
     # writable workspace for the socket or namespace readiness handshake.
     CLAUDE_JAIL_DIR="$(mktemp -d /tmp/claude-jail.XXXXXX)"
     local model_relay="" holder=""
-    trap 'stop_relay "$model_relay"; if [ -n "$holder" ]; then kill "$holder" 2>/dev/null || true; wait "$holder" 2>/dev/null || true; fi; rm -rf "$CLAUDE_JAIL_DIR"; rm -f "${CLAUDE_SANDBOX_JAIL_RESOLV:-}"' EXIT
+    trap 'stop_relay $model_relay; if [ -n "$holder" ]; then kill "$holder" 2>/dev/null || true; wait "$holder" 2>/dev/null || true; fi; rm -rf "$CLAUDE_JAIL_DIR"; rm -f "${CLAUDE_SANDBOX_JAIL_RESOLV:-}"' EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM HUP
     CLAUDE_JAIL_READY="$CLAUDE_JAIL_DIR/ready"
     export CLAUDE_JAIL_READY
-    unset CLAUDE_JAIL_MODEL_SOCKET
+    unset CLAUDE_JAIL_LOCAL_PORTS CLAUDE_JAIL_RELAY_DIR
+    validate_local_model_port || exit 1
     if local_model_enabled; then
-        validate_local_model_port || exit 1
         local_model_outer
     fi
 
