@@ -29,9 +29,10 @@ for agent in claude codex; do
     agent_profile "$agent"
     argv="$(bwrap_argv_build /repo "$AGENT_REAL")"
     assert_not_contains "$agent-isolation" "$argv" "$HOME/.pi"
-    if CLAUDE_SANDBOX_LOCAL_MODEL_PORT=1920 local_model_enabled; then
-        fail "$agent unexpectedly enables the local relay"
-    else pass; fi
+    if CLAUDE_SANDBOX_LOCAL_MODEL_PORT=1920 local_model_enabled; then pass
+    else fail "$agent does not enable the local relay"; fi
+    argv="$(CLAUDE_SANDBOX_LOCAL_MODEL_PORT=8082 bwrap_argv_build /repo "$AGENT_REAL")"
+    assert_pair "$agent-relay-port" "$argv" CLAUDE_SANDBOX_LOCAL_MODEL_PORT 8082
 done
 agent_profile pi
 unset CLAUDE_SANDBOX_LOCAL_MODEL_PORT

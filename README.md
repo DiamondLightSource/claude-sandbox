@@ -103,7 +103,8 @@ each image records the launcher version it was tested with, and
 - **Pi with cloud or local models**: run `pi` (or `claude-container --agent pi`),
   authenticate OpenAI or Anthropic with `/login`, and switch using `/model`.
   A localhost relay defaults to port 1920 and discovers lllm2's model and
-  context at startup, keeping the network jail enabled. Pi has its own
+  context at startup, keeping the network jail enabled. The same relay is
+  available to Claude and Codex sessions (`local-model-port` in the conf). Pi has its own
   persistent credentials and a launch guard. See [Use Pi](docs/how-to/use-pi.md)
   for setup and guard limitations.
   `WITH_PI=0 ./install` skips downloading Pi.

@@ -16,7 +16,6 @@ server="" other=""
 trap 'stop_relay "$server"; stop_relay "$other"; rm -rf "$tmp"' EXIT
 export CLAUDE_SANDBOX_LOCAL_MODEL_PORT=31920
 unset CLAUDE_SANDBOX_ALLOW_IP
-agent_profile pi
 setsid socat TCP4-LISTEN:31920,bind=127.0.0.1,reuseaddr,fork EXEC:/bin/cat &
 server=$!
 setsid socat TCP4-LISTEN:31921,bind=127.0.0.1,reuseaddr,fork EXEC:/bin/cat &
@@ -50,14 +49,18 @@ ss -H -ltn 'sport = :31920' | grep -q '127.0.0.1:31920'
 echo RELAY_OK
 exit 17
 PROBE
-rc=0
-(netns_launch bash "$tmp/probe") > "$tmp/result" 2> "$tmp/log" || rc=$?
-cat "$tmp/log"
-assert_eq exit-status 17 "$rc"
-assert_contains relay "$(< "$tmp/result")" RELAY_OK
-socket="$(sed -n 's/^socket=//p' "$tmp/result")"
-if [ -n "$socket" ] && [ ! -e "${socket%/*}" ]; then pass; else fail 'relay directory survived exit'; fi
-if [ -n "$socket" ] && pgrep -f "[s]ocat.*$socket" >/dev/null; then fail 'relay processes survived exit'; else pass; fi
+# The relay is agent-independent (ADR 0020): prove it for Pi and for Claude.
+for agent in pi claude; do
+    agent_profile "$agent"
+    rc=0
+    (netns_launch bash "$tmp/probe") > "$tmp/result" 2> "$tmp/log" || rc=$?
+    cat "$tmp/log"
+    assert_eq "$agent-exit-status" 17 "$rc"
+    assert_contains "$agent-relay" "$(< "$tmp/result")" RELAY_OK
+    socket="$(sed -n 's/^socket=//p' "$tmp/result")"
+    if [ -n "$socket" ] && [ ! -e "${socket%/*}" ]; then pass; else fail "$agent relay directory survived exit"; fi
+    if [ -n "$socket" ] && pgrep -f "[s]ocat.*$socket" >/dev/null; then fail "$agent relay processes survived exit"; else pass; fi
+done
 
 # Missing model server must not prevent starting Pi for a cloud provider.
 stop_relay "$server"

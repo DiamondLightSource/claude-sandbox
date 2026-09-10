@@ -457,7 +457,7 @@ bwrap_argv_build() {
     # that variable is detect_agent's override, and a nested `claude` spawned
     # inside a codex session would then re-dispatch to codex.
     argv+=( --setenv IS_SANDBOX_AGENT "$AGENT" )
-    # Discovery runs inside the jail, through the explicitly enabled relay.
+    # Pi's discovery runs inside the jail, through the explicitly enabled relay.
     if local_model_enabled; then
         argv+=( --setenv CLAUDE_SANDBOX_LOCAL_MODEL_PORT "$CLAUDE_SANDBOX_LOCAL_MODEL_PORT" )
     fi
@@ -786,10 +786,11 @@ netns_holder() {
     fi
 }
 
-# Only Pi sessions may enable the relay. No destination strings reach socat: the host
-# target is always IPv4 loopback and the port is validated before any launch.
+# Every agent gets the relay when a port is configured (ADR 0020; ADR 0019 had
+# it Pi-only). No destination strings reach socat: the host target is always
+# IPv4 loopback and the port is validated before any launch.
 local_model_enabled() {
-    [ "${AGENT:-}" = pi ] && [ "${CLAUDE_SANDBOX_LOCAL_MODEL_PORT:-0}" != 0 ]
+    [ "${CLAUDE_SANDBOX_LOCAL_MODEL_PORT:-0}" != 0 ]
 }
 
 validate_local_model_port() {
@@ -801,7 +802,7 @@ validate_local_model_port() {
 }
 
 # Each socat owns a new process group, including forked connections. Kill the
-# whole group on exit so neither streaming requests nor listeners outlive Pi.
+# whole group on exit so neither streaming requests nor listeners outlive the agent.
 stop_relay() {
     local pid="${1:-}"
     [ -n "$pid" ] || return 0
