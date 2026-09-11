@@ -28,9 +28,20 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   corrupted JSON ("Unexpected EOF"). The entrypoint also seeds `{}` into a
   zero-length `~/.claude.json` (same hazard, first run with a fresh share).
 - **Invariant 2 mapping**: the launcher creates one NAMED container per
-  project dir (`podman create` once, `start -ai` after) so forge PATs are
-  container-scoped without per-launch re-paste; `--recreate` ⇒ re-auth. Refuse
-  a "just mount host ~/.config/gh" convenience swap.
+  project dir so forge PATs are container-scoped without per-launch
+  re-paste; `--recreate` ⇒ re-auth. Refuse a "just mount host ~/.config/gh"
+  convenience swap.
+- **Keeper model (launcher 0.4, 2026-09-11)**: the container's PID 1 is an
+  idle bash loop (`KEEPER_CMD`), and every session is `exec -it` into it;
+  the launcher `stop`s the keeper when `.ExecIDs` is empty after its
+  session. Why: launcher <= 0.3 baked the agent + args as the container
+  command, so `start -ai` replayed them and `--agent`/args were silently
+  ignored on reuse, and a `--shell` (unsandboxed bash for `gh-auth`) would
+  have baked bash as every later launch. Now only `--host-net`/`--mount`
+  are create-time, the launcher says so on reuse, and `is_keeper` refuses
+  pre-0.4 containers (starting one would run its baked agent detached).
+  Refuse: baking the agent back into the create command; making `--shell`
+  a sandboxed session (it exists precisely to run the outside-the-jail CLI).
 - **Invariant 4 mapping**: durable user conf = host file ro-mounted at the
   canonical `/etc/claude-sandbox.conf`; the entrypoint detects the mount
   (`_is_mount`) and skips re-stamping. Conf stays outside the sandbox rw set.

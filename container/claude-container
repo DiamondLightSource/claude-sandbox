@@ -4,16 +4,22 @@
 # (or docker) and /dev/net/tun on the host. Copy this script onto your
 # PATH, cd into a project, run `claude-container`.
 #
-# One NAMED container per project directory: created on first run,
-# restarted on later runs. gh/glab logins made inside it therefore live
-# for the container's lifetime — the same container-scoped credential
-# model as a devcontainer (re-authenticate after --recreate), never a
-# host-credential mount.
+# One NAMED container per project directory: created on first run, reused
+# on later runs. gh/glab logins made inside it therefore live for the
+# container's lifetime — the same container-scoped credential model as a
+# devcontainer (re-authenticate after --recreate), never a host-credential
+# mount. The container's own process is an idle keeper; every session is
+# an exec into it, so --agent, --shell and AGENT_ARGS apply on every run.
+# Only --host-net and --mount are fixed at create time (--recreate to
+# change them). The container stops when its last session exits.
 #
 # Usage: claude-container [OPTIONS] [AGENT_ARGS...]
 #   --agent NAME    which sandboxed agent to run: claude (default), codex, pi
 #                   All use the same sandbox. Pi supports cloud and local models.
 #                   See the use-pi guide for the localhost model relay.
+#   --shell         a plain (UNSANDBOXED) bash in the container instead of an
+#                   agent — e.g. to run `claude-sandbox gh-auth` first. Start a
+#                   sandboxed session from it with claude / codex / pi.
 #   --recreate      remove and recreate the project container (e.g. after
 #                   a `podman pull`); forge auth must be re-done after
 #   --host-net      create with --network=host (EPICS CA broadcast, X11)
@@ -38,7 +44,7 @@ set -euo pipefail
 
 # Bump when this script meaningfully changes. CI bakes the version into
 # the image as a label, so warn_if_outdated can compare script vs image.
-VERSION="0.3.0"
+VERSION="0.4.0"
 
 IMAGE="${CLAUDE_SANDBOX_IMAGE:-ghcr.io/diamondlightsource/claude-sandbox:latest}"
 ENGINE="${CLAUDE_SANDBOX_ENGINE:-podman}"
@@ -47,7 +53,7 @@ CONF="${CLAUDE_SANDBOX_CONF:-$HOME/.config/claude-sandbox.conf}"
 
 usage() {
     # The header comment above IS the manual; print it (strip the '# ').
-    sed -n '2,36p' "$0" | sed -e 's/^# \{0,1\}//'
+    sed -n '2,/^set -euo pipefail$/p' "$0" | sed -e '$d' -e 's/^# \{0,1\}//'
 }
 
 # CI bakes two labels into the image: the version of this script it was
@@ -74,23 +80,27 @@ warn_if_outdated() {
     fi
 }
 
+# The container's PID 1. Matched by is_keeper below to recognise a container
+# this launcher model created; a container from launcher <= 0.3 baked an
+# agent command instead and must be recreated.
+KEEPER_CMD='trap "exit 0" TERM INT; while :; do sleep 60 & wait $!; done'
+
 recreate=0
 host_net=0
 agent=claude
-# Tracked separately from $agent so the restart path can tell "the user asked
-# for codex" from "nobody said, so it defaults to claude" — only the former
-# deserves a warning that the flag will not apply.
-agent_explicit=0
+shell=0
+create_opts=()     # create-time flags the user passed, for the reuse warning
 mounts=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --recreate) recreate=1; shift ;;
-        --host-net) host_net=1; shift ;;
+        --host-net) host_net=1; create_opts+=( --host-net ); shift ;;
+        --shell) shell=1; shift ;;
         --agent)
-            # Which sandboxed agent to run in the image. Both are wrapped by
+            # Which sandboxed agent to run in the image. All are wrapped by
             # the same shadow inside; this only chooses the command.
             case "${2:-}" in
-                claude|codex|pi) agent="$2"; agent_explicit=1; shift 2 ;;
+                claude|codex|pi) agent="$2"; shift 2 ;;
                 *)
                     echo "claude-container: --agent needs claude, codex, or pi" >&2
                     exit 1
@@ -103,6 +113,7 @@ while [ $# -gt 0 ]; do
                 exit 1
             fi
             mounts+=( "$(realpath "$2")" )
+            create_opts+=( "--mount $2" )
             shift 2
             ;;
         --version) echo "claude-container $VERSION"; exit 0 ;;
@@ -111,7 +122,7 @@ while [ $# -gt 0 ]; do
         *) break ;;
     esac
 done
-# Remaining args are the agent's (create-time or exec-time).
+# Remaining args are the agent's (applied on every run).
 
 if ! command -v "$ENGINE" >/dev/null 2>&1; then
     echo "claude-container: $ENGINE not found (set CLAUDE_SANDBOX_ENGINE=docker?)" >&2
@@ -137,10 +148,15 @@ container_running() {
     [ "$("$ENGINE" container inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null)" = "true" ]
 }
 
+is_keeper() {
+    "$ENGINE" container inspect -f '{{join .Config.Cmd " "}}' "$NAME" 2>/dev/null \
+        | grep -qF 'sleep 60 & wait'
+}
+
 create_container() {
     mkdir -p "$SHARED"
     local -a args=(
-        create --name "$NAME" -it
+        create --name "$NAME"
         # The egress jail (ADR 0015) is fail-closed without /dev/net/tun.
         --device /dev/net/tun
         # SELinux hosts (RHEL): don't try to relabel NFS/home mounts.
@@ -150,29 +166,27 @@ create_container() {
         -e "TERM=${TERM:-xterm-256color}"
     )
     if [ "$host_net" = 1 ]; then
-        args+=( --network host )
+        args+=( --network=host )
     fi
-    # Git identity for the shadow's per-launch gitconfig render (ro).
+    # Read-only git identity (name/email) for commits inside the sandbox.
     if [ -f "$HOME/.gitconfig" ]; then
         args+=( -v "$HOME/.gitconfig:/root/.gitconfig:ro" )
     fi
     # Durable per-user sandbox conf: READ-ONLY at the canonical /etc path
-    # the shadow reads. Invariant 4 holds — the conf stays outside the
-    # sandbox rw set, so a compromised session cannot widen its own
-    # binds. The entrypoint skips re-stamping a mounted conf.
+    # (Invariant 4 — conf stays outside the sandbox rw set). The
+    # entrypoint sees the mount and skips re-stamping the baked copy.
     if [ -f "$CONF" ]; then
         args+=( -v "$CONF:/etc/claude-sandbox.conf:ro" )
     fi
-
-    # Extra rw folders: bind into the container AND tell the sandbox to
-    # bind them rw (allow-write); merged with any caller-set value.
-    local allow="${CLAUDE_SANDBOX_ALLOW_WRITE:-}" m
+    # --mount PATH: bind into the container at the same path, and tell the
+    # sandbox to bind it rw too (allow-write, joined with ':').
+    local m allow_write=""
     for m in "${mounts[@]+"${mounts[@]}"}"; do
         args+=( -v "$m:$m" )
-        allow="${allow:+$allow$'\n'}$m"
+        allow_write="${allow_write:+$allow_write:}$m"
     done
-    if [ -n "$allow" ]; then
-        args+=( -e "CLAUDE_SANDBOX_ALLOW_WRITE=$allow" )
+    if [ -n "$allow_write" ]; then
+        args+=( -e "CLAUDE_SANDBOX_ALLOW_WRITE=$allow_write" )
     fi
 
     # Pass the rest of the CLAUDE_SANDBOX_* env through (allow-ip,
@@ -188,37 +202,66 @@ create_container() {
         args+=( -e "$v=${!v}" )
     done
 
-    args+=( "$IMAGE" "$agent" "$@" )
+    # The baked command is an idle keeper, not an agent: sessions are execs
+    # (see the launch sequence below), so the agent and its arguments are
+    # chosen per run rather than frozen here. Bash as PID 1 reaps the
+    # orphans a session leaves behind; the trap lets `stop` end it promptly.
+    args+=( "$IMAGE" bash -c "$KEEPER_CMD" )
     "$ENGINE" "${args[@]}" >/dev/null
     echo "claude-container: created container $NAME from $IMAGE" >&2
-    echo "claude-container: for forge push access, run inside the container:" >&2
-    echo "    claude-sandbox gh-auth" >&2
+    echo "claude-container: for forge push access: claude-container --shell, then claude-sandbox gh-auth" >&2
 }
 
 if [ "$recreate" = 1 ] && container_exists; then
     "$ENGINE" rm -f "$NAME" >/dev/null
 fi
 
-if ! container_exists; then
-    create_container "$@"
-elif ! container_running && { [ $# -gt 0 ] || [ "$agent_explicit" = 1 ]; }; then
-    # `start -ai` replays the command baked in at CREATE time, so neither fresh
-    # args nor --agent can take effect here. --agent is called out separately
-    # because it is silently wrong rather than merely ignored: asking for codex
-    # and getting a Claude session back looks like the flag did nothing.
-    echo "claude-container: note — $NAME already exists; restarting reuses its" >&2
-    echo "  creation-time arguments (yours are ignored). --recreate to change." >&2
-    if [ "$agent_explicit" = 1 ]; then
-        echo "  --agent $agent will NOT apply: this container starts whichever agent" >&2
-        echo "  it was created with. Use --recreate --agent $agent to switch." >&2
+if container_exists; then
+    if ! is_keeper; then
+        # Created by launcher <= 0.3, which baked the agent as PID 1; starting
+        # it would run that agent detached, alongside our session.
+        echo "claude-container: $NAME was created by an older launcher and cannot be reused;" >&2
+        echo "  run: claude-container --recreate (forge logins must be re-done)" >&2
+        exit 1
+    fi
+    created="$("$ENGINE" container inspect -f '{{.Created}}' "$NAME" 2>/dev/null | cut -c1-19)"
+    echo "claude-container: reconnecting to existing container $NAME (created ${created:-?}); --recreate rebuilds it" >&2
+    if [ ${#create_opts[@]} -gt 0 ]; then
+        # Everything else applies per run; these two are baked into the
+        # container and silently ignored on reuse — say so.
+        echo "  create-time option(s) ignored on an existing container: ${create_opts[*]}" >&2
+        echo "  use --recreate to apply them" >&2
+    fi
+else
+    create_container
+fi
+
+if ! container_running; then
+    "$ENGINE" start "$NAME" >/dev/null
+    if ! container_running; then
+        # The entrypoint refused (typically: this host cannot nest user
+        # namespaces). Its message is in the container log.
+        echo "claude-container: $NAME exited during start:" >&2
+        "$ENGINE" logs "$NAME" >&2 || true
+        exit 1
     fi
 fi
 
-if container_running; then
-    # Already running (another claude-container in this project): open an
-    # additional sandboxed session in the same container. Fresh args DO
-    # apply on this path.
-    exec "$ENGINE" exec -it "$NAME" "$agent" "$@"
+# The session. Fresh args apply every time: this is an exec, not a replay
+# of create-time arguments. A second claude-container in the same project
+# while one is active simply execs another session into the same container.
+if [ "$shell" = 1 ]; then
+    set -- bash "$@"
 else
-    exec "$ENGINE" start -ai "$NAME"
+    set -- "$agent" "$@"
 fi
+rc=0
+"$ENGINE" exec -it "$NAME" "$@" || rc=$?
+
+# Stop the keeper when ours was the last session, so an idle project does
+# not leave a running container behind; a session still open in another
+# terminal keeps it up.
+if [ "$("$ENGINE" container inspect -f '{{len .ExecIDs}}' "$NAME" 2>/dev/null)" = 0 ]; then
+    "$ENGINE" stop -t 2 "$NAME" >/dev/null 2>&1 || true
+fi
+exit "$rc"
