@@ -44,7 +44,7 @@ set -euo pipefail
 
 # Bump when this script meaningfully changes. CI bakes the version into
 # the image as a label, so warn_if_outdated can compare script vs image.
-VERSION="0.4.0"
+VERSION="0.4.1"
 
 IMAGE="${CLAUDE_SANDBOX_IMAGE:-ghcr.io/diamondlightsource/claude-sandbox:latest}"
 ENGINE="${CLAUDE_SANDBOX_ENGINE:-podman}"
@@ -226,6 +226,15 @@ if container_exists; then
     fi
     created="$("$ENGINE" container inspect -f '{{.Created}}' "$NAME" 2>/dev/null | cut -c1-19)"
     echo "claude-container: reconnecting to existing container $NAME (created ${created:-?}); --recreate rebuilds it" >&2
+    # A pulled image does not reach an existing container: compare the
+    # container's image ID with the local tag's. Silent when either lookup
+    # fails (no local image yet, docker/podman template differences).
+    local_img="$("$ENGINE" image inspect -f '{{.Id}}' "$IMAGE" 2>/dev/null)" || local_img=""
+    ctr_img="$("$ENGINE" container inspect -f '{{.Image}}' "$NAME" 2>/dev/null)" || ctr_img=""
+    if [ -n "$local_img" ] && [ -n "$ctr_img" ] && [ "$local_img" != "$ctr_img" ]; then
+        echo "  this container was created from an OLDER image than the one now pulled for $IMAGE;" >&2
+        echo "  it keeps running the old one until you: claude-container --recreate" >&2
+    fi
     if [ ${#create_opts[@]} -gt 0 ]; then
         # Everything else applies per run; these two are baked into the
         # container and silently ignored on reuse — say so.
