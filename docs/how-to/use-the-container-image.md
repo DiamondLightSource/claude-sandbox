@@ -63,7 +63,7 @@ claude-container
 
 The first run pulls the image, creates a container named after the
 project directory, and starts sandboxed `claude` with the project
-mounted read-write. Later runs restart the same container. Everything
+mounted read-write. Later runs reuse the same container. Everything
 you know from the devcontainer applies inside: `claude-sandbox verify`
 runs the live battery, the egress jail is on by default, and plain
 `claude` can only ever resolve to the shadow.
@@ -81,20 +81,30 @@ project directory** rather than a throwaway `--rm` container:
   pulling a newer image, or to change create-time settings). Forge
   logins must then be re-done — that ceremony is the deliberate cost of
   keeping PAT blast radius small.
-- Arguments after the options are passed to `claude` when the container
-  is **created**; a plain restart reuses them. If the container is
-  already running (a session is active), `claude-container` opens an
-  additional sandboxed session in it instead, and fresh arguments do
-  apply on that path.
+- The container's own process is an idle keeper; every `claude-container`
+  run is a new session exec'd into it, so `--agent`, `--shell` and any
+  agent arguments apply on every run. A second run in the same project
+  while a session is active opens another session in the same container.
+  The container stops when its last session exits.
+- Only `--host-net` and `--mount` are fixed at create time. On every reuse
+  the launcher prints which container it is reconnecting to and, if you
+  passed either of those, that they are being ignored until `--recreate`.
+- A container made by a launcher older than 0.4 has an agent baked in as
+  its process; the launcher refuses to reuse it and asks for `--recreate`.
 
 ## Authenticate to forges
 
-Inside the container, the `claude-sandbox` CLI is on PATH, so the usual
-commands work:
+Forge logins run outside the sandbox but inside the container, where the
+`claude-sandbox` CLI is on PATH. `--shell` opens a plain, unsandboxed bash
+there; authenticate, then start the agent from that shell or from a fresh
+`claude-container` run:
 
 ```bash
+claude-container --shell
 claude-sandbox gh-auth
 claude-sandbox glab-auth gitlab.example.com
+exit
+claude-container
 ```
 
 See [Authenticate with forges](authenticate-with-forges) for the

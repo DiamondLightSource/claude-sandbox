@@ -28,9 +28,9 @@ From a normal devcontainer terminal, run `pi`. With the published image:
 claude-container --agent pi
 ```
 
-An existing stopped container retains its original agent and image. Use
-`--recreate --agent pi` to replace it; container-scoped forge authentication
-must then be repeated.
+`--agent` applies on every run, so an existing container switches agent
+without `--recreate` (which is only needed to pick up a newer image or
+change create-time mounts, and costs the container-scoped forge logins).
 
 Inside Pi, use `/login` to configure OpenAI or Anthropic with an API key or an
 available subscription login, then `/model` to select a model. Pi also accepts
