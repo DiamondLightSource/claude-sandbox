@@ -78,14 +78,15 @@ assert_not_contains no-discovery-without-model-port "$argv" CLAUDE_SANDBOX_LOCAL
 unset CLAUDE_SANDBOX_LOCAL_MODEL_PORT CLAUDE_SANDBOX_LOCAL_PORTS
 if CLAUDE_SANDBOX_LOCAL_MODEL_PORT=0 local_model_enabled; then fail 'relay enabled with nothing configured'; else pass; fi
 
-# Callback set (ADR 0021): the inbound relay. Shipped default is Pi's Claude
-# login port; entries merge with the environment, deduplicate, validate like
+# Callback set (ADR 0021): the inbound relay. The shipped conf lists no
+# callback-port (each binds a host port, so only one sandbox at a time could
+# hold it); entries merge with the environment, deduplicate, validate like
 # local-port, and may never overlap the outbound set.
 unset CLAUDE_SANDBOX_LOCAL_MODEL_PORT CLAUDE_SANDBOX_LOCAL_PORTS CLAUDE_SANDBOX_CALLBACK_PORTS
 parse_config "$REPO_ROOT/.devcontainer/claude-sandbox.conf"
-assert_eq shipped-callback-port 53692 "$(callback_ports)"
+assert_eq shipped-callback-port "" "$(callback_ports)"
 assert_parse shipped-callback-valid validate_callback_ports
-assert_parse shipped-callback-enabled callback_enabled
+if callback_enabled; then fail "callback relay enabled by the shipped conf"; else pass; fi
 unset CLAUDE_SANDBOX_LOCAL_MODEL_PORT CLAUDE_SANDBOX_LOCAL_PORTS CLAUDE_SANDBOX_CALLBACK_PORTS
 if callback_enabled; then fail 'callback relay enabled without configuration'; else pass; fi
 printf 'callback-port = 53692\ncallback-port = 1455\ncallback-port = 53692\n' > "$tmp/conf"
