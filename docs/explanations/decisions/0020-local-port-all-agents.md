@@ -38,9 +38,20 @@ gone.
 
 The mechanism is unchanged per port: one relay, one IPv4 loopback port, a
 private Unix socket between two `socat` processes, no IP route, no pasta
-forwarding. Only bare port numbers are accepted; the host side is always
+forwarding. Only bare port numbers are accepted; the host side is
 `127.0.0.1` on the outer container, so no configuration can turn the relay
 into a route to another host. That job stays with `allow-ip`.
+
+*Amended 2026-09-11.* In a bridge (non-`--network=host`) container the outer
+container's `127.0.0.1` is its own loopback, not the host's, so the relay
+reached nothing there. User-mode networking already maps the host's loopback
+onto the container's default gateway: slirp4netns (podman 4, with
+`allow_host_loopback=true`) and pasta (podman 5) both do. A `local-model-host`
+key now sets where the outer end connects: `127.0.0.1` (default), `gateway`
+(resolved from the default route at launch), or an IPv4 literal. Hostnames are
+refused. Nothing changes inside the jail: the agent still sees the port on its
+own `127.0.0.1`, and no route is added. The value is read from the root-owned
+conf, like `allow-ip`.
 
 The shipped default stays `local-model-port = 1920`, so a Claude or Codex
 session sees lllm2's model API on its loopback by default, the same as Pi.

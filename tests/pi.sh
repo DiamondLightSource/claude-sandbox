@@ -11,7 +11,7 @@ register_cleanup "$tmp"
 export HOME="$tmp/home"
 mkdir -p "$HOME/.pi/agent" "$HOME/.claude" "$HOME/.codex" "$HOME/.cache"
 touch "$HOME/.claude.json"
-unset CLAUDE_SANDBOX_ALLOW_WRITE CLAUDE_SANDBOX_PASS_ENV CLAUDE_SANDBOX_NO_FORGE CLAUDE_SANDBOX_LOCAL_PORTS CLAUDE_SANDBOX_CALLBACK_PORTS
+unset CLAUDE_SANDBOX_ALLOW_WRITE CLAUDE_SANDBOX_PASS_ENV CLAUDE_SANDBOX_NO_FORGE CLAUDE_SANDBOX_LOCAL_PORTS CLAUDE_SANDBOX_CALLBACK_PORTS CLAUDE_SANDBOX_LOCAL_MODEL_HOST
 
 assert_eq detect-pi pi "$(detect_agent /usr/local/bin/pi '')"
 agent_profile pi
@@ -57,6 +57,32 @@ for port in -1 65536 '1920,fork' localhost:1920 01920 99999999999999999999; do
     else pass; fi
 done
 unset CLAUDE_SANDBOX_LOCAL_MODEL_PORT
+
+# local-model-host: the outer relay target. Default loopback; `gateway` for
+# bridge containers; a dotted quad; nothing else (no hostnames, no socat
+# option strings). Env wins over conf.
+unset CLAUDE_SANDBOX_LOCAL_MODEL_HOST
+assert_eq relay-host-default 127.0.0.1 "$(local_model_host 2>/dev/null)"
+printf 'local-model-host = gateway\n' > "$tmp/conf"
+parse_config "$tmp/conf"
+assert_eq relay-host-conf gateway "$CLAUDE_SANDBOX_LOCAL_MODEL_HOST"
+assert_parse valid-host validate_local_model_host
+unset CLAUDE_SANDBOX_LOCAL_MODEL_HOST
+# `gateway` resolves to the container's default next-hop at launch.
+gw="$(ip route show default 2>/dev/null | awk '{for(i=1;i<NF;i++)if($i=="via")print $(i+1); exit}')"
+if [ -n "$gw" ]; then
+    assert_eq relay-host-gateway "$gw" "$(CLAUDE_SANDBOX_LOCAL_MODEL_HOST=gateway local_model_host)"
+fi
+export CLAUDE_SANDBOX_LOCAL_MODEL_HOST=10.0.2.2
+parse_config "$tmp/conf"
+assert_eq relay-host-env-wins 10.0.2.2 "$CLAUDE_SANDBOX_LOCAL_MODEL_HOST"
+assert_eq relay-host-literal 10.0.2.2 "$(local_model_host)"
+for host in host.containers.internal 10.0.2.2:1920 '10.0.2.2,fork' 10.0.2.256 ' gateway' GATEWAY ::1; do
+    if CLAUDE_SANDBOX_LOCAL_MODEL_HOST="$host" validate_local_model_host 2>/dev/null; then
+        fail "accepted invalid relay host: '$host'"
+    else pass; fi
+done
+unset CLAUDE_SANDBOX_LOCAL_MODEL_HOST
 
 # Relay set (ADR 0020): model port plus local-port entries, merged with the
 # environment, deduplicated, and still relayed when the model port is 0.

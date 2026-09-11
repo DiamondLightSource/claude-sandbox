@@ -628,6 +628,16 @@ parse_config() {
                 : "${CLAUDE_SANDBOX_LOCAL_MODEL_PORT:=${value:-1920}}"
                 export CLAUDE_SANDBOX_LOCAL_MODEL_PORT
                 ;;
+            local-model-host)
+                # Where the outer end of the relay connects (ADR 0020, amended):
+                # 127.0.0.1 (default; host-network containers) or `gateway`,
+                # the container's default next-hop, which slirp4netns (with
+                # allow_host_loopback=true) and pasta map to the host's
+                # loopback in bridge containers. An IPv4 literal is also
+                # accepted. Env wins over conf.
+                : "${CLAUDE_SANDBOX_LOCAL_MODEL_HOST:=${value:-127.0.0.1}}"
+                export CLAUDE_SANDBOX_LOCAL_MODEL_HOST
+                ;;
             local-port)
                 # Extra outer-loopback TCP ports relayed into the jail (ADR 0020).
                 # Repeatable; accumulated like allow-ip, and merged with any
@@ -815,8 +825,11 @@ netns_holder() {
 # plus every local-port entry, deduplicated, one line per port. Entries may be
 # separated by newlines (conf accumulation), spaces or commas (the env var).
 # Every agent gets the relay when the set is non-empty (ADR 0019 had it
-# Pi-only). No destination strings reach socat: the host target is always
-# IPv4 loopback and every port is validated before any launch.
+# Pi-only). The only destination string that reaches socat is the relay host:
+# the outer container's IPv4 loopback by default, or (local-model-host) its
+# default gateway, which user-mode networking maps to the host's loopback in
+# bridge containers. It is validated to one keyword or a dotted quad, and every
+# port is validated before any launch.
 # local-port entries as words: newline (conf), space or comma (env) separated.
 local_port_words() {
     printf '%s' "${CLAUDE_SANDBOX_LOCAL_PORTS:-}" | tr ',\n' '  '
@@ -855,6 +868,40 @@ validate_local_model_port() {
 
 valid_tcp_port() {
     [[ "$1" =~ ^[1-9][0-9]{0,4}$ ]] && (( $1 <= 65535 ))
+}
+
+# The address the outer relay end connects to (conf local-model-host / env
+# CLAUDE_SANDBOX_LOCAL_MODEL_HOST). `gateway` is resolved from the container's
+# default route at launch: slirp4netns (allow_host_loopback=true) and pasta both
+# map it to the host's 127.0.0.1, so one value serves podman 4 and 5 bridge
+# containers alike. Anything else must be an IPv4 literal. Never a hostname:
+# resolution would happen per connection, outside the jail, and a name is one
+# more thing a conf typo could point at another host.
+validate_local_model_host() {
+    local host="${CLAUDE_SANDBOX_LOCAL_MODEL_HOST:-127.0.0.1}" o
+    [ "$host" = gateway ] && return 0
+    if [[ "$host" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+        for o in ${host//./ }; do (( o <= 255 )) || break; done
+        (( o <= 255 )) && return 0
+    fi
+    echo "claude-sandbox: local-model-host must be 127.0.0.1, gateway, or an IPv4 address, got '$host'." >&2
+    return 1
+}
+
+default_gateway() {
+    ip route show default 2>/dev/null | head -n1 | route_field via
+}
+
+# Echo the resolved relay host; empty when `gateway` has nothing to resolve to.
+local_model_host() {
+    local host="${CLAUDE_SANDBOX_LOCAL_MODEL_HOST:-127.0.0.1}"
+    if [ "$host" = gateway ]; then
+        host="$(default_gateway)"
+    elif [ "$host" = 127.0.0.1 ] && [ "$(default_gateway)" = 10.0.2.2 ]; then
+        # slirp4netns signature: this container's 127.0.0.1 is not the host's.
+        echo "claude-sandbox: user-mode networking detected (gateway 10.0.2.2); the loopback relay targets this container's own 127.0.0.1, not the host's. For a service on the host, set local-model-host = gateway in /etc/claude-sandbox.conf and start the container with --network=slirp4netns:allow_host_loopback=true." >&2
+    fi
+    printf '%s' "$host"
 }
 
 # The callback set (ADR 0021): ports relayed the OTHER way, from the outer
@@ -923,12 +970,14 @@ relay_dir_init() {
 }
 
 local_model_outer() {
-    local port
+    local port host
     CLAUDE_JAIL_LOCAL_PORTS="$(local_ports | tr '\n' ' ')"
     export CLAUDE_JAIL_LOCAL_PORTS
+    host="$(local_model_host)"
+    [ -n "$host" ] || jail_fail "— local-model-host = gateway but the container has no default gateway"
     for port in $CLAUDE_JAIL_LOCAL_PORTS; do
         setsid socat "UNIX-LISTEN:$CLAUDE_JAIL_RELAY_DIR/$port.sock,mode=0600,fork" \
-            "TCP4:127.0.0.1:$port" &
+            "TCP4:$host:$port" &
         model_relay="$model_relay $!"
         wait_for test -S "$CLAUDE_JAIL_RELAY_DIR/$port.sock" \
             || jail_fail "— loopback relay for port $port failed to start"
@@ -1074,6 +1123,7 @@ netns_launch() {
     export CLAUDE_JAIL_READY
     unset CLAUDE_JAIL_LOCAL_PORTS CLAUDE_JAIL_CALLBACK_PORTS CLAUDE_JAIL_RELAY_DIR
     validate_local_model_port || exit 1
+    validate_local_model_host || exit 1
     validate_callback_ports || exit 1
     if local_model_enabled || callback_enabled; then
         relay_dir_init

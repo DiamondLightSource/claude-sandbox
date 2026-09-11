@@ -12,8 +12,8 @@ if ! unshare -rn true 2>/dev/null || [ ! -e /dev/net/tun ]; then
 fi
 for dep in socat pasta ss curl; do command -v "$dep" >/dev/null; done
 tmp="$(mktemp -d)"
-server="" other="" second="" taken=""
-trap 'stop_relay "$server" "$other" "$second" "$taken"; rm -rf "$tmp"' EXIT
+server="" other="" second="" taken="" third=""
+trap 'stop_relay "$server" "$other" "$second" "$taken" "$third"; rm -rf "$tmp"' EXIT
 export CLAUDE_SANDBOX_LOCAL_MODEL_PORT=31920
 export CLAUDE_SANDBOX_LOCAL_PORTS=31922
 export CLAUDE_SANDBOX_CALLBACK_PORTS=31955
@@ -75,6 +75,32 @@ for agent in pi claude; do
     if [ -n "$socket" ] && [ ! -e "${socket%/*}" ]; then pass; else fail "$agent relay directory survived exit"; fi
     if [ -n "$socket" ] && pgrep -f "[s]ocat.*$socket" >/dev/null; then fail "$agent relay processes survived exit"; else pass; fi
 done
+
+# local-model-host: the outer end connects to the configured address instead
+# of 127.0.0.1 (bridge containers reach the host's loopback via the gateway,
+# which the test cannot assume; a non-loopback address of this container
+# proves the same wiring). Inside, the agent still sees 127.0.0.1:31920.
+outer_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<NF;i++)if($i=="src")print $(i+1); exit}')"
+if [ -n "$outer_ip" ]; then
+    setsid socat "TCP4-LISTEN:31923,bind=$outer_ip,reuseaddr,fork" "EXEC:/bin/echo via-host" &
+    third=$!
+    wait_for port_in_use 31923
+    rc=0
+    (CLAUDE_SANDBOX_LOCAL_MODEL_HOST="$outer_ip" CLAUDE_SANDBOX_LOCAL_PORTS=31923 \
+        netns_launch bash -c 'socat - TCP4:127.0.0.1:31923 < /dev/null; exit 23') \
+        > "$tmp/host" 2>> "$tmp/log" || rc=$?
+    assert_eq relay-host-exit-status 23 "$rc"
+    assert_eq relay-host-target via-host "$(cat "$tmp/host")"
+    stop_relay "$third"
+    third=""
+fi
+# A gateway that cannot be resolved refuses the launch rather than relaying to nowhere.
+rc=0
+(default_gateway() { :; }; export -f default_gateway; CLAUDE_SANDBOX_LOCAL_MODEL_HOST=gateway \
+    netns_launch bash -c 'echo NOT_REACHED') > "$tmp/nogw" 2> "$tmp/nogwlog" || rc=$?
+assert_eq relay-host-no-gateway-status 1 "$rc"
+assert_not_contains relay-host-no-gateway-launch "$(< "$tmp/nogw")" NOT_REACHED
+assert_contains relay-host-no-gateway-message "$(< "$tmp/nogwlog")" 'no default gateway'
 
 # Missing model server must not prevent starting Pi for a cloud provider.
 stop_relay "$server"

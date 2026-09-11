@@ -76,6 +76,36 @@ local-port = 8082    # lllm2 panel and its experiments API
 local-port = 5432    # a local database the agent may query
 ```
 
+### Bridge containers
+
+The relay's outer end connects to the container's `127.0.0.1`. Under
+`--network=host` that is the host's loopback. In a bridge container it is the
+container's own loopback, and a service on the host is not there. User-mode
+networking maps the host's loopback onto the container's default gateway
+instead, so point the relay at it:
+
+```ini
+local-model-host = gateway
+```
+
+With podman 4 (slirp4netns, the rootless default) the container must also be
+started with the mapping enabled, a `runArgs` entry in `devcontainer.json`:
+
+```json
+"--network=slirp4netns:allow_host_loopback=true"
+```
+
+With podman 5 (pasta) the mapping is on by default and needs no flag. Check
+from an ordinary terminal in the container before blaming the jail:
+
+```bash
+gw=$(ip route | awk '/^default/{print $3; exit}'); nc -zv $gw 1920
+```
+
+An IPv4 literal is also accepted; hostnames are not. The shadow warns at
+launch when it sees slirp4netns's gateway `10.0.2.2` and the relay is still
+aimed at `127.0.0.1`.
+
 For one session, add ports through the environment instead of editing the
 root-owned conf; the two are merged:
 

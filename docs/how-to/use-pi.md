@@ -115,6 +115,12 @@ mounted read-only by the launcher. The launching terminal's
 `CLAUDE_SANDBOX_LOCAL_MODEL_PORT` overrides the file. Restart Pi after changing
 the port. An explicit refresh outside Pi can use `claude-sandbox pi-local --port PORT`.
 
+In a bridge container (no `--network=host`, the usual devcontainer shape at
+Diamond) the container's `127.0.0.1` is not the host's, so add
+`local-model-host = gateway` to the conf and, on podman 4, start the container
+with `--network=slirp4netns:allow_host_loopback=true`. See
+[Bridge containers](network-egress-jail.md#bridge-containers).
+
 For servers without llama.cpp's `/props` endpoint, configure manually:
 
 ```bash

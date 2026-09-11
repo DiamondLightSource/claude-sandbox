@@ -271,9 +271,14 @@ netns, before bwrap). Two directions, two conf keys:
   or an unwrapped agent. A port may not be in both sets
   (`validate_callback_ports`).
 
-Neither adds a route; the host side is always the outer container's IPv4
-loopback (host's under `--net=host`, the container's own in bridge mode, where
-the published-image launcher would have to publish the port — not done).
+Neither adds a route; the outbound host side is the outer container's IPv4
+loopback by default (the host's under `--net=host`). In bridge mode that is
+the container's own loopback, so `local-model-host = gateway` (2026-09-11,
+ADR 20 amendment) points the OUTER socat at the default gateway, which
+slirp4netns (`allow_host_loopback=true`, podman 4 / RHEL 8) and pasta (podman
+5) map to the host's loopback. Keyword or IPv4 literal only, never a
+hostname; nothing changes inside the jail. Callback ports in bridge mode would
+need the published-image launcher to publish the port — not done.
 Don't reach for pasta `-t/-T` to "simplify" either direction.
 
 ## Refuse / don't re-derive
