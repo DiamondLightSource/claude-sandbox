@@ -130,6 +130,13 @@ COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    # Lifecycle scripts off by default: `pi install npm:...` and `npx` then
+    # run no postinstall inside the jail (pi passes no --ignore-scripts).
+    # This is npm's global config for the copied npm, ro in-session — a
+    # default the agent can override per project (~/.npmrc, .npmrc), so a
+    # brake on drive-by packages, not a wall. Native modules needing
+    # node-gyp fail loudly with it; the agent should ask, not work around.
+    && printf 'ignore-scripts=true\n' > /usr/local/etc/npmrc \
     && node --version && npm --version && npx --version
 
 # No USER directive, deliberately (the DLS base-image pattern): the

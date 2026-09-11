@@ -99,3 +99,7 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   rely on it, and it is merely shadowed by PATH order in the image.
   Refuse: swapping `nodejs`→`npm` in `apt_install`; moving the COPY into
   the `developer` stage.
+  `/usr/local/etc/npmrc` sets `ignore-scripts=true` (image-only, ro
+  in-session; overridable by ~/.npmrc so a default not a gate) — pi's own
+  npm call passes no `--ignore-scripts`. Don't drop it "because package X
+  needs postinstall": that is the case for asking the user.

@@ -153,6 +153,12 @@ official Node image (`NODE_VERSION` build arg). Inside Pi that makes
 `pi install npm:<package>` work; extensions land in the shared `~/.pi`, so
 they persist across containers. The devcontainer installer only provides
 Ubuntu's Node 18 without npm.
+npm lifecycle scripts are off by default in the image (`ignore-scripts=true`
+in npm's global config, read-only inside the session), so `pi install` and
+`npx` run no postinstall hooks. It is a default, not an enforcement: a
+project `.npmrc` or `~/.npmrc` can re-enable them. Pure-JavaScript packages,
+which pi extensions are, need nothing else; a package that must build a
+native module fails at install and needs a deliberate opt-in.
 
 ## Configure the sandbox
 

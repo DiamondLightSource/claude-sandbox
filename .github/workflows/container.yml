@@ -99,6 +99,7 @@ jobs:
             case "$(node --version)" in v22.*) ;; *) echo "node is not v22: $(node --version)"; exit 1 ;; esac
             npm --version >/dev/null
             npx --version >/dev/null
+            test "$(npm config get ignore-scripts)" = true
           '
 
       - name: "Test: launcher-version label matches the baked script"
