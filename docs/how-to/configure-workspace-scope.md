@@ -7,11 +7,11 @@ that scope.
 ## Restore the broad `/workspaces` bind
 
 To make every sibling devcontainer project writable again, set
-`CLAUDE_SANDBOX_WORKSPACE_ROOT` in your devcontainer's `remoteEnv`:
+`AGENT_SANDBOX_WORKSPACE_ROOT` in your devcontainer's `remoteEnv`:
 
 ```json
 // .devcontainer/devcontainer.json → remoteEnv
-"CLAUDE_SANDBOX_WORKSPACE_ROOT": "/workspaces"
+"AGENT_SANDBOX_WORKSPACE_ROOT": "/workspaces"
 ```
 
 Restart (or rebuild) the devcontainer for the change to take effect.
@@ -19,11 +19,11 @@ Restart (or rebuild) the devcontainer for the change to take effect.
 ## Add specific writable paths
 
 For extra writable paths without widening to all of `/workspaces`, add
-`allow-write` lines to the sandbox config — edit `/etc/claude-sandbox.conf`
+`allow-write` lines to the sandbox config — edit `/etc/agent-sandbox.conf`
 in the container (you are root in a devcontainer):
 
 ```ini
-# /etc/claude-sandbox.conf
+# /etc/agent-sandbox.conf
 allow-write = /cache
 allow-write = /workspaces/sibling-project
 ```
@@ -105,11 +105,11 @@ The engine socket is a unix socket, not a network connection, so the
 
 ## Applying the change
 
-The shadow reads `/etc/claude-sandbox.conf` at every launch, so an edit
+The shadow reads `/etc/agent-sandbox.conf` at every launch, so an edit
 takes effect on the next `claude` — no re-install needed.
 
 Edits are **per-devcontainer and not persisted**: a container rebuild
-recreates `/etc` from the image, and a re-install or `claude-sandbox
+recreates `/etc` from the image, and a re-install or `agent-sandbox
 update` re-stamps the conf with the shipped defaults — re-apply your
 lines afterwards. (Teams that want a persistent, reviewable conf bake it
 in at install time instead — see
@@ -117,7 +117,7 @@ in at install time instead — see
 
 ## Why the conf lives in `/etc`, not the workspace
 
-The config is read from `/etc/claude-sandbox.conf` rather than from the
+The config is read from `/etc/agent-sandbox.conf` rather than from the
 rw-bound workspace so that a compromised in-session Claude cannot rewrite
 it to widen the next launch's binds — `/etc` is not writable from inside
 the sandbox, so editing it requires an unsandboxed root shell like your

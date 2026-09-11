@@ -37,7 +37,7 @@ bind-mask; `ad69881` made the regeneration per-launch.
   nothing to re-run.
 - Tools that scrub `GIT_*` see the host `/etc/gitconfig` — intended. The env
   redirect, not a bind-mask, is the boundary.
-- `CLAUDE_SANDBOX_NO_FORGE=1` drops the credential helpers from the generated
+- `AGENT_SANDBOX_NO_FORGE=1` drops the credential helpers from the generated
   config (see {ref}`adr-container-scoped-credentials`).
 - The generator is untested logic inlined in the launch body, and the forge host
   set is hard-coded (the `glab` helper covers only `gitlab.diamond.ac.uk` while

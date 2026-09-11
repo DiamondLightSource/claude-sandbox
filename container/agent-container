@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# claude-container — sandboxed Claude Code from the published image, for
+# agent-container — a sandboxed coding agent (Claude Code, Codex or Pi) from the published image, for
 # hosts WITHOUT a devcontainer workflow. Requirements: rootless podman
 # (or docker) and /dev/net/tun on the host. Copy this script onto your
-# PATH, cd into a project, run `claude-container`.
+# PATH, cd into a project, run `agent-container`.
 #
 # One NAMED container per project directory: created on first run, reused
 # on later runs. gh/glab logins made inside it therefore live for the
@@ -13,12 +13,12 @@
 # Only --host-net and --mount are fixed at create time (--recreate to
 # change them). The container stops when its last session exits.
 #
-# Usage: claude-container [OPTIONS] [AGENT_ARGS...]
+# Usage: agent-container [OPTIONS] [AGENT_ARGS...]
 #   --agent NAME    which sandboxed agent to run: claude (default), codex, pi
 #                   All use the same sandbox. Pi supports cloud and local models.
 #                   See the use-pi guide for the localhost model relay.
 #   --shell         a plain (UNSANDBOXED) bash in the container instead of an
-#                   agent — e.g. to run `claude-sandbox gh-auth` first. Start a
+#                   agent — e.g. to run `agent-sandbox gh-auth` first. Start a
 #                   sandboxed session from it with claude / codex / pi.
 #   --recreate      remove and recreate the project container (e.g. after
 #                   a `podman pull`); forge auth must be re-done after
@@ -29,27 +29,27 @@
 #   -h | --help     this text
 #
 # Environment (all optional):
-#   CLAUDE_SANDBOX_IMAGE          image ref
-#                                 (default ghcr.io/diamondlightsource/claude-sandbox:latest)
-#   CLAUDE_SANDBOX_ENGINE         podman | docker (default podman)
-#   CLAUDE_SANDBOX_SHARED_CONFIG  host dir mounted at /user-terminal-config to
+#   AGENT_SANDBOX_IMAGE          image ref
+#                                 (default ghcr.io/diamondlightsource/agent-sandbox:latest)
+#   AGENT_SANDBOX_ENGINE         podman | docker (default podman)
+#   AGENT_SANDBOX_SHARED_CONFIG  host dir mounted at /user-terminal-config to
 #                                 persist Claude login/memory across containers
 #                                 (default ~/.config/terminal-config)
-#   CLAUDE_SANDBOX_CONF           host sandbox conf, mounted READ-ONLY at
-#                                 /etc/claude-sandbox.conf when the file exists
-#                                 (default ~/.config/claude-sandbox.conf)
-#   CLAUDE_SANDBOX_*              any other sandbox variable is passed through
+#   AGENT_SANDBOX_CONF           host sandbox conf, mounted READ-ONLY at
+#                                 /etc/agent-sandbox.conf when the file exists
+#                                 (default ~/.config/agent-sandbox.conf)
+#   AGENT_SANDBOX_*              any other sandbox variable is passed through
 #                                 at create time (allow-ip, egress-jail, ...)
 set -euo pipefail
 
 # Bump when this script meaningfully changes. CI bakes the version into
 # the image as a label, so warn_if_outdated can compare script vs image.
-VERSION="0.4.0"
+VERSION="0.5.0"
 
-IMAGE="${CLAUDE_SANDBOX_IMAGE:-ghcr.io/diamondlightsource/claude-sandbox:latest}"
-ENGINE="${CLAUDE_SANDBOX_ENGINE:-podman}"
-SHARED="${CLAUDE_SANDBOX_SHARED_CONFIG:-$HOME/.config/terminal-config}"
-CONF="${CLAUDE_SANDBOX_CONF:-$HOME/.config/claude-sandbox.conf}"
+IMAGE="${AGENT_SANDBOX_IMAGE:-ghcr.io/diamondlightsource/agent-sandbox:latest}"
+ENGINE="${AGENT_SANDBOX_ENGINE:-podman}"
+SHARED="${AGENT_SANDBOX_SHARED_CONFIG:-$HOME/.config/terminal-config}"
+CONF="${AGENT_SANDBOX_CONF:-$HOME/.config/agent-sandbox.conf}"
 
 usage() {
     # The header comment above IS the manual; print it (strip the '# ').
@@ -65,18 +65,18 @@ usage() {
 warn_if_outdated() {
     local img_ver rev
     img_ver="$("$ENGINE" image inspect \
-        -f '{{index .Config.Labels "io.diamondlightsource.claude-sandbox.launcher-version"}}' \
+        -f '{{index .Config.Labels "io.diamondlightsource.agent-sandbox.launcher-version"}}' \
         "$IMAGE" 2>/dev/null)" || return 0
     { [ -n "$img_ver" ] && [ "$img_ver" != "$VERSION" ]; } || return 0
     if [ "$(printf '%s\n' "$VERSION" "$img_ver" | sort -V | head -1)" = "$VERSION" ]; then
         rev="$("$ENGINE" image inspect \
             -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' \
             "$IMAGE" 2>/dev/null)" || rev=""
-        echo "claude-container: this launcher is v$VERSION; the image was built with v$img_ver. Update:" >&2
-        echo "    curl -fsSLO https://raw.githubusercontent.com/DiamondLightSource/claude-sandbox/${rev:-main}/container/claude-container" >&2
+        echo "agent-container: this launcher is v$VERSION; the image was built with v$img_ver. Update:" >&2
+        echo "    curl -fsSLO https://raw.githubusercontent.com/DiamondLightSource/agent-sandbox/${rev:-main}/container/agent-container" >&2
     else
-        echo "claude-container: this launcher (v$VERSION) is newer than the local image (v$img_ver);" >&2
-        echo "    consider: $ENGINE pull $IMAGE  then  claude-container --recreate" >&2
+        echo "agent-container: this launcher (v$VERSION) is newer than the local image (v$img_ver);" >&2
+        echo "    consider: $ENGINE pull $IMAGE  then  agent-container --recreate" >&2
     fi
 }
 
@@ -102,21 +102,21 @@ while [ $# -gt 0 ]; do
             case "${2:-}" in
                 claude|codex|pi) agent="$2"; shift 2 ;;
                 *)
-                    echo "claude-container: --agent needs claude, codex, or pi" >&2
+                    echo "agent-container: --agent needs claude, codex, or pi" >&2
                     exit 1
                     ;;
             esac
             ;;
         --mount)
             if [ $# -lt 2 ]; then
-                echo "claude-container: --mount needs a PATH" >&2
+                echo "agent-container: --mount needs a PATH" >&2
                 exit 1
             fi
             mounts+=( "$(realpath "$2")" )
             create_opts+=( "--mount $2" )
             shift 2
             ;;
-        --version) echo "claude-container $VERSION"; exit 0 ;;
+        --version) echo "agent-container $VERSION"; exit 0 ;;
         -h|--help) usage; exit 0 ;;
         --) shift; break ;;
         *) break ;;
@@ -125,7 +125,7 @@ done
 # Remaining args are the agent's (applied on every run).
 
 if ! command -v "$ENGINE" >/dev/null 2>&1; then
-    echo "claude-container: $ENGINE not found (set CLAUDE_SANDBOX_ENGINE=docker?)" >&2
+    echo "agent-container: $ENGINE not found (set AGENT_SANDBOX_ENGINE=docker?)" >&2
     exit 1
 fi
 
@@ -138,7 +138,7 @@ warn_if_outdated
 slug="$(basename "$PWD" | tr -c 'a-zA-Z0-9_.-' '-')"
 slug="${slug%-}"
 path_hash="$(printf '%s' "$PWD" | cksum | awk '{print $1}')"
-NAME="claude-sandbox-${slug}-${path_hash}"
+NAME="agent-sandbox-${slug}-${path_hash}"
 
 container_exists() {
     "$ENGINE" container inspect "$NAME" >/dev/null 2>&1
@@ -176,7 +176,7 @@ create_container() {
     # (Invariant 4 — conf stays outside the sandbox rw set). The
     # entrypoint sees the mount and skips re-stamping the baked copy.
     if [ -f "$CONF" ]; then
-        args+=( -v "$CONF:/etc/claude-sandbox.conf:ro" )
+        args+=( -v "$CONF:/etc/agent-sandbox.conf:ro" )
     fi
     # --mount PATH: bind into the container at the same path, and tell the
     # sandbox to bind it rw too (allow-write, joined with ':').
@@ -186,18 +186,18 @@ create_container() {
         allow_write="${allow_write:+$allow_write:}$m"
     done
     if [ -n "$allow_write" ]; then
-        args+=( -e "CLAUDE_SANDBOX_ALLOW_WRITE=$allow_write" )
+        args+=( -e "AGENT_SANDBOX_ALLOW_WRITE=$allow_write" )
     fi
 
-    # Pass the rest of the CLAUDE_SANDBOX_* env through (allow-ip,
+    # Pass the rest of the AGENT_SANDBOX_* env through (allow-ip,
     # egress-jail, workspace-root, no-forge, ...). Frozen at create time
     # — use --recreate (or the conf file) to change them later.
     local v
-    for v in $(compgen -v CLAUDE_SANDBOX_ || true); do
+    for v in $(compgen -v AGENT_SANDBOX_ || true); do
         case "$v" in
-            CLAUDE_SANDBOX_IMAGE|CLAUDE_SANDBOX_ENGINE) continue ;;
-            CLAUDE_SANDBOX_SHARED_CONFIG|CLAUDE_SANDBOX_CONF) continue ;;
-            CLAUDE_SANDBOX_ALLOW_WRITE) continue ;;
+            AGENT_SANDBOX_IMAGE|AGENT_SANDBOX_ENGINE) continue ;;
+            AGENT_SANDBOX_SHARED_CONFIG|AGENT_SANDBOX_CONF) continue ;;
+            AGENT_SANDBOX_ALLOW_WRITE) continue ;;
         esac
         args+=( -e "$v=${!v}" )
     done
@@ -208,8 +208,8 @@ create_container() {
     # orphans a session leaves behind; the trap lets `stop` end it promptly.
     args+=( "$IMAGE" bash -c "$KEEPER_CMD" )
     "$ENGINE" "${args[@]}" >/dev/null
-    echo "claude-container: created container $NAME from $IMAGE" >&2
-    echo "claude-container: for forge push access: claude-container --shell, then claude-sandbox gh-auth" >&2
+    echo "agent-container: created container $NAME from $IMAGE" >&2
+    echo "agent-container: for forge push access: agent-container --shell, then agent-sandbox gh-auth" >&2
 }
 
 if [ "$recreate" = 1 ] && container_exists; then
@@ -220,12 +220,12 @@ if container_exists; then
     if ! is_keeper; then
         # Created by launcher <= 0.3, which baked the agent as PID 1; starting
         # it would run that agent detached, alongside our session.
-        echo "claude-container: $NAME was created by an older launcher and cannot be reused;" >&2
-        echo "  run: claude-container --recreate (forge logins must be re-done)" >&2
+        echo "agent-container: $NAME was created by an older launcher and cannot be reused;" >&2
+        echo "  run: agent-container --recreate (forge logins must be re-done)" >&2
         exit 1
     fi
     created="$("$ENGINE" container inspect -f '{{.Created}}' "$NAME" 2>/dev/null | cut -c1-19)"
-    echo "claude-container: reconnecting to existing container $NAME (created ${created:-?}); --recreate rebuilds it" >&2
+    echo "agent-container: reconnecting to existing container $NAME (created ${created:-?}); --recreate rebuilds it" >&2
     if [ ${#create_opts[@]} -gt 0 ]; then
         # Everything else applies per run; these two are baked into the
         # container and silently ignored on reuse — say so.
@@ -241,14 +241,14 @@ if ! container_running; then
     if ! container_running; then
         # The entrypoint refused (typically: this host cannot nest user
         # namespaces). Its message is in the container log.
-        echo "claude-container: $NAME exited during start:" >&2
+        echo "agent-container: $NAME exited during start:" >&2
         "$ENGINE" logs "$NAME" >&2 || true
         exit 1
     fi
 fi
 
 # The session. Fresh args apply every time: this is an exec, not a replay
-# of create-time arguments. A second claude-container in the same project
+# of create-time arguments. A second agent-container in the same project
 # while one is active simply execs another session into the same container.
 if [ "$shell" = 1 ]; then
     set -- bash "$@"

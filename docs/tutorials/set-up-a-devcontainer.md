@@ -9,7 +9,7 @@ settings, with nothing installed on your host. The
 guide](https://code.visualstudio.com/docs/devcontainers/containers) explain
 the idea in full.
 
-claude-sandbox expects one: running Claude inside a throwaway container is
+agent-sandbox expects one: running Claude inside a throwaway container is
 the outer layer that keeps a hostile prompt away from your real environment.
 [Getting started](getting-started.md) assumes you're already inside a
 Debian/Ubuntu devcontainer running as `root` — this page gets you there.
@@ -19,7 +19,7 @@ Debian/Ubuntu devcontainer running as `root` — this page gets you there.
 
 ## Use a rootless runtime
 
-claude-sandbox supports **rootless** containers only. We recommend
+agent-sandbox supports **rootless** containers only. We recommend
 [Podman](https://podman.io/), which is rootless by default;
 [rootless Docker](https://docs.docker.com/engine/security/rootless/) likely
 works but is untested with the default egress jail. Rootful containers are
@@ -52,7 +52,7 @@ Create `.devcontainer/devcontainer.json` at the root of your project:
 }
 ```
 
-That's enough to run claude-sandbox: a Debian/Ubuntu base, `remoteUser: root`
+That's enough to run agent-sandbox: a Debian/Ubuntu base, `remoteUser: root`
 so the installer can write its system files, the
 [egress jail](../how-to/network-egress-jail.md)'s required `runArg`, and a
 `workspaceMount` that puts your sibling projects alongside this one under

@@ -12,7 +12,7 @@ Superseded **in part** by {ref}`adr-network-egress-jail` (ADR 15): as of
 2026-06-18 the per-process egress jail is the **default**, so egress is no longer
 open by default for Claude. This ADR's analysis still holds — the jail sits
 *around* the tool (a holder netns beneath bwrap), not as an in-core firewall, and
-`CLAUDE_SANDBOX_EGRESS_JAIL=0` restores the open-egress path this ADR describes.
+`AGENT_SANDBOX_EGRESS_JAIL=0` restores the open-egress path this ADR describes.
 
 ## Context
 

@@ -1,12 +1,12 @@
 ---
-description: Verify the Claude sandbox is intact — runs the 21-check PASS/FAIL battery + 10 adversarial breakout probes when the battery passes, and exits non-zero on any failure so the command is usable as a CI assertion.
+description: Verify the agent sandbox is intact — runs the 21-check PASS/FAIL battery + 10 adversarial breakout probes when the battery passes, and exits non-zero on any failure so the command is usable as a CI assertion.
 ---
 
 `/verify-sandbox` runs **two phases** against the live Claude process:
 
 1. The deterministic **21-check battery** — a committed bash script that
    runs each check and prints PASS or FAIL with a one-line explanation.
-   Covers every defence in the [locked-down defences](https://diamondlightsource.github.io/claude-sandbox/reference/locked-down-defences.html) table.
+   Covers every defence in the [locked-down defences](https://diamondlightsource.github.io/agent-sandbox/reference/locked-down-defences.html) table.
 2. When (and only when) the 21 checks all pass, **10 adversarial
    breakout probes** — open-ended attempts to escape the sandbox or
    exfiltrate credentials, designed by reasoning about gaps the
@@ -17,7 +17,7 @@ description: Verify the Claude sandbox is intact — runs the 21-check PASS/FAIL
 Run the installed battery script and capture its output and exit code:
 
 ```bash
-bash /usr/libexec/claude-sandbox/verify-sandbox-battery.sh
+bash /usr/libexec/agent-sandbox/verify-sandbox-battery.sh
 ```
 
 It prints the table under "Output format" below (header line, one
@@ -30,8 +30,8 @@ the **FAIL count** — `0` when every check passes.
   overall command exit non-zero so CI assertions fail.
 
 If the script is missing (`No such file`), the install is stale — re-run
-the installer (`claude-sandbox update`, or the install one-liner; either
-places the battery under `/usr/libexec/claude-sandbox`) and relaunch. An
+the installer (`agent-sandbox update`, or the install one-liner; either
+places the battery under `/usr/libexec/agent-sandbox`) and relaunch. An
 absent battery is itself a finding, not a pass.
 
 **Why the checks are a committed script and not inline snippets here.**
@@ -43,7 +43,7 @@ false-failed on awk syntax errors before any shell ran. A file on disk is
 read straight by bash, so the field refs survive; the shebang also pins
 bash, closing the gap where a non-bash login shell (zsh's `nomatch`)
 turns an unmatched glob into a hard error. The script lives off-PATH in
-`/usr/libexec/claude-sandbox` (root-owned, ro inside the sandbox), so a
+`/usr/libexec/agent-sandbox` (root-owned, ro inside the sandbox), so a
 compromised in-session Claude — the workspace is rw — cannot rewrite the
 verifier to print PASS for a broken sandbox. The sections below document
 **why** each check exists and what regression it catches; the script is
@@ -97,7 +97,7 @@ session it is, defaulting to `claude` when unset. In a codex session
 the codex binary there, inside the read-write `CODEX_HOME`, and a
 writable copy of the agent's own binary is a persistence foothold. The `.local/share` bind is the
 XDG-data bulk-mount (helm plugins, krew, uv-managed Python, etc.) —
-see the [XDG split rationale](https://diamondlightsource.github.io/claude-sandbox/explanations/sandbox-internals.html). Under `.local/share`,
+see the [XDG split rationale](https://diamondlightsource.github.io/agent-sandbox/explanations/sandbox-internals.html). Under `.local/share`,
 two sub-dirs stay tmpfs-masked: `applications/` (Claude Code's
 `.desktop` URL handler, which we don't want registered on the host
 desktop environment) and `claude/` (Claude Code's versioned binary
@@ -160,11 +160,11 @@ The companion property (procfs *view* aligned with the new pidns) is
 not checked here. On rootless devcontainer hosts bwrap's `--proc /proc`
 mounts procfs against its outer pidns rather than the spawned child's,
 so process-tree visibility leaks even though kernel kill/ptrace
-scoping is intact. The launch-time probe in claude-shadow detects this
-and sets `CLAUDE_SANDBOX_FRESH_PROC=0`. Credential-bearing procfs
+scoping is intact. The launch-time probe in agent-shadow detects this
+and sets `AGENT_SANDBOX_FRESH_PROC=0`. Credential-bearing procfs
 entries (`/proc/<pid>/environ`, `/maps`, `/fd`, `/mem`) stay gated by
 `PTRACE_MODE_READ_FSCREDS` + YAMA `ptrace_scope=1`, so leaked
-visibility does not become credential exfil — but see the [threat model](https://diamondlightsource.github.io/claude-sandbox/explanations/threat-model.html)
+visibility does not become credential exfil — but see the [threat model](https://diamondlightsource.github.io/agent-sandbox/explanations/threat-model.html)
 for the honest tally.
 
 ### Check 08 — --unshare-ipc
@@ -232,7 +232,7 @@ effect at every launch.
 The default workspace bind is `$PWD` — only the current project
 directory is writable inside the sandbox. The old behaviour (binding
 all of `/workspaces`, making sibling devcontainer projects writable)
-is restored by setting `CLAUDE_SANDBOX_WORKSPACE_ROOT=/workspaces` in
+is restored by setting `AGENT_SANDBOX_WORKSPACE_ROOT=/workspaces` in
 your devcontainer's `remoteEnv`. This check fails when the broad
 `/workspaces` bind is active without that explicit opt-in.
 
@@ -246,8 +246,8 @@ can't produce a false positive.
 ### Check 18 — config read from `/etc`, not the workspace
 
 The shadow reads its config from the host-global
-`/etc/claude-sandbox.conf` (placed by `install.sh`), **not** from
-`$PWD/.devcontainer/claude-sandbox.conf`. The old per-workspace read
+`/etc/agent-sandbox.conf` (placed by `install.sh`), **not** from
+`$PWD/.devcontainer/agent-sandbox.conf`. The old per-workspace read
 sat inside the rw-bound workspace, so a compromised session could
 rewrite it (`allow-write = /`, `workspace-root = /`) and the next
 launch would honour it — a cross-session bind-escalation. `/etc` is
@@ -277,12 +277,12 @@ skipped while Claude still launches) and partial programming (e.g. only
 The jail is fail-*closed* by design — `netns_holder` aborts (so Claude
 never starts) if any blackhole route fails — so a running session is
 either fully jailed or deliberately un-jailed. The intended-state env var
-`CLAUDE_SANDBOX_EGRESS_JAIL` is **not** in the shadow's `--setenv`
+`AGENT_SANDBOX_EGRESS_JAIL` is **not** in the shadow's `--setenv`
 allowlist, so it is invisible from inside; this check therefore keys off
 the jail's *observable effect* (blackhole routes), not intent. When no
 blackhole routes are present, the jail is treated as legitimately disabled
-(`egress-jail = 0` in `/etc/claude-sandbox.conf`, or the
-`CLAUDE_SANDBOX_EGRESS_JAIL=0` env escape hatch) and the check PASSES with
+(`egress-jail = 0` in `/etc/agent-sandbox.conf`, or the
+`AGENT_SANDBOX_EGRESS_JAIL=0` env escape hatch) and the check PASSES with
 a "jail not active (disabled)" note rather than false-failing the opt-out.
 
 ### Check 20 — RFC1918 lateral egress blackholed for a non-allow-listed IP
@@ -333,7 +333,7 @@ releases/<version>/`. `CODEX_HOME` is `~/.codex`, which the shadow binds
 **read-write** because config and `auth.json` live there too. So without a
 mask, a Codex session contains a writable copy of its own binary: a
 compromised session rewrites it, the next launch re-executes it, and the
-read-only `/usr/libexec/claude-sandbox/codex-dist` copy we actually exec is
+read-only `/usr/libexec/agent-sandbox/codex-dist` copy we actually exec is
 bypassed entirely. Exactly the treatment Claude's versioned binary cache at
 `~/.local/share/claude` already gets.
 
@@ -354,7 +354,7 @@ approaches and try them**. The goal is to find a gap the 21-check
 matrix doesn't directly exercise — anything that lets the sandbox
 escape its filesystem inversion, recover scrubbed env vars, reach
 the host's network identity, signal/observe processes outside the
-pidns, or otherwise violate the [threat model](https://diamondlightsource.github.io/claude-sandbox/explanations/threat-model.html).
+pidns, or otherwise violate the [threat model](https://diamondlightsource.github.io/agent-sandbox/explanations/threat-model.html).
 
 Constraints on the probes:
 
@@ -423,7 +423,7 @@ block and the final `RESULT:` line.
   [PASS] 15 file mask: $HOME/.Xauthority is empty
   [PASS] 16 curated gitconfig: GIT_CONFIG_GLOBAL set, user.email present
   [PASS] 17 workspace scoped to $PWD (not broad /workspaces)
-  [PASS] 18 config read from /etc/claude-sandbox.conf (no $PWD/.devcontainer read)
+  [PASS] 18 config read from /etc/agent-sandbox.conf (no $PWD/.devcontainer read)
   [PASS] 19 egress jail active: RFC1918 blackholed in netns (or disabled)
   [PASS] 20 RFC1918 lateral egress unreachable, gateway still routable (or disabled)
   Summary: 20 PASS / 0 FAIL
@@ -446,4 +446,4 @@ phase-1 results.
 Final result line:
 - All 21 PASS + 10 BLOCKED → `RESULT: SANDBOX OK (21 deterministic + 10 adversarial)`
 - All 21 PASS + ≥1 INCONCLUSIVE + 0 ESCAPED → `RESULT: SANDBOX OK (21 deterministic + N BLOCKED, M INCONCLUSIVE)`
-- Any FAIL or ESCAPED → `RESULT: SANDBOX LEAKING — open an issue against DiamondLightSource/claude-sandbox`
+- Any FAIL or ESCAPED → `RESULT: SANDBOX LEAKING — open an issue against DiamondLightSource/agent-sandbox`

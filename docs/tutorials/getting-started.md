@@ -12,13 +12,13 @@ yourself. The other way is for when you already work inside your own
 project's devcontainer (and if your project doesn't have one yet,
 [set one up first](set-up-a-devcontainer.md)).
 
-## The quick way: use claude-sandbox's own devcontainer
+## The quick way: use agent-sandbox's own devcontainer
 
 Clone **this repo** and open it in VS Code:
 
 ```bash
-git clone https://github.com/DiamondLightSource/claude-sandbox
-code claude-sandbox
+git clone https://github.com/DiamondLightSource/agent-sandbox
+code agent-sandbox
 ```
 
 When VS Code offers **"Reopen in Container"**, accept it (or press `F1` and
@@ -56,25 +56,25 @@ devcontainers.
 ## The other way: install into your own devcontainer
 
 Already working inside your own project's devcontainer? Install
-claude-sandbox into it.
+agent-sandbox into it.
 
 ### 1. Clone and install
 
 In a terminal inside the container:
 
 ```bash
-cd /tmp && rm -rf claude-sandbox && git clone https://github.com/DiamondLightSource/claude-sandbox && claude-sandbox/install
+cd /tmp && rm -rf agent-sandbox && git clone https://github.com/DiamondLightSource/agent-sandbox && agent-sandbox/install
 ```
 
 This installs the **newest release**, not the tip of `main`: the clone
 lands on the default branch, and `install` then checks out the newest
-release tag before installing it — the same revision `claude-sandbox
+release tag before installing it — the same revision `agent-sandbox
 update` would give you. It prints which one it picked. (To install a
-specific release instead: `claude-sandbox/install --release 3.0.0`.)
+specific release instead: `agent-sandbox/install --release 3.0.0`.)
 
 The clone is **disposable** — nothing depends on it after install (the
-`claude-sandbox` helper CLI lands on your PATH, and
-`claude-sandbox update` fetches its own fresh clone when you upgrade), so
+`agent-sandbox` helper CLI lands on your PATH, and
+`agent-sandbox update` fetches its own fresh clone when you upgrade), so
 `/tmp` is exactly the right place: it evaporates with the container.
 
 The installer relocates the real Claude binary off your `PATH` and drops a shadow
@@ -117,8 +117,8 @@ plain `claude` in the sandbox, nothing else to remember.
 
 The installer is idempotent. After a devcontainer rebuild, just run the
 clone-and-install one-liner again (or let `postCreate` do it). Once
-installed, `claude-sandbox update` upgrades you to the latest release and
-`claude-sandbox version` reports what you have.
+installed, `agent-sandbox update` upgrades you to the latest release and
+`agent-sandbox version` reports what you have.
 
 The shadow is re-established **without re-downloading Claude**.
 

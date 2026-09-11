@@ -33,7 +33,7 @@ the two.
 - PAT *scope* discipline (fine-grained, single-repo, short expiry) is the user's
   responsibility, documented under "PAT hygiene" in `README-CLAUDE.md`. The
   tool keeps the token off disk-history; it does not enforce scope.
-- `CLAUDE_SANDBOX_NO_FORGE=1` skips the token binds (and the credential helpers)
+- `AGENT_SANDBOX_NO_FORGE=1` skips the token binds (and the credential helpers)
   entirely when a session doesn't need to push.
 - A "stop re-pasting the PAT" request must surface this trade-off before any
   shortcut is implemented.

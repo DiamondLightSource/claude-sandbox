@@ -2,7 +2,7 @@
 
 The whole protection is launch-time: plain `claude` must resolve to the
 shadow at `/usr/local/bin/claude`, which `bwrap`-wraps the real binary
-relocated to `/usr/libexec/claude-sandbox/claude`. This page explains the
+relocated to `/usr/libexec/agent-sandbox/claude`. This page explains the
 one way that protection silently broke in practice, and the two-part fix
 that makes the devcontainer safe-by-construction. For how the shadow,
 relocation and bind mounts fit together, see
@@ -32,7 +32,7 @@ The installer sets `env.DISABLE_AUTOUPDATER=1` and `autoUpdates: false`
 in the managed policy. With the in-container updater off, the thing that
 re-creates `~/.local/bin/claude` never runs on its own. Updates become a
 deliberate act: you re-run `./install`, which re-fetches the binary,
-re-relocates it to `/usr/libexec/claude-sandbox/`, and re-asserts the
+re-relocates it to `/usr/libexec/agent-sandbox/`, and re-asserts the
 shadow. See [upgrade Claude Code](../how-to/upgrade.md) for that
 workflow.
 
@@ -67,13 +67,13 @@ The escape hatch is a **root-owned flag file**,
 warn-only. The `SessionStart` warning still fires — working unwrapped is
 allowed, but never silent. The operator stamps it with
 `sudo touch /etc/claude-code/allow-unwrapped`, or by re-running
-`./install` with `DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED=1` (which also removes it again on a
+`./install` with `DANGEROUSLY_ALLOW_AGENT_SANDBOX_UNWRAPPED=1` (which also removes it again on a
 later install without that variable).
 
 It is deliberately a flag under `/etc`, **not** an environment variable.
 A confined Claude can write `~/.claude/settings.json` — a host-shared,
 persistent file — and Claude Code exports that file's `env` block into
-later sessions. The earlier `CLAUDE_SANDBOX_ALLOW_UNWRAPPED=1` env hatch
+later sessions. The earlier `AGENT_SANDBOX_ALLOW_UNWRAPPED=1` env hatch
 was therefore *forgeable from inside the jail*: a compromised session
 could persist it and silently neutralise the gate on a later **unwrapped**
 launch (deep-review **H4**). `/etc` is read-only inside the bwrap shadow
@@ -105,7 +105,7 @@ sandbox config:
   highest-precedence settings layer. A user editing their own
   `~/.claude/settings.json` cannot remove or override the entries; only
   `root` editing `/etc` (or a deliberate `./install`) changes the guard.
-- **Hook scripts live in `/usr/libexec/claude-sandbox/`** — root-owned,
+- **Hook scripts live in `/usr/libexec/agent-sandbox/`** — root-owned,
   off the user's PATH, and read-only inside the sandbox (`--ro-bind /
   /`), exactly like the relocated real binary. A compromised in-session
   Claude cannot rewrite them to `exit 0`. Under `~/.claude` they would
@@ -131,7 +131,7 @@ the installer is safe-by-construction.
 ## Open follow-up: are `IS_SANDBOX` / `CLAUDE_CODE_REMOTE` themselves forgeable? (deep-review H4)
 
 Moving the escape hatch out of the environment (above) closes the
-`CLAUDE_SANDBOX_ALLOW_UNWRAPPED` forgery. But the gate's two *positive*
+`AGENT_SANDBOX_ALLOW_UNWRAPPED` forgery. But the gate's two *positive*
 pass conditions are still environment variables:
 
 ```sh

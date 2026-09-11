@@ -1,6 +1,6 @@
-# Environment: claude-sandbox
+# Environment: agent-sandbox
 
-You are running inside claude-sandbox, a bubblewrap jail around pi (https://pi.dev).
+You are running inside agent-sandbox, a bubblewrap jail around pi (https://pi.dev).
 The root filesystem is read-only. The workspace, your home directory and /tmp
 are writable; home is mostly ephemeral, so treat anything outside the workspace
 as gone next session.

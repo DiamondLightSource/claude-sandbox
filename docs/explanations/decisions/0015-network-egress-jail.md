@@ -11,7 +11,7 @@ Accepted
 Layers on top of {ref}`adr-network-egress-open` (ADR 5) — same
 mechanism-beneath-bwrap relationship — but **as of 2026-06-18 the jail is the
 default**. That overrides ADR 5's *open-egress default* (not its reasoning:
-`CLAUDE_SANDBOX_EGRESS_JAIL=0` restores the open path, and filtering still lives
+`AGENT_SANDBOX_EGRESS_JAIL=0` restores the open path, and filtering still lives
 around the tool, not inside it). ADR 5 carries a pointer here.
 
 ## Context
@@ -57,7 +57,7 @@ Add an egress jail **beneath the bwrap wall**, scoped to Claude alone. The
 container keeps `--network=host`, so ordinary (non-Claude) shells and EPICS
 Channel Access broadcast are untouched. Only the shadow's launch is jailed:
 
-- `claude-shadow` creates a **user + network namespace** with `unshare -rn`
+- `agent-shadow` creates a **user + network namespace** with `unshare -rn`
   (a short-lived *holder*) and bwrap **inherits** it — bwrap keeps omitting
   `--unshare-net`; it only nests its own userns inside the holder's. (The holder
   must create the netns, not bwrap and not pasta: the container has no
@@ -91,7 +91,7 @@ Channel Access broadcast are untouched. Only the shadow's launch is jailed:
   `169.254/16`; then punches back only — the **gateway** (`/32`, on-link), the
   **pasta DNS forwarder** (`/32` via gw — a non-routable TEST-NET address, not a
   real host), and the **`allow-ip` devices** (`/32` via gw) from
-  `/etc/claude-sandbox.conf`. Note what is *not* punched: the resolvers named in
+  `/etc/agent-sandbox.conf`. Note what is *not* punched: the resolvers named in
   `/etc/resolv.conf`. Those are real internal hosts, and a `/32` to one is
   reachable on every port, not just 53 — a lateral-movement path for exactly the
   compromised agent this ADR exists to contain. All DNS goes through the
@@ -111,7 +111,7 @@ Channel Access broadcast are untouched. Only the shadow's launch is jailed:
   `--dns-forward 192.0.2.53` (an RFC5737 TEST-NET address — globally
   non-routable, outside every blackholed range), making it listen on that
   address *inside* the netns and relay DNS to the host's real resolvers (pasta
-  runs in the host netns). `claude-shadow` **always** binds a `resolv.conf`
+  runs in the host netns). `agent-shadow` **always** binds a `resolv.conf`
   naming `192.0.2.53` over Claude's, carrying the host's `search` / `domain` /
   `options` lines across so short names still resolve, and the holder routes
   that `/32` via the gateway. Two problems disappear at once:
@@ -149,8 +149,8 @@ Channel Access broadcast are untouched. Only the shadow's launch is jailed:
   net device all fail `EPERM`, and RFC1918 stays blocked after the attempts.
 
 **On by default, fail-closed, with an escape hatch.** The jail runs unless
-`CLAUDE_SANDBOX_EGRESS_JAIL=0` (env, per session) or `egress-jail = 0`
-(`/etc/claude-sandbox.conf`, per host) disables it. If the jail is on but a
+`AGENT_SANDBOX_EGRESS_JAIL=0` (env, per session) or `egress-jail = 0`
+(`/etc/agent-sandbox.conf`, per host) disables it. If the jail is on but a
 prerequisite is missing (`/dev/net/tun`, pasta, unshare), the launch **fails
 closed** — `claude` refuses to start rather than silently dropping back to open
 egress — and the error names both the fix and the `=0` escape hatch. This is the
@@ -162,7 +162,7 @@ Two structural choices fix scope:
 
 - **Bash, inlined in the shadow.** The setup is implemented as inlined functions
   (`netns_launch()` orchestrating, `netns_holder()` running inside `unshare -rn`,
-  plus an `egress_jail_enabled` predicate) *inside* `claude-shadow`, not a sourced
+  plus an `egress_jail_enabled` predicate) *inside* `agent-shadow`, not a sourced
   module — preserving the
   single-file, read-top-to-bottom auditability that {ref}`adr-bash-only` and
   {ref}`adr-integrity-surfaces` rest on. netns + routing + pasta *is* shell
@@ -171,7 +171,7 @@ Two structural choices fix scope:
   is warranted. (Trigger to revisit extraction into its own file — its own ADR —
   is if the net code outgrows the shadow's readability.)
 - **Allowlist lives in `/etc`, not the workspace.** `allow-ip` entries come from
-  `/etc/claude-sandbox.conf`, outside the sandbox's rw set, per
+  `/etc/agent-sandbox.conf`, outside the sandbox's rw set, per
   {ref}`adr-untrusted-workspace`. A per-workspace allowlist would be
   attacker-writable from inside the jail.
 
@@ -209,7 +209,7 @@ Two structural choices fix scope:
 - **On by default shifts the dogfood ≈ guest cost.** With the jail the default
   and fail-closed, a host that hasn't mounted `/dev/net/tun` (a `devcontainer.json`
   runArg an installer can't add) gets a `claude` that refuses to launch until it
-  either adds the device or sets `CLAUDE_SANDBOX_EGRESS_JAIL=0`. `install.sh`
+  either adds the device or sets `AGENT_SANDBOX_EGRESS_JAIL=0`. `install.sh`
   installs pasta so that prerequisite is never the blocker; the dogfood box mounts
   the tun device. A plain `git clone + ./install` guest that wants the default
   jail must add the one runArg — the error says so — and otherwise opts out with
@@ -226,7 +226,7 @@ Two structural choices fix scope:
   attach → route lockdown → nested capful bwrap → Claude — works on a real
   rootless host, *and* the route-immutability security battery passes
   (`probe-network-jail.sh`, run unjailed).
-- **Done since adoption:** implemented in `claude-shadow`
+- **Done since adoption:** implemented in `agent-shadow`
   (`netns_launch`/`netns_holder`/`egress_jail_enabled`) plus `install.sh` (installs
   `passt`, which provides pasta) and tests; on by default, fail-closed, and
   validated end-to-end on a rootless `--network=host` host **and in a bridge/NAT

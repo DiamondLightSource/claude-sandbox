@@ -6,31 +6,31 @@
 #                    dev-tooling baseline (git, curl, ca-certificates, jq,
 #                    sudo) the bash installer needs; everything else
 #                    (bubblewrap, nodejs, gh) is apt-installed by
-#                    `.devcontainer/claude-sandbox/install.sh` at
+#                    `.devcontainer/agent-sandbox/install.sh` at
 #                    postCreate.
-#   claude-sandbox — the PUBLISHED image (ghcr.io/diamondlightsource/claude-sandbox,
+#   agent-sandbox — the PUBLISHED image (ghcr.io/diamondlightsource/agent-sandbox,
 #                    built by .github/workflows/container.yml): sandboxed
-#                    Claude Code for hosts WITHOUT a devcontainer workflow;
-#                    rootless podman/docker + the container/claude-container
+#                    coding agents (Claude Code, Codex, Pi) for hosts WITHOUT a devcontainer workflow;
+#                    rootless podman/docker + the container/agent-container
 #                    launcher is all a host needs. It builds FROM the
 #                    developer stage and is installed by the same install.sh
 #                    the devcontainer runs — dogfood ≈ guest ≈ image, one
 #                    installer, one audit surface.
 FROM ghcr.io/diamondlightsource/ubuntu-devcontainer:noble AS developer
 
-FROM developer AS claude-sandbox
+FROM developer AS agent-sandbox
 
-# The version of container/claude-container this image was built and
+# The version of container/agent-container this image was built and
 # tested with. CI derives it from the script's VERSION line (single
 # source of truth) and passes it in; the launcher reads the label from
 # the pulled image to warn when the user's copy is out of date.
 ARG LAUNCHER_VERSION=""
-LABEL io.diamondlightsource.claude-sandbox.launcher-version="${LAUNCHER_VERSION}"
+LABEL io.diamondlightsource.agent-sandbox.launcher-version="${LAUNCHER_VERSION}"
 
-# What `claude-sandbox version` reports inside the image. .dockerignore
+# What `agent-sandbox version` reports inside the image. .dockerignore
 # excludes .git, so stamp_version can't run `git describe` at build —
 # CI passes the ref name (tag on releases, `main` otherwise) instead.
-ARG CLAUDE_SANDBOX_VERSION=""
+ARG AGENT_SANDBOX_VERSION=""
 
 # Whether to fetch OpenAI's Codex CLI at build time (install.sh's own
 # WITH_CODEX knob, exposed here). The codex SHADOW and its managed guard
@@ -45,8 +45,8 @@ ARG WITH_CODEX=1
 ARG WITH_PI=1
 ARG PI_VERSION=latest
 
-COPY . /opt/claude-sandbox
-WORKDIR /opt/claude-sandbox
+COPY . /opt/agent-sandbox
+WORKDIR /opt/agent-sandbox
 
 # Run install.sh's main() sequence MINUS two build-time-inappropriate
 # steps, via install.sh's source-guard seam:
@@ -66,14 +66,14 @@ RUN bash -c ' \
     export WITH_CODEX="'"$WITH_CODEX"'"; \
     export WITH_PI="'"$WITH_PI"'"; \
     export PI_VERSION="'"$PI_VERSION"'"; \
-    source .devcontainer/claude-sandbox/install.sh; \
+    source .devcontainer/agent-sandbox/install.sh; \
     probe_or_refuse; \
-    install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/claude)"; \
-    install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/codex)"; \
-    install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/pi)"; \
-    install_file "$SCRIPT_DIR/pi-run" "$(prefixed /usr/libexec/claude-sandbox/pi-run)"; \
-    install_file "$SCRIPT_DIR/pi-system.md" "$(prefixed /usr/libexec/claude-sandbox/pi-system.md)" 0644; \
-    install_file "$SCRIPT_DIR/claude-sandbox" "$(prefixed /usr/local/bin/claude-sandbox)"; \
+    install_file "$SCRIPT_DIR/agent-shadow" "$(prefixed /usr/local/bin/claude)"; \
+    install_file "$SCRIPT_DIR/agent-shadow" "$(prefixed /usr/local/bin/codex)"; \
+    install_file "$SCRIPT_DIR/agent-shadow" "$(prefixed /usr/local/bin/pi)"; \
+    install_file "$SCRIPT_DIR/pi-run" "$(prefixed /usr/libexec/agent-sandbox/pi-run)"; \
+    install_file "$SCRIPT_DIR/pi-system.md" "$(prefixed /usr/libexec/agent-sandbox/pi-system.md)" 0644; \
+    install_file "$SCRIPT_DIR/agent-sandbox" "$(prefixed /usr/local/bin/agent-sandbox)"; \
     apt_install; \
     install_claude_binary; \
     install_codex_binary; \
@@ -126,5 +126,5 @@ RUN uv python install --no-progress "$PYTHON_VERSION" \
 # then execs the command — default: claude, i.e. the shadow on $PATH. Run the
 # image with `codex` as the command to get a sandboxed Codex session from the
 # same image (the same shadow, dispatching on argv[0]).
-ENTRYPOINT ["/opt/claude-sandbox/container/entrypoint.sh"]
+ENTRYPOINT ["/opt/agent-sandbox/container/entrypoint.sh"]
 CMD ["claude"]

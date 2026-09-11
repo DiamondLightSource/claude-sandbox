@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # UserPromptSubmit hook (GLOBAL). Fail-closed gate: blocks every prompt
-# unless the claude-sandbox bwrap shadow is in effect (IS_SANDBOX=1, set only
+# unless the agent-sandbox bwrap shadow is in effect (IS_SANDBOX=1, set only
 # by the bwrap launcher).
 #
 # Serves BOTH agents. Claude Code reaches it through managed-settings
@@ -27,7 +27,7 @@
 # under /etc — NOT an environment variable — because a confined Claude
 # can write ~/.claude/settings.json (host-shared, persistent), and
 # Claude Code exports that file's "env" block into later sessions. An
-# env-var hatch (CLAUDE_SANDBOX_ALLOW_UNWRAPPED) was therefore forgeable
+# env-var hatch (AGENT_SANDBOX_ALLOW_UNWRAPPED) was therefore forgeable
 # from inside the jail and would silently, persistently neutralise the
 # gate on a later UNWRAPPED launch (deep-review H4, issue #63). /etc is
 # ro inside the bwrap shadow (`--ro-bind / /`) and not host-shared, so
@@ -86,7 +86,7 @@ gate_main() {
 
     # Exit 2 blocks the prompt and surfaces stderr to the user. Both agents
     # honour that contract.
-    echo "BLOCKED: $label is running OUTSIDE the claude-sandbox bwrap shadow (IS_SANDBOX unset) — host credentials are NOT isolated. An agent self-update can re-create ~/.local/bin/$binary and bypass the shadow; re-run claude-sandbox/install, then relaunch $binary. (To work unwrapped anyway, the host operator can: sudo touch /etc/claude-code/allow-unwrapped.)" >&2
+    echo "BLOCKED: $label is running OUTSIDE the agent-sandbox bwrap shadow (IS_SANDBOX unset) — host credentials are NOT isolated. An agent self-update can re-create ~/.local/bin/$binary and bypass the shadow; re-run agent-sandbox/install, then relaunch $binary. (To work unwrapped anyway, the host operator can: sudo touch /etc/claude-code/allow-unwrapped.)" >&2
     exit 2
 }
 

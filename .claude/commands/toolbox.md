@@ -24,4 +24,4 @@ Output exactly the following text verbatim, with no preamble, commentary, or tra
 - `/verify-sandbox` — Run the 21-check sandbox PASS/FAIL battery (+ adversarial probes) against the live process.
 
 **Workspace skills (`./.claude/skills/`)**
-- (none unless installed via `claude-sandbox install-skill`)
+- (none unless installed via `agent-sandbox install-skill`)

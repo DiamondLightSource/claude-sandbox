@@ -2,14 +2,18 @@
 
 ## At a glance
 
-`claude-sandbox` is a launch-time wrapper. A **shadow** `claude` sits first
-on `$PATH` at `/usr/local/bin/claude`; the real Anthropic binary is
-**relocated off-PATH** to `/usr/libexec/claude-sandbox/claude`. Every plain
-`claude` invocation therefore resolves to the shadow, which re-execs the real
-binary inside a `bwrap` jail. Inside that jail the filesystem is mounted
+`agent-sandbox` is a launch-time wrapper for coding agents. A **shadow**
+`claude` sits first on `$PATH` at `/usr/local/bin/claude`; the real Anthropic
+binary is **relocated off-PATH** to `/usr/libexec/agent-sandbox/claude`. Every
+plain `claude` invocation therefore resolves to the shadow, which re-execs the
+real binary inside a `bwrap` jail. Inside that jail the filesystem is mounted
 read-only and `$HOME` is wiped to a `tmpfs`, so host credentials, IDE bridges,
 and the shell environment are unreachable — while the current workspace stays
-read-write and the internet stays reachable, because Claude needs both to work.
+read-write and the internet stays reachable, because the agent needs both to
+work. The same shadow file is installed as `codex` and `pi` too, dispatching
+on the name it was invoked as ({ref}`ADR 18 <adr-multi-agent-shadow>`); this
+page walks through the `claude` case, and the others differ only in their
+agent profile.
 By default Claude's egress is also *jailed* ({ref}`adr-network-egress-jail`): a
 per-process network namespace blackholes the internal RFC1918 network so a
 compromised session cannot pivot sideways to internal hosts, while
@@ -73,7 +77,7 @@ graph TB
             x11["X11 / /run/user"]
         end
         shadow["/usr/local/bin/claude<br/>(shadow, first on PATH)"]
-        real["/usr/libexec/claude-sandbox/claude<br/>(real binary, off-PATH)"]
+        real["/usr/libexec/agent-sandbox/claude<br/>(real binary, off-PATH)"]
     end
 
     subgraph jail["bwrap jail in the holder netns (IS_SANDBOX=1)"]
@@ -99,7 +103,7 @@ being *excluded* from the jail, not bound into it.
 The `bwrap` jail nests inside the holder network namespace: the shadow forks an
 `unshare -rn` holder, `pasta` attaches to it from outside by PID and locks the
 routing allowlist, and `bwrap` inherits that netns (it keeps omitting
-`--unshare-net`). Setting `CLAUDE_SANDBOX_EGRESS_JAIL=0` skips the holder and
+`--unshare-net`). Setting `AGENT_SANDBOX_EGRESS_JAIL=0` skips the holder and
 restores ADR 0005's shared-host-netns world. See
 {ref}`adr-network-egress-jail` and
 [Configure the network egress jail](../how-to/network-egress-jail.md).
@@ -112,7 +116,7 @@ build the argv). By default it then sets up the egress jail (`netns_launch`): it
 forks an `unshare -rn` holder that owns a fresh user+network namespace, attaches
 `pasta` from outside by PID, and has the holder lock the routing allowlist
 before exec-ing `bwrap` (wrapped in `script(1)`) — which inherits the holder's
-netns. With `CLAUDE_SANDBOX_EGRESS_JAIL=0` it skips the holder and execs `bwrap`
+netns. With `AGENT_SANDBOX_EGRESS_JAIL=0` it skips the holder and execs `bwrap`
 wrapped in `script(1)` directly (ADR 0005's open-egress world). The `script(1)`
 wrap allocates a fresh pseudo-terminal — that is the TIOCSTI defence: an `ioctl`
 inside the sandbox lands in `script`'s pty, which reads it back as bytes, not
@@ -139,7 +143,7 @@ sequenceDiagram
     else normal launch from host shell
         S->>S: touch ~/.claude.json (bind-back target)
         S->>FS: regenerate /etc/claude-gitconfig<br/>from host user.name / user.email
-        S->>FS: parse_config /etc/claude-sandbox.conf
+        S->>FS: parse_config /etc/agent-sandbox.conf
         S->>S: resolve_workspace_root ($PWD or override)
         S->>S: bwrap_argv_build(workspace, real, args)
         alt egress jail enabled (default) — netns_launch
@@ -147,7 +151,7 @@ sequenceDiagram
             S->>P: pasta attach to holder by PID
             H->>H: netns_holder locks routing allowlist<br/>(RFC1918 blackholed, gw/DNS/allow-ip punched back)
             H->>B: exec script -q -c [bwrap argv] /dev/null<br/>(inherits holder netns)
-        else CLAUDE_SANDBOX_EGRESS_JAIL=0 — open egress
+        else AGENT_SANDBOX_EGRESS_JAIL=0 — open egress
             S->>B: exec script -q -c [bwrap argv] /dev/null
         end
         B->>R: exec --no-chrome [args] with IS_SANDBOX=1
@@ -243,8 +247,8 @@ graph TD
         managed -.->|outranks| userset
     end
 
-    managed --> ss["SessionStart →<br/>bash /usr/libexec/claude-sandbox/sandbox-verify.sh"]
-    managed --> ups["UserPromptSubmit →<br/>bash /usr/libexec/claude-sandbox/sandbox-gate.sh"]
+    managed --> ss["SessionStart →<br/>bash /usr/libexec/agent-sandbox/sandbox-verify.sh"]
+    managed --> ups["UserPromptSubmit →<br/>bash /usr/libexec/agent-sandbox/sandbox-gate.sh"]
     managed --> upd["env.DISABLE_AUTOUPDATER=1<br/>autoUpdates=false"]
 
     ss --> ssact["full integrity battery once/session<br/>WARN loudly if IS_SANDBOX unset<br/>(cannot block)"]
@@ -270,7 +274,7 @@ Claude can forge an env var via `~/.claude/settings.json` but cannot write
 Why a user editing `~/.claude/settings.json` cannot disable it: the hook
 *entries* live in the managed-settings layer, which outranks user settings and
 is only writable by `root` (or a deliberate `./install`). The hook *scripts*
-live in `/usr/libexec/claude-sandbox/` — root-owned, off-PATH, and read-only
+live in `/usr/libexec/agent-sandbox/` — root-owned, off-PATH, and read-only
 inside the sandbox (`--ro-bind / /`), so even a compromised in-session Claude
 cannot rewrite them to `exit 0`. The installer merges the policy in
 idempotently, preserves any real enterprise admin policy already present, and
@@ -283,15 +287,15 @@ The sandbox config (`workspace-root`, `no-forge`, `allow-write`, `pass-env`,
 `egress-jail`, `allow-ip`) follows the same `/etc`-not-the-workspace discipline
 as the guard, and for the same reason. `install.sh` seeds `/etc` with the
 shipped defaults from the installing clone; you edit
-`/etc/claude-sandbox.conf` directly (an unsandboxed root shell — your
+`/etc/agent-sandbox.conf` directly (an unsandboxed root shell — your
 container terminal); the shadow reads it from `/etc` at launch — never
 from `$PWD`. Like `allow-write`, the `allow-ip` device allowlist is read
 only from `/etc`, so a session cannot widen its own network reach.
 
 ```{mermaid}
 graph LR
-    clone[".devcontainer/claude-sandbox.conf<br/>(shipped defaults in the clone)"]
-    etc["/etc/claude-sandbox.conf<br/>(outside the rw workspace — you edit here, as root)"]
+    clone[".devcontainer/agent-sandbox.conf<br/>(shipped defaults in the clone)"]
+    etc["/etc/agent-sandbox.conf<br/>(outside the rw workspace — you edit here, as root)"]
     shadow["shadow at launch<br/>parse_config()"]
     argv["bwrap argv + netns routes<br/>WORKSPACE_ROOT, ALLOW_WRITE, NO_FORGE,<br/>EGRESS_JAIL, ALLOW_IP"]
 
@@ -339,10 +343,10 @@ manual either way — it is JSONC in the wild, and only you know whether a
 
 | Concern | File |
 |---|---|
-| Shadow + inlined `bwrap` argv builder, recursion guard, gitconfig render, `script(1)` wrap, egress-jail orchestration (`egress_jail_enabled` / `netns_launch` / `netns_holder`) | `.devcontainer/claude-sandbox/claude-shadow` |
-| Relocate real binary off-PATH; wire shadow; merge managed-settings guard; disable auto-updater; place `/etc` config | `.devcontainer/claude-sandbox/install.sh` |
-| `SessionStart` guard — full integrity battery + loud warn when unwrapped | `.devcontainer/claude-sandbox/sandbox-verify.sh` |
-| `UserPromptSubmit` guard — sub-second fail-closed `IS_SANDBOX` gate | `.devcontainer/claude-sandbox/sandbox-gate.sh` |
+| Shadow + inlined `bwrap` argv builder, recursion guard, gitconfig render, `script(1)` wrap, egress-jail orchestration (`egress_jail_enabled` / `netns_launch` / `netns_holder`) | `.devcontainer/agent-sandbox/agent-shadow` |
+| Relocate real binary off-PATH; wire shadow; merge managed-settings guard; disable auto-updater; place `/etc` config | `.devcontainer/agent-sandbox/install.sh` |
+| `SessionStart` guard — full integrity battery + loud warn when unwrapped | `.devcontainer/agent-sandbox/sandbox-verify.sh` |
+| `UserPromptSubmit` guard — sub-second fail-closed `IS_SANDBOX` gate | `.devcontainer/agent-sandbox/sandbox-gate.sh` |
 | Integrity-battery spec (21 checks + 10 adversarial probes) | `.claude/commands/verify-sandbox.md` |
 | Tests CI runs (argv builder, smoke) | `tests/bwrap_argv.sh`, `tests/smoke.sh` |
 
@@ -351,6 +355,6 @@ manual either way — it is JSONC in the wild, and only you know whether a
 - [Threat model](threat-model.md) — what is locked down, what is deliberately exposed, and why.
 - [Integrity guard](integrity-guard.md) — the managed-settings guard and the unwrapped-launch bypass it closes.
 - [Sandbox internals](../explanations/sandbox-internals.md) — the exact `bwrap` flags and bind list.
-- [Configuration](../reference/configuration.md) — `/etc/claude-sandbox.conf` keys and env-var overrides.
+- [Configuration](../reference/configuration.md) — `/etc/agent-sandbox.conf` keys and env-var overrides.
 - [Configure the network egress jail](../how-to/network-egress-jail.md) — turn the lateral-isolation jail on/off and allow-list device IPs.
 - The four sections: [tutorials](../tutorials.md), [how-to](../how-to.md), [reference](../reference.md), [explanations](../explanations.md).

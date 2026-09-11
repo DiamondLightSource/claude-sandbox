@@ -1,5 +1,5 @@
-# Build and publish the claude-sandbox container image (the
-# `claude-sandbox` stage of the root Dockerfile) to GHCR — sandboxed
+# Build and publish the agent-sandbox container image (the
+# `agent-sandbox` stage of the root Dockerfile) to GHCR — sandboxed
 # Claude Code for hosts without a devcontainer workflow. Mirrors the
 # DiamondLightSource/ubuntu-devcontainer approach: per-arch native builds
 # pushed by digest, merged into one multi-arch manifest.
@@ -48,7 +48,7 @@ jobs:
       # launcher can warn when the user's copy is out of date.
       - name: Extract launcher version
         run: |
-          v="$(sed -n 's/^VERSION="\(.*\)"$/\1/p' container/claude-container)"
+          v="$(sed -n 's/^VERSION="\(.*\)"$/\1/p' container/agent-container)"
           test -n "$v"
           echo "LAUNCHER_VERSION=$v" >> "$GITHUB_ENV"
 
@@ -64,32 +64,32 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          target: claude-sandbox
+          target: agent-sandbox
           load: true
-          tags: claude-sandbox:test
+          tags: agent-sandbox:test
           build-args: |
             LAUNCHER_VERSION=${{ env.LAUNCHER_VERSION }}
-            CLAUDE_SANDBOX_VERSION=${{ github.ref_name }}
+            AGENT_SANDBOX_VERSION=${{ github.ref_name }}
 
       - name: "Test: baked install is complete"
         run: |
-          docker run --rm --entrypoint bash claude-sandbox:test -c '
+          docker run --rm --entrypoint bash agent-sandbox:test -c '
             set -euo pipefail
             test -x /usr/local/bin/claude
-            test -x /usr/libexec/claude-sandbox/claude
+            test -x /usr/libexec/agent-sandbox/claude
             test -x /usr/local/bin/pi
-            test -x /usr/libexec/claude-sandbox/pi-run
-            test -x /usr/libexec/claude-sandbox/pi-dist/pi
-            test -x /usr/libexec/claude-sandbox/sandbox-verify.sh
-            test -x /usr/libexec/claude-sandbox/sandbox-gate.sh
-            test -x /usr/libexec/claude-sandbox/verify-sandbox-battery.sh
-            test -f /etc/claude-sandbox.conf
+            test -x /usr/libexec/agent-sandbox/pi-run
+            test -x /usr/libexec/agent-sandbox/pi-dist/pi
+            test -x /usr/libexec/agent-sandbox/sandbox-verify.sh
+            test -x /usr/libexec/agent-sandbox/sandbox-gate.sh
+            test -x /usr/libexec/agent-sandbox/verify-sandbox-battery.sh
+            test -f /etc/agent-sandbox.conf
             jq -e ".hooks.SessionStart and .hooks.UserPromptSubmit
                    and .autoUpdates == false
                    and .env.DISABLE_AUTOUPDATER == \"1\"" \
               /etc/claude-code/managed-settings.json
-            /usr/libexec/claude-sandbox/claude --version
-            /usr/libexec/claude-sandbox/pi-dist/pi --version
+            /usr/libexec/agent-sandbox/claude --version
+            /usr/libexec/agent-sandbox/pi-dist/pi --version
             # Image-only Python: baked interpreter, shared venv under /cache
             test -x /cache/venv/bin/python
             python -c "import sys; assert sys.prefix == \"/cache/venv\", sys.prefix"
@@ -100,11 +100,11 @@ jobs:
       - name: "Test: launcher-version label matches the baked script"
         run: |
           label="$(docker image inspect \
-            -f '{{index .Config.Labels "io.diamondlightsource.claude-sandbox.launcher-version"}}' \
-            claude-sandbox:test)"
-          baked="$(docker run --rm --entrypoint sed claude-sandbox:test \
+            -f '{{index .Config.Labels "io.diamondlightsource.agent-sandbox.launcher-version"}}' \
+            agent-sandbox:test)"
+          baked="$(docker run --rm --entrypoint sed agent-sandbox:test \
             -n 's/^VERSION="\(.*\)"$/\1/p' \
-            /opt/claude-sandbox/container/claude-container)"
+            /opt/agent-sandbox/container/agent-container)"
           echo "label=$label baked=$baked"
           test -n "$label"
           test "$label" = "$baked"
@@ -124,7 +124,7 @@ jobs:
           # ptrace semantics), so the e2e runs under the runner's rootless
           # podman: move the built image across, then launch for real.
           command -v podman >/dev/null || sudo apt-get install -y -qq podman
-          docker save claude-sandbox:test | podman load
+          docker save agent-sandbox:test | podman load
           mkdir -p "$RUNNER_TEMP/terminal-config" "$RUNNER_TEMP/project"
           podman run --rm -t \
             --security-opt seccomp=unconfined \
@@ -133,7 +133,7 @@ jobs:
             --device /dev/net/tun \
             -v "$RUNNER_TEMP/terminal-config:/user-terminal-config" \
             -v "$RUNNER_TEMP/project:/work" -w /work \
-            claude-sandbox:test bash -c '
+            agent-sandbox:test bash -c '
               claude --version || {
                 rc=$?
                 echo "=== jail diagnostics (launch failed, rc=$rc) ==="
@@ -152,7 +152,7 @@ jobs:
             --security-opt label=disable \
             --device /dev/net/tun \
             -v "$RUNNER_TEMP/terminal-config:/user-terminal-config" \
-            claude-sandbox:test bash /opt/claude-sandbox/tests/pi_e2e.sh
+            agent-sandbox:test bash /opt/agent-sandbox/tests/pi_e2e.sh
 
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
@@ -168,11 +168,11 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          target: claude-sandbox
+          target: agent-sandbox
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             LAUNCHER_VERSION=${{ env.LAUNCHER_VERSION }}
-            CLAUDE_SANDBOX_VERSION=${{ github.ref_name }}
+            AGENT_SANDBOX_VERSION=${{ github.ref_name }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest

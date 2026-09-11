@@ -32,23 +32,23 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # install.sh:25
 ...
 install_file "$SCRIPT_DIR/sandbox-verify.sh" ...             # :316
 install_file "$SCRIPT_DIR/sandbox-gate.sh"   ...             # :317
-install_file "$SCRIPT_DIR/claude-shadow"     ...             # :433
+install_file "$SCRIPT_DIR/agent-shadow"     ...             # :433
 ```
 
 `$SCRIPT_DIR` resolves into the **read-write workspace clone**
-(`.devcontainer/claude-sandbox/`), which a confined Claude can edit. The
+(`.devcontainer/agent-sandbox/`), which a confined Claude can edit. The
 managed copies are protected in-session, but on the *next* container
 (re)build `postCreate.sh` → `bash install` re-stamps the workspace copies over
 the root-owned guard and shadow with **no provenance, hash, or signature
 check** (`install_file`, install.sh:127). A session that edits its own
-`sandbox-gate.sh` to `exit 0`, or its `claude-shadow` to drop `--unshare-net`
+`sandbox-gate.sh` to `exit 0`, or its `agent-shadow` to drop `--unshare-net`
 or widen a bind, plants tamper that the next rebuild promotes to the trusted,
 root-owned guard. The verifier and gate cannot catch it — they assert
 `IS_SANDBOX=1` and a clean env, and the verifier *is* the re-stamped script.
 {ref}`adr-promote-by-value` (ADR 10) widens the reach: `promote.sh` ships these
 same files into every promoted target's writable workspace.
 
-This is strictly more severe than the `/etc/claude-sandbox.conf` re-stamp
+This is strictly more severe than the `/etc/agent-sandbox.conf` re-stamp
 already filed as issue #35: the conf only carries configuration, whereas the
 guard scripts and the shadow are the *enforcement itself*.
 
@@ -80,7 +80,7 @@ robust anchor must be *outside the workspace tree entirely*.
    acceptable as the sole control, because the same actor that can poison the
    script can poison the reference.
 2. The leading candidate is an **upstream-pinned anchor**: `install.sh` obtains
-   the canonical `sandbox-verify.sh`, `sandbox-gate.sh`, and `claude-shadow`
+   the canonical `sandbox-verify.sh`, `sandbox-gate.sh`, and `agent-shadow`
    (or their checksums) from the upstream repository at a commit SHA pinned in
    the image/`Dockerfile`, and installs/verifies from *that*, refusing a
    divergent workspace copy. Subverting it then requires push access to the
@@ -109,7 +109,7 @@ robust anchor must be *outside the workspace tree entirely*.
   network or upstream is unreachable at install — which MUST fail closed
   (refuse to re-stamp) rather than fall back to the workspace copy.
 - Operators should, in the meantime, treat a container/image rebuild as a
-  trust event: review the `.devcontainer/claude-sandbox/` diff (or rebuild from
+  trust event: review the `.devcontainer/agent-sandbox/` diff (or rebuild from
   a clean checkout) before rebuilding after an untrusted session. This guidance
   belongs in the threat model.
 - The in-session protection from ADR 13/14 is unaffected and remains the

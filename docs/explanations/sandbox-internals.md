@@ -25,7 +25,7 @@ new credentialed tool that drops files under
 `$HOME/.config/<newtool>/` is hidden for free, with no allowlist edit
 required. The forge token dirs are the only exceptions because Claude
 needs them to push code, and they are skipped entirely under
-`CLAUDE_SANDBOX_NO_FORGE=1`.
+`AGENT_SANDBOX_NO_FORGE=1`.
 
 `$HOME/.local/share/` and `$HOME/.cache/` go the other way and are
 **bulk-bound**. These are XDG data and cache locations — plugin trees,
@@ -111,7 +111,7 @@ namespace Claude sees only the pasta-mirrored address, gateway, and DNS
 resolver, not the host's full interface and routing view.
 
 Host network-identity disclosure applies to the **escape-hatch path**
-(`CLAUDE_SANDBOX_EGRESS_JAIL=0`). On that path bwrap omits `--unshare-net`
+(`AGENT_SANDBOX_EGRESS_JAIL=0`). On that path bwrap omits `--unshare-net`
 and inherits the container's host network namespace — the netns is *not*
 unshared — so Claude can enumerate the host's interface addresses, routing
 table, and DNS resolver via `AF_NETLINK` or ordinary tooling such as
@@ -122,7 +122,7 @@ but the host's *full* network identity does not.)
 
 This is **network-identity disclosure, not credential exfiltration**, and
 it applies only when the egress jail is disabled
-(`CLAUDE_SANDBOX_EGRESS_JAIL=0`). Nothing secret is leaked by it directly.
+(`AGENT_SANDBOX_EGRESS_JAIL=0`). Nothing secret is leaked by it directly.
 On the `=0` path it does mean the sandbox is visible to internal services on
 the same host network, and can reach them. The practical caveat (for `=0`
 only): do not run a local metadata-style credential service on the loopback
@@ -167,8 +167,8 @@ the kernel PID-namespace isolation is intact regardless.
 
 The egress jail ({ref}`adr-network-egress-jail`) is on by default and is
 driven by three functions that live inline in the shadow. `egress_jail_enabled`
-is the one-line gate (anything but `CLAUDE_SANDBOX_EGRESS_JAIL=0`, including
-the `egress-jail` key in `/etc/claude-sandbox.conf`, means on; the env var
+is the one-line gate (anything but `AGENT_SANDBOX_EGRESS_JAIL=0`, including
+the `egress-jail` key in `/etc/agent-sandbox.conf`, means on; the env var
 wins). `netns_launch` orchestrates the launch: it runs inside `unshare -rn`
 (a short-lived **holder** that owns a fresh user+net namespace), waits for the
 holder's `/proc/<pid>/ns/net` to appear, then runs `pasta --config-net` against
@@ -180,7 +180,7 @@ allowlist before exec'ing the bwrap'd Claude.
 The allowlist blackholes `10/8`, `172.16/12`, `192.168/16`, the connected
 subnet, and `169.254/16`, then punches back only the gateway, the DNS
 resolvers, and the `allow-ip` devices (configured via the repeatable `allow-ip`
-key or `CLAUDE_SANDBOX_ALLOW_IP`). Internet, DNS, and the allow-ip devices stay
+key or `AGENT_SANDBOX_ALLOW_IP`). Internet, DNS, and the allow-ip devices stay
 reachable; everything sideways into RFC1918 and link-local does not. The
 ordering is load-bearing: netns -> pasta attach -> routes locked -> Claude.
 
@@ -199,7 +199,7 @@ session with no jail-aware variant required.
 The jail is **fail-closed**: if `/dev/net/tun` (the `--device=/dev/net/tun`
 runArg in `devcontainer.json`), `pasta` (apt package `passt`), or `unshare` is
 missing, the shadow refuses to launch — naming the fix and the
-`CLAUDE_SANDBOX_EGRESS_JAIL=0` escape hatch — rather than falling back to open
+`AGENT_SANDBOX_EGRESS_JAIL=0` escape hatch — rather than falling back to open
 egress. Setting `=0` restores the shared-host-netns world of
 {ref}`adr-network-egress-open`.
 

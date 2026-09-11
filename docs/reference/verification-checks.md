@@ -10,8 +10,8 @@ usable as a CI assertion.
 ```
 
 The exact bash for each check is the committed battery script
-`.devcontainer/claude-sandbox/verify-sandbox-battery.sh` (installed to
-`/usr/libexec/claude-sandbox/`, so it is read-only inside the sandbox);
+`.devcontainer/agent-sandbox/verify-sandbox-battery.sh` (installed to
+`/usr/libexec/agent-sandbox/`, so it is read-only inside the sandbox);
 the *why* of each check lives in the spec at
 `.claude/commands/verify-sandbox.md`. The summaries below state what
 each check asserts; see
@@ -45,8 +45,8 @@ stays empty inside the jail's nested userns, and the two jail checks
 | 14 | `$HOME/.netrc` is empty (`--bind-try /dev/null` mask). |
 | 15 | `$HOME/.Xauthority` is empty (`--bind-try /dev/null` mask). |
 | 16 | `GIT_CONFIG_GLOBAL=/etc/claude-gitconfig` is exported and `git config --get user.email` returns a value (curated gitconfig active). |
-| 17 | Workspace is scoped to `$PWD`, not a broad rw `/workspaces` bind, unless `CLAUDE_SANDBOX_WORKSPACE_ROOT=/workspaces` is the explicit opt-in. |
-| 18 | The installed shadow pins `CONFIG_PATH="/etc/claude-sandbox.conf"` and feeds it to `parse_config`, with no `parse_config` call reading from `.devcontainer` (config read from `/etc`, not the attacker-writable workspace). |
+| 17 | Workspace is scoped to `$PWD`, not a broad rw `/workspaces` bind, unless `AGENT_SANDBOX_WORKSPACE_ROOT=/workspaces` is the explicit opt-in. |
+| 18 | The installed shadow pins `CONFIG_PATH="/etc/agent-sandbox.conf"` and feeds it to `parse_config`, with no `parse_config` call reading from `.devcontainer` (config read from `/etc`, not the attacker-writable workspace). |
 | 19 | Egress jail active: the netns routing table carries the full blackhole set (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, CGNAT `100.64.0.0/10`) plus a default route — or the jail is deliberately disabled (pass with a "disabled" note; partial programming is a FAIL). |
 | 20 | Behavioural counterpart to 19: representative non-allow-listed RFC1918/CGNAT addresses (and the connected subnet's base) get no forwardable route, while the gateway stays routable. Disabled jail ⇒ nothing to assert (pass). |
 | 21 | Agent binary mask: in a Codex session `$HOME/.codex/packages` is an empty `tmpfs` (or absent). The vendor unpacks Codex's own binary there — *inside* the read-write `~/.codex` bind — so an unmasked tree is a writable copy of the agent's binary in its own session: a persistence foothold that bypasses the read-only `/usr/libexec` copy actually exec'd. Check 03 cannot catch this, since it inspects only `$HOME`'s top level where `.codex` is legitimately allow-listed. Claude sessions have nothing to assert (pass with a note). |

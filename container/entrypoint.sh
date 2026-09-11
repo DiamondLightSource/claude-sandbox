@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Entrypoint for the published claude-sandbox image (podman/docker run —
+# Entrypoint for the published agent-sandbox image (podman/docker run —
 # no devcontainer). The image bakes a full install at build time
 # (container/Dockerfile); this re-runs only the launch-time steps that
 # depend on runtime mounts, then execs the requested command (default:
@@ -11,7 +11,7 @@
 set -euo pipefail
 
 # shellcheck disable=SC1091
-source /opt/claude-sandbox/.devcontainer/claude-sandbox/install.sh
+source /opt/agent-sandbox/.devcontainer/agent-sandbox/install.sh
 
 # Persist Claude login/memory/settings across containers when the
 # launcher mounts a shared host dir at /user-terminal-config. No-op when
@@ -30,11 +30,11 @@ if [ ! -s "$claude_json" ]; then
     echo '{}' > "$claude_json"
 fi
 
-# Re-stamp /etc/claude-sandbox.conf from the baked clone — unless the
+# Re-stamp /etc/agent-sandbox.conf from the baked clone — unless the
 # operator mounted their own conf over it (a read-only bind, which must
 # win and would EROFS the copy anyway). A mounted conf still satisfies
 # Invariant 4: it sits at /etc, read-only, outside the sandbox rw set.
-if ! _is_mount /etc/claude-sandbox.conf; then
+if ! _is_mount /etc/agent-sandbox.conf; then
     install_conf
 fi
 

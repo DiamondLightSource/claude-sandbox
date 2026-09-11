@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Install smoke test. Runs the installer with INSTALL_PREFIX +
 # INSTALL_WORKSPACE pointed at fresh tmpdirs and asserts on the
-# resulting file placement. Set CLAUDE_SANDBOX_SMOKE=1 to skip
+# resulting file placement. Set AGENT_SANDBOX_SMOKE=1 to skip
 # apt-install and the curl-install of the real Claude binary.
 #
-#   CLAUDE_SANDBOX_SMOKE=1 bash tests/smoke.sh
+#   AGENT_SANDBOX_SMOKE=1 bash tests/smoke.sh
 
 set -uo pipefail
 
@@ -22,13 +22,13 @@ WORKSPACE="$(mktemp -d)"
 USER_HOME_DIR="$(mktemp -d)"
 register_cleanup "$PREFIX" "$WORKSPACE" "$USER_HOME_DIR"
 
-export CLAUDE_SANDBOX_SMOKE=1
+export AGENT_SANDBOX_SMOKE=1
 export INSTALL_PREFIX="$PREFIX"
 export INSTALL_WORKSPACE="$WORKSPACE"
 export INSTALL_USER_HOME="$USER_HOME_DIR"
 
 run_install() {
-    bash "$REPO_ROOT/.devcontainer/claude-sandbox/install.sh" >/dev/null 2>&1
+    bash "$REPO_ROOT/.devcontainer/agent-sandbox/install.sh" >/dev/null 2>&1
 }
 
 # First install.
@@ -37,7 +37,7 @@ if ! run_install; then
 fi
 
 # Shadow placement.
-if [ -x "$PREFIX/usr/libexec/claude-sandbox/codex-launch" ]; then
+if [ -x "$PREFIX/usr/libexec/agent-sandbox/codex-launch" ]; then
     pass
 else
     fail "Codex launcher helper was not installed executable"
@@ -72,7 +72,7 @@ fi
 # Helper CLI placement: on PATH, executable, bash shebang — the shipped
 # command surface (gh-auth, glab-auth, update, verify, version) that
 # survives deletion of the install clone.
-CLI_DEST="$PREFIX/usr/local/bin/claude-sandbox"
+CLI_DEST="$PREFIX/usr/local/bin/agent-sandbox"
 if [ -x "$CLI_DEST" ] && [ "$(stat -c '%a' "$CLI_DEST" 2>/dev/null)" = "755" ]; then
     pass
 else
@@ -89,34 +89,34 @@ fi
 if bash "$CLI_DEST" help 2>/dev/null | grep -q '^Usage:'; then
     pass
 else
-    fail "claude-sandbox help did not print a Usage: line"
+    fail "agent-sandbox help did not print a Usage: line"
 fi
 bash "$CLI_DEST" no-such-command >/dev/null 2>&1
-[ "$?" -eq 2 ] && pass || fail "claude-sandbox unknown subcommand did not exit 2"
+[ "$?" -eq 2 ] && pass || fail "agent-sandbox unknown subcommand did not exit 2"
 
 # Version stamp: recorded from the installing clone (tag when on a tag,
 # hash otherwise — same `git describe` the installer runs), and reported
-# by `claude-sandbox version`.
-VERSION_DEST="$PREFIX/usr/libexec/claude-sandbox/version"
+# by `agent-sandbox version`.
+VERSION_DEST="$PREFIX/usr/libexec/agent-sandbox/version"
 EXPECT_VER="$(git -C "$REPO_ROOT" describe --tags --always --dirty 2>/dev/null || echo unknown)"
 if [ "$(cat "$VERSION_DEST" 2>/dev/null)" = "$EXPECT_VER" ]; then
     pass
 else
     fail "version stamp at $VERSION_DEST is '$(cat "$VERSION_DEST" 2>/dev/null)', expected '$EXPECT_VER'"
 fi
-if [ "$(CLAUDE_SANDBOX_VERSION_FILE="$VERSION_DEST" bash "$CLI_DEST" version)" = "claude-sandbox $EXPECT_VER" ]; then
+if [ "$(AGENT_SANDBOX_VERSION_FILE="$VERSION_DEST" bash "$CLI_DEST" version)" = "agent-sandbox $EXPECT_VER" ]; then
     pass
 else
-    fail "claude-sandbox version did not report the stamped value"
+    fail "agent-sandbox version did not report the stamped value"
 fi
 
 # Guard scripts + the /verify-sandbox phase-1 battery placed OFF the rw
 # set under /usr/libexec (prefixed), like the relocated real binary. All
 # executable, mode 0755 (the battery rides along for the same off-PATH,
 # ro-in-sandbox tamper-resistance).
-VERIFY_DEST="$PREFIX/usr/libexec/claude-sandbox/sandbox-verify.sh"
-GATE_DEST="$PREFIX/usr/libexec/claude-sandbox/sandbox-gate.sh"
-BATTERY_DEST="$PREFIX/usr/libexec/claude-sandbox/verify-sandbox-battery.sh"
+VERIFY_DEST="$PREFIX/usr/libexec/agent-sandbox/sandbox-verify.sh"
+GATE_DEST="$PREFIX/usr/libexec/agent-sandbox/sandbox-gate.sh"
+BATTERY_DEST="$PREFIX/usr/libexec/agent-sandbox/verify-sandbox-battery.sh"
 for g in "$VERIFY_DEST" "$GATE_DEST" "$BATTERY_DEST"; do
     if [ -x "$g" ] && [ "$(stat -c '%a' "$g" 2>/dev/null)" = "755" ]; then
         pass
@@ -135,8 +135,8 @@ jq_check "managed-settings.json missing SessionStart sandbox-verify.sh entry" \
 jq_check "managed-settings.json missing UserPromptSubmit sandbox-gate.sh entry" \
     'any(.hooks.UserPromptSubmit[].hooks[]?; (.command // "") | endswith("sandbox-gate.sh"))' "$MANAGED"
 # Guard commands must point at the absolute /usr/libexec scripts (not $HOME).
-jq_check "managed guard command does not point at /usr/libexec/claude-sandbox" \
-    'any(.. | .command? // empty; startswith("bash /usr/libexec/claude-sandbox/"))' "$MANAGED"
+jq_check "managed guard command does not point at /usr/libexec/agent-sandbox" \
+    'any(.. | .command? // empty; startswith("bash /usr/libexec/agent-sandbox/"))' "$MANAGED"
 # Auto-updater hard-disabled in managed settings.
 jq_check "managed-settings.json missing env.DISABLE_AUTOUPDATER=1 / autoUpdates=false" \
     '(.env.DISABLE_AUTOUPDATER == "1") and (.autoUpdates == false)' "$MANAGED"
@@ -163,11 +163,11 @@ jq_check "guard hooks leaked into user-scope settings.json (should be managed-on
     '[.. | .command? // empty | select(endswith("sandbox-verify.sh") or endswith("sandbox-gate.sh"))] | length == 0' "$SETTINGS"
 
 # Config placement: install copies the clone's conf to the host-global
-# /etc/claude-sandbox.conf the shadow reads at launch (prefixed for the
+# /etc/agent-sandbox.conf the shadow reads at launch (prefixed for the
 # tmpdir). Skip-if-absent in install_conf means this only asserts when
 # the clone actually carries a conf — which it does in-tree.
-CONF_DEST="$PREFIX/etc/claude-sandbox.conf"
-CONF_SRC="$REPO_ROOT/.devcontainer/claude-sandbox.conf"
+CONF_DEST="$PREFIX/etc/agent-sandbox.conf"
+CONF_SRC="$REPO_ROOT/.devcontainer/agent-sandbox.conf"
 if [ -f "$CONF_DEST" ]; then
     pass
 else
@@ -215,7 +215,7 @@ cat > "$MGD_PREFIX/etc/claude-code/managed-settings.json" <<'JSON'
 JSON
 MGD="$MGD_PREFIX/etc/claude-code/managed-settings.json"
 INSTALL_PREFIX="$MGD_PREFIX" INSTALL_USER_HOME="$(mktemp -d)" \
-    bash "$REPO_ROOT/.devcontainer/claude-sandbox/install.sh" >/dev/null 2>&1
+    bash "$REPO_ROOT/.devcontainer/agent-sandbox/install.sh" >/dev/null 2>&1
 
 jq_check "managed merge dropped pre-existing admin key" \
     '.permissions.defaultMode == "plan"' "$MGD"
@@ -227,7 +227,7 @@ jq_check "managed merge did not add our guard alongside the admin hook" \
 
 # Re-merge dedup: running again must NOT duplicate our entries.
 INSTALL_PREFIX="$MGD_PREFIX" INSTALL_USER_HOME="$(mktemp -d)" \
-    bash "$REPO_ROOT/.devcontainer/claude-sandbox/install.sh" >/dev/null 2>&1
+    bash "$REPO_ROOT/.devcontainer/agent-sandbox/install.sh" >/dev/null 2>&1
 V_COUNT="$(jq '[.hooks.SessionStart[].hooks[] | select(.command|endswith("sandbox-verify.sh"))] | length' "$MGD")"
 G_COUNT="$(jq '[.hooks.UserPromptSubmit[].hooks[] | select(.command|endswith("sandbox-gate.sh"))] | length' "$MGD")"
 if [ "$V_COUNT" = "1" ] && [ "$G_COUNT" = "1" ]; then
@@ -235,6 +235,51 @@ if [ "$V_COUNT" = "1" ] && [ "$G_COUNT" = "1" ]; then
 else
     fail "duplicate managed guard entries after re-merge (verify=$V_COUNT gate=$G_COUNT)"
 fi
+
+# Rename migration (ADR 0022): a container installed as claude-sandbox
+# carries /usr/libexec/claude-sandbox/*, /usr/local/bin/claude-sandbox,
+# /etc/claude-sandbox.conf and managed hooks pointing into the old libexec
+# dir. After ./install: binaries moved (not re-downloaded), old paths gone,
+# and the managed hooks point ONLY at the new scripts — an old-path entry
+# left behind would share the basename the dedup keys on and leave the
+# guard pointing at nothing.
+REN_PREFIX="$(mktemp -d)"
+register_cleanup "$REN_PREFIX"
+mkdir -p "$REN_PREFIX/usr/libexec/claude-sandbox/codex-dist/bin" \
+         "$REN_PREFIX/usr/local/bin" "$REN_PREFIX/etc/claude-code"
+printf '#!/bin/sh\necho old-claude\n' > "$REN_PREFIX/usr/libexec/claude-sandbox/claude"
+printf 'marker\n' > "$REN_PREFIX/usr/libexec/claude-sandbox/codex-dist/bin/codex"
+printf '#!/bin/sh\n' > "$REN_PREFIX/usr/libexec/claude-sandbox/sandbox-gate.sh"
+printf '#!/bin/sh\n' > "$REN_PREFIX/usr/local/bin/claude-sandbox"
+printf 'allow-ip = 10.0.0.1\n' > "$REN_PREFIX/etc/claude-sandbox.conf"
+cat > "$REN_PREFIX/etc/claude-code/managed-settings.json" <<'JSON'
+{
+  "hooks": {
+    "SessionStart": [{"hooks": [{"type": "command", "command": "bash /usr/libexec/claude-sandbox/sandbox-verify.sh"}]}],
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "bash /usr/libexec/claude-sandbox/sandbox-gate.sh"}]}]
+  }
+}
+JSON
+REN_MGD="$REN_PREFIX/etc/claude-code/managed-settings.json"
+INSTALL_PREFIX="$REN_PREFIX" INSTALL_USER_HOME="$(mktemp -d)" \
+    bash "$REPO_ROOT/.devcontainer/agent-sandbox/install.sh" >/dev/null 2>&1
+if [ "$(cat "$REN_PREFIX/usr/libexec/agent-sandbox/codex-dist/bin/codex" 2>/dev/null)" = "marker" ] \
+   && grep -q old-claude "$REN_PREFIX/usr/libexec/agent-sandbox/claude" 2>/dev/null; then
+    pass
+else
+    fail "rename migration did not move the relocated binaries to /usr/libexec/agent-sandbox"
+fi
+if [ ! -e "$REN_PREFIX/usr/libexec/claude-sandbox" ] \
+   && [ ! -e "$REN_PREFIX/usr/local/bin/claude-sandbox" ] \
+   && [ ! -e "$REN_PREFIX/etc/claude-sandbox.conf" ]; then
+    pass
+else
+    fail "rename migration left pre-rename paths behind"
+fi
+jq_check "rename migration left an old-libexec managed hook entry behind" \
+    '([.. | objects | .command? // empty | select(contains("/usr/libexec/claude-sandbox/"))] | length) == 0
+     and ([.hooks.SessionStart[].hooks[] | select(.command == "bash /usr/libexec/agent-sandbox/sandbox-verify.sh")] | length) == 1
+     and ([.hooks.UserPromptSubmit[].hooks[] | select(.command == "bash /usr/libexec/agent-sandbox/sandbox-gate.sh")] | length) == 1' "$REN_MGD"
 
 # Migration: an earlier install that put the guard in USER-scope must be
 # pruned so the guard has a single home (managed). Foreign user hooks +
@@ -248,11 +293,11 @@ cat > "$MIG_HOME/.claude/settings.json" <<'JSON'
   "statusLine": {"type": "command", "command": "their-statusline.sh"},
   "hooks": {
     "SessionStart": [
-      {"hooks": [{"type": "command", "command": "bash $HOME/.claude/claude-sandbox/sandbox-verify.sh"}]}
+      {"hooks": [{"type": "command", "command": "bash $HOME/.claude/agent-sandbox/sandbox-verify.sh"}]}
     ],
     "UserPromptSubmit": [
       {"hooks": [{"type": "command", "command": "their-ups.sh"}]},
-      {"hooks": [{"type": "command", "command": "bash $HOME/.claude/claude-sandbox/sandbox-gate.sh"}]}
+      {"hooks": [{"type": "command", "command": "bash $HOME/.claude/agent-sandbox/sandbox-gate.sh"}]}
     ]
   }
 }
@@ -262,7 +307,7 @@ printf '#!/usr/bin/env bash\necho custom\n' > "$MIG_HOME/.claude/statusline-comm
 chmod 0755 "$MIG_HOME/.claude/statusline-command.sh"
 
 INSTALL_USER_HOME="$MIG_HOME" \
-    bash "$REPO_ROOT/.devcontainer/claude-sandbox/install.sh" >/dev/null 2>&1
+    bash "$REPO_ROOT/.devcontainer/agent-sandbox/install.sh" >/dev/null 2>&1
 MIG="$MIG_HOME/.claude/settings.json"
 
 jq_check "interim user-scope guard hooks were not pruned" \
@@ -286,7 +331,7 @@ LINK_SHARED="$(mktemp -d)"
 register_cleanup "$LINK_HOME" "$LINK_SHARED"
 HOME="$LINK_HOME" CLAUDE_SHARED_CONFIG="$LINK_SHARED" \
     INSTALL_WORKSPACE="$WORKSPACE" \
-    bash "$REPO_ROOT/.devcontainer/claude-sandbox/install.sh" >/dev/null 2>&1
+    bash "$REPO_ROOT/.devcontainer/agent-sandbox/install.sh" >/dev/null 2>&1
 if [ "$(readlink "$LINK_HOME/.claude" 2>/dev/null)" = "$LINK_SHARED/.claude" ] \
         && [ "$(readlink "$LINK_HOME/.claude.json" 2>/dev/null)" = "$LINK_SHARED/.claude.json" ]; then
     pass
@@ -329,28 +374,28 @@ fi
 # Executed gate, unwrapped, no real /etc flag → fail-closed default (exit 2).
 echo '{}' | env -u IS_SANDBOX -u CLAUDE_CODE_REMOTE bash "$GATE_DEST" >/dev/null 2>&1
 [ "$?" -eq 2 ] && pass || fail "gate did not fail-closed (exit 2) when unwrapped with no flag"
-# The retired CLAUDE_SANDBOX_ALLOW_UNWRAPPED env hatch must NOT work.
-echo '{}' | env -u IS_SANDBOX CLAUDE_SANDBOX_ALLOW_UNWRAPPED=1 bash "$GATE_DEST" >/dev/null 2>&1
-[ "$?" -eq 2 ] && pass || fail "gate still honours the retired CLAUDE_SANDBOX_ALLOW_UNWRAPPED env hatch (H4 regression)"
-# The removed CLAUDE_SANDBOX_GATE_FLAG seam must NOT let env redirect the flag
+# The retired AGENT_SANDBOX_ALLOW_UNWRAPPED env hatch must NOT work.
+echo '{}' | env -u IS_SANDBOX AGENT_SANDBOX_ALLOW_UNWRAPPED=1 bash "$GATE_DEST" >/dev/null 2>&1
+[ "$?" -eq 2 ] && pass || fail "gate still honours the retired AGENT_SANDBOX_ALLOW_UNWRAPPED env hatch (H4 regression)"
+# The removed AGENT_SANDBOX_GATE_FLAG seam must NOT let env redirect the flag
 # path at an attacker-controlled, always-present file (the seam-reopens-H4 fix).
-echo '{}' | env -u IS_SANDBOX CLAUDE_SANDBOX_GATE_FLAG=/etc/hostname bash "$GATE_DEST" >/dev/null 2>&1
-[ "$?" -eq 2 ] && pass || fail "gate honoured a CLAUDE_SANDBOX_GATE_FLAG env override (H4 seam reopened)"
+echo '{}' | env -u IS_SANDBOX AGENT_SANDBOX_GATE_FLAG=/etc/hostname bash "$GATE_DEST" >/dev/null 2>&1
+[ "$?" -eq 2 ] && pass || fail "gate honoured a AGENT_SANDBOX_GATE_FLAG env override (H4 seam reopened)"
 
 echo '{}' | env -u IS_SANDBOX CLAUDE_CODE_REMOTE=true bash "$GATE_DEST" >/dev/null 2>&1
 [ "$?" -eq 0 ] && pass || fail "gate did not skip on Claude Code Web"
 
 # install.sh stamps/removes the root-owned flag from the (deliberately
-# scary) DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED install seam. The
+# scary) DANGEROUSLY_ALLOW_AGENT_SANDBOX_UNWRAPPED install seam. The
 # base install above ran without it, so the flag must be ABSENT (gate stays
 # fail-closed by default). A re-install with the seam set must create
 # it; a subsequent re-install without it must remove it again.
 GATE_FLAG_DEST="$PREFIX/etc/claude-code/allow-unwrapped"
 [ ! -e "$GATE_FLAG_DEST" ] && pass || fail "default install left the gate escape-hatch flag present (should be fail-closed)"
-DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED=1 run_install
-[ -f "$GATE_FLAG_DEST" ] && pass || fail "DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED=1 install did not stamp $GATE_FLAG_DEST"
+DANGEROUSLY_ALLOW_AGENT_SANDBOX_UNWRAPPED=1 run_install
+[ -f "$GATE_FLAG_DEST" ] && pass || fail "DANGEROUSLY_ALLOW_AGENT_SANDBOX_UNWRAPPED=1 install did not stamp $GATE_FLAG_DEST"
 run_install
-[ ! -e "$GATE_FLAG_DEST" ] && pass || fail "re-install without DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED did not remove a stale $GATE_FLAG_DEST"
+[ ! -e "$GATE_FLAG_DEST" ] && pass || fail "re-install without DANGEROUSLY_ALLOW_AGENT_SANDBOX_UNWRAPPED did not remove a stale $GATE_FLAG_DEST"
 # The retired short name must no longer stamp the flag (renamed 2026-07-24).
 ALLOW_UNWRAPPED=1 run_install
 [ ! -e "$GATE_FLAG_DEST" ] && pass || fail "retired ALLOW_UNWRAPPED=1 name still stamps the gate escape-hatch flag"
@@ -395,7 +440,7 @@ echo local  > "$ADOPT_HOME/.claude/marker";   printf 'local'  > "$ADOPT_HOME/.cl
 echo shared > "$ADOPT_SHARED/.claude/marker"; printf 'shared' > "$ADOPT_SHARED/.claude.json"
 HOME="$ADOPT_HOME" CLAUDE_SHARED_CONFIG="$ADOPT_SHARED" \
     INSTALL_WORKSPACE="$WORKSPACE" \
-    bash "$REPO_ROOT/.devcontainer/claude-sandbox/install.sh" >/dev/null 2>&1
+    bash "$REPO_ROOT/.devcontainer/agent-sandbox/install.sh" >/dev/null 2>&1
 if [ "$(readlink "$ADOPT_HOME/.claude" 2>/dev/null)" = "$ADOPT_SHARED/.claude" ] \
         && [ "$(readlink "$ADOPT_HOME/.claude.json" 2>/dev/null)" = "$ADOPT_SHARED/.claude.json" ] \
         && [ "$(cat "$ADOPT_HOME/.claude/marker" 2>/dev/null)" = shared ] \
@@ -414,7 +459,7 @@ echo seedme > "$SEED_HOME/.claude/marker"
 printf 'token-abc' > "$SEED_HOME/.claude.json"
 HOME="$SEED_HOME" CLAUDE_SHARED_CONFIG="$SEED_SHARED" \
     INSTALL_WORKSPACE="$WORKSPACE" \
-    bash "$REPO_ROOT/.devcontainer/claude-sandbox/install.sh" >/dev/null 2>&1
+    bash "$REPO_ROOT/.devcontainer/agent-sandbox/install.sh" >/dev/null 2>&1
 if [ "$(readlink "$SEED_HOME/.claude" 2>/dev/null)" = "$SEED_SHARED/.claude" ] \
         && [ "$(readlink "$SEED_HOME/.claude.json" 2>/dev/null)" = "$SEED_SHARED/.claude.json" ] \
         && [ "$(cat "$SEED_SHARED/.claude/marker" 2>/dev/null)" = seedme ] \
@@ -467,10 +512,10 @@ for pat in '\[\[hooks.SessionStart\]\]' '\[\[hooks.UserPromptSubmit\]\]' \
 done
 # Hook commands must point at the absolute /usr/libexec scripts (root-owned,
 # off-PATH, ro inside the sandbox), never at a sandbox-writable path.
-if grep -q 'command = "bash /usr/libexec/claude-sandbox/' "$CODEX_REQ" 2>/dev/null; then
+if grep -q 'command = "bash /usr/libexec/agent-sandbox/' "$CODEX_REQ" 2>/dev/null; then
     pass
 else
-    fail "codex guard hooks do not point at /usr/libexec/claude-sandbox"
+    fail "codex guard hooks do not point at /usr/libexec/agent-sandbox"
 fi
 # allow_managed_hooks_only would silence the owner's OWN hooks — same call as
 # allowManagedHooksOnly on the Claude side (Invariant 5). Must stay absent.
@@ -487,7 +532,7 @@ else
     fail "codex managed_config.toml does not disable the startup update check"
 fi
 
-# install_codex_binary must NEVER relocate the claude-sandbox shadow as the
+# install_codex_binary must NEVER relocate the agent-sandbox shadow as the
 # "real" codex binary. The shadow is on the search path by construction
 # (main() installs it at /usr/local/bin/codex first), so if the vendor
 # download leaves nothing behind, the candidate search falls through to it.
@@ -499,11 +544,11 @@ SELF_HOME="$(mktemp -d)"
 register_cleanup "$SELF_PREFIX" "$SELF_HOME"
 mkdir -p "$SELF_HOME/.local/bin"
 # The one candidate on the search path is a copy of our own shadow.
-cp "$REPO_ROOT/.devcontainer/claude-sandbox/claude-shadow" "$SELF_HOME/.local/bin/codex"
+cp "$REPO_ROOT/.devcontainer/agent-sandbox/agent-shadow" "$SELF_HOME/.local/bin/codex"
 chmod 0755 "$SELF_HOME/.local/bin/codex"
 SELF_OUT="$( (
-    # shellcheck source=../.devcontainer/claude-sandbox/install.sh
-    source "$REPO_ROOT/.devcontainer/claude-sandbox/install.sh"
+    # shellcheck source=../.devcontainer/agent-sandbox/install.sh
+    source "$REPO_ROOT/.devcontainer/agent-sandbox/install.sh"
     SMOKE=0; WITH_CODEX=1; PREFIX="$SELF_PREFIX"; HOME="$SELF_HOME"
     # Vendor installer "succeeds" but produces no binary of its own.
     curl() { return 0; }
@@ -511,21 +556,21 @@ SELF_OUT="$( (
 ) 2>&1 || true )"
 # Assert the GUARD FIRED, not merely that some path is absent. An earlier
 # version of this test looked for a copy of the shadow at
-# /usr/libexec/claude-sandbox/codex — a path install_codex_binary never
+# /usr/libexec/agent-sandbox/codex — a path install_codex_binary never
 # writes (codex ships as a package, so the binary lands under
 # codex-dist/bin/) — so the assertion passed vacuously and would have kept
 # passing if the shadow HAD been relocated.
 case "$SELF_OUT" in
-    *"is the claude-sandbox"*"shadow itself"*) pass ;;
+    *"is the agent-sandbox"*"shadow itself"*) pass ;;
     *) fail "install_codex_binary did not refuse to relocate the shadow as codex: $SELF_OUT" ;;
 esac
 # ...and that nothing shadow-shaped landed anywhere under the install prefix,
 # whatever the layout: the real destination, the historical one, or any other.
-SELF_LIBEXEC="$SELF_PREFIX/usr/libexec/claude-sandbox"
+SELF_LIBEXEC="$SELF_PREFIX/usr/libexec/agent-sandbox"
 SELF_PLANTED=0
 if [ -d "$SELF_LIBEXEC" ]; then
     while IFS= read -r cand; do
-        if cmp -s "$cand" "$REPO_ROOT/.devcontainer/claude-sandbox/claude-shadow"; then
+        if cmp -s "$cand" "$REPO_ROOT/.devcontainer/agent-sandbox/agent-shadow"; then
             SELF_PLANTED=1
         fi
     done < <(find "$SELF_LIBEXEC" -type f 2>/dev/null)
@@ -541,11 +586,11 @@ fi
 # failure here because it tells the user nothing.
 LOOP_DIR="$(mktemp -d)"
 register_cleanup "$LOOP_DIR"
-sed "s|AGENT_REAL=\"/usr/libexec/claude-sandbox/codex-dist/bin/codex\"|AGENT_REAL=\"$LOOP_DIR/real\"|" \
-    "$REPO_ROOT/.devcontainer/claude-sandbox/claude-shadow" > "$LOOP_DIR/codex"
+sed "s|AGENT_REAL=\"/usr/libexec/agent-sandbox/codex-dist/bin/codex\"|AGENT_REAL=\"$LOOP_DIR/real\"|" \
+    "$REPO_ROOT/.devcontainer/agent-sandbox/agent-shadow" > "$LOOP_DIR/codex"
 chmod 0755 "$LOOP_DIR/codex"
 cp "$LOOP_DIR/codex" "$LOOP_DIR/real"
-LOOP_OUT="$(env -u IS_SANDBOX CLAUDE_SANDBOX_AGENT=codex timeout 10 "$LOOP_DIR/codex" 2>&1 || true)"
+LOOP_OUT="$(env -u IS_SANDBOX AGENT_SANDBOX_AGENT=codex timeout 10 "$LOOP_DIR/codex" 2>&1 || true)"
 case "$LOOP_OUT" in
     *"is a copy of this shadow"*) pass ;;
     *) fail "shadow did not refuse to exec a copy of itself (hang risk): $LOOP_OUT" ;;
@@ -560,8 +605,8 @@ mkdir -p "$FOREIGN_PREFIX/etc/codex"
 FOREIGN_REQ="$FOREIGN_PREFIX/etc/codex/requirements.toml"
 printf '# ACME Corp Codex policy\nsandbox_mode = "read-only"\n' > "$FOREIGN_REQ"
 FOREIGN_BEFORE="$(cksum < "$FOREIGN_REQ")"
-CLAUDE_SANDBOX_SMOKE=1 INSTALL_PREFIX="$FOREIGN_PREFIX" INSTALL_USER_HOME="$(mktemp -d)" \
-    bash "$REPO_ROOT/.devcontainer/claude-sandbox/install.sh" >/dev/null 2>&1
+AGENT_SANDBOX_SMOKE=1 INSTALL_PREFIX="$FOREIGN_PREFIX" INSTALL_USER_HOME="$(mktemp -d)" \
+    bash "$REPO_ROOT/.devcontainer/agent-sandbox/install.sh" >/dev/null 2>&1
 if [ "$(cksum < "$FOREIGN_REQ")" = "$FOREIGN_BEFORE" ]; then
     pass
 else

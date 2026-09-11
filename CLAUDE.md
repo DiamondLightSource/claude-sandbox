@@ -1,4 +1,4 @@
-# claude-sandbox
+# agent-sandbox
 
 Bash-only. No Python package, no uv, no pytest — don't add them back.
 
@@ -11,7 +11,7 @@ The documentation toolchain stays fully isolated
 to `docs/` (`docs/requirements.txt`: Sphinx + MyST + pydata theme + mermaid).
 It builds `docs/` to HTML for GitHub Pages and touches nothing in the
 security-critical core — no `pyproject.toml`, no `uv.lock`, no `src/`, no
-pytest, no docs command in the shipped `claude-sandbox` CLI. Don't let it
+pytest, no docs command in the shipped `agent-sandbox` CLI. Don't let it
 grow past that boundary. Contributors may *run* that toolchain with
 `uvx --with-requirements docs/requirements.txt ...` (adds no repo files;
 `docs/requirements.txt` stays the pinned source of truth and CI still
@@ -30,8 +30,8 @@ Python elsewhere in the sandbox implementation or tests.
   browser and WeasyPrint is not a faithful proxy for Chromium auto-layout.
   Open the PR if asked, but wait for the user's explicit OK before merging —
   don't merge on a green build alone.
-- Threat model + sandbox model: https://diamondlightsource.github.io/claude-sandbox/explanations/threat-model.html
+- Threat model + sandbox model: https://diamondlightsource.github.io/agent-sandbox/explanations/threat-model.html
 - Sandbox-integrity spec: `.claude/commands/verify-sandbox.md`
 - Network egress jail (lateral-movement isolation, ADR 0015):
   `docs/explanations/decisions/0015-network-egress-jail.md`; operational skill:
-  `.claude/skills/claude-sandbox-networking/SKILL.md`
+  `.claude/skills/agent-sandbox-networking/SKILL.md`
