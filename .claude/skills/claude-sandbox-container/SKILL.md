@@ -91,3 +91,15 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   pass-through of `UV_PYTHON_INSTALL_DIR`/`UV_TOOL_DIR` in the shadow is
   what stops uv re-downloading the baked interpreter each session;
   `tests/bwrap_argv.sh` scenario 8c guards it.
+- **Image-only Node (2026-09-11)**: node/npm/npx copied from
+  `node:22-slim` into `/usr/local` in the `claude-sandbox` stage — NOT
+  apt `npm` (npm 9 on EOL Node 18 + ~360 packages, and Playwright's npm
+  package refuses < 20). Enables `pi install npm:...` (persists on the
+  shared `~/.pi`). The apt `nodejs` 18 in `apt_install` stays: guests may
+  rely on it, and it is merely shadowed by PATH order in the image.
+  Refuse: swapping `nodejs`→`npm` in `apt_install`; moving the COPY into
+  the `developer` stage.
+  `/usr/local/etc/npmrc` sets `ignore-scripts=true` (image-only, ro
+  in-session; overridable by ~/.npmrc so a default not a gate) — pi's own
+  npm call passes no `--ignore-scripts`. Don't drop it "because package X
+  needs postinstall": that is the case for asking the user.

@@ -16,6 +16,11 @@
 #                    developer stage and is installed by the same install.sh
 #                    the devcontainer runs — dogfood ≈ guest ≈ image, one
 #                    installer, one audit surface.
+# Global-scope ARG: `COPY --from` cannot expand a stage-scoped one, so the
+# Node source is a named stage (used by the claude-sandbox stage below).
+ARG NODE_VERSION=22
+FROM node:${NODE_VERSION}-slim AS node
+
 FROM ghcr.io/diamondlightsource/ubuntu-devcontainer:noble AS developer
 
 FROM developer AS claude-sandbox
@@ -112,6 +117,27 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python \
 RUN uv python install --no-progress "$PYTHON_VERSION" \
     && uv venv /cache/venv --python "$PYTHON_VERSION" \
     && uv cache clean --quiet
+
+# Node.js LTS for the agent — IMAGE-ONLY, same reasoning as the Python
+# block. Copied from the official image like uv is from astral's: the
+# noble base has no npm, and its apt `npm` is npm 9 on the end-of-life
+# Node 18 (Playwright's package wants >= 20) behind ~360 dependency
+# packages. This gives `pi install npm:...` (extensions land on the shared
+# ~/.pi, so they persist across containers), npx, and a current node.
+# /usr/local/bin precedes /usr/bin on the jail PATH, so the installer's
+# apt nodejs 18 is shadowed, not removed (guests still rely on it).
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    # Lifecycle scripts off by default: `pi install npm:...` and `npx` then
+    # run no postinstall inside the jail (pi passes no --ignore-scripts).
+    # This is npm's global config for the copied npm, ro in-session — a
+    # default the agent can override per project (~/.npmrc, .npmrc), so a
+    # brake on drive-by packages, not a wall. Native modules needing
+    # node-gyp fail loudly with it; the agent should ask, not work around.
+    && printf 'ignore-scripts=true\n' > /usr/local/etc/npmrc \
+    && node --version && npm --version && npx --version
 
 # No USER directive, deliberately (the DLS base-image pattern): the
 # supported runtime is a ROOTLESS engine, where in-container root maps

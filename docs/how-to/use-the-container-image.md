@@ -148,6 +148,18 @@ Two consequences worth knowing:
 The devcontainer route gets none of this: there the project's own
 devcontainer supplies Python, and the sandbox installer stays bash-only.
 
+The image also carries Node.js 22 LTS with npm and npx, copied from the
+official Node image (`NODE_VERSION` build arg). Inside Pi that makes
+`pi install npm:<package>` work; extensions land in the shared `~/.pi`, so
+they persist across containers. The devcontainer installer only provides
+Ubuntu's Node 18 without npm.
+npm lifecycle scripts are off by default in the image (`ignore-scripts=true`
+in npm's global config, read-only inside the session), so `pi install` and
+`npx` run no postinstall hooks. It is a default, not an enforcement: a
+project `.npmrc` or `~/.npmrc` can re-enable them. Pure-JavaScript packages,
+which pi extensions are, need nothing else; a package that must build a
+native module fails at install and needs a deliberate opt-in.
+
 ## Configure the sandbox
 
 Per-session (create-time) settings are environment variables, passed
@@ -217,8 +229,8 @@ reads it on every invocation; it is not remembered).
 
 - **Your toolchain isn't in the image.** The base is the DLS
   ubuntu-devcontainer (git, build-essential, uv, gh/glab, just…) plus one
-  baked Python and an empty venv (see above), not your site's module
-  system or cross-compilers. Claude can read, edit,
+  baked Python, an empty venv and Node 22 with npm (see above), not your
+  site's module system or cross-compilers. Claude can read, edit,
   build what the image supports, and commit; site-specific builds may
   still happen outside the container.
 - **Claude's version is the image's.** By design (disabled updater);
