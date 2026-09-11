@@ -129,7 +129,7 @@ rc=0
 (netns_launch bash -c 'echo BUSY_OK; exit 21') > "$tmp/busy" 2> "$tmp/busylog" || rc=$?
 assert_eq busy-callback-port-fail-soft 21 "$rc"
 assert_contains busy-callback-port-output "$(< "$tmp/busy")" BUSY_OK
-assert_contains busy-callback-port-warning "$(< "$tmp/busylog")" 'callback-port 31955 is already in use'
+if grep -qF 'callback-port 31955 is already in use' "$tmp/busylog"; then pass; else fail 'busy callback port did not warn'; cat "$tmp/busylog" >&2; fi
 stop_relay "$taken"
 taken=""
 
