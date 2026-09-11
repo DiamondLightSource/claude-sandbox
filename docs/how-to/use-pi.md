@@ -36,8 +36,24 @@ Inside Pi, use `/login` to configure OpenAI or Anthropic with an API key or an
 available subscription login, then `/model` to select a model. Pi also accepts
 `--provider openai --model MODEL_ID` or `--provider anthropic --model MODEL_ID`
 at launch. Subscription logins may use a separate provider name; the picker
-shows the providers configured by `/login`. For browser callbacks that cannot
-reach the sandbox's loopback, use Pi's manual redirect/code entry when offered.
+shows the providers configured by `/login`.
+
+The Claude Pro/Max login redirects your browser to `http://localhost:53692`,
+a server Pi opens on its own loopback. The shipped conf relays that port
+into the jail ({ref}`adr-callback-port-relay`), so the login completes in the
+browser as it would outside the sandbox, including through VS Code's port
+forwarding from a laptop. A login saves credentials but does not change the
+selected model: if Pi was last using lllm2, the next prompt still goes there,
+and a "Loading model" or connection error means exactly that. Run `/model`
+and pick a Claude model. If the sandbox warned at launch that 53692 was
+already in use, or your browser cannot reach the container's loopback, let
+the tab fail, copy the `http://localhost:53692/callback?code=...` URL from
+its address bar, and paste it at Pi's prompt. Do not copy the address bar
+while the tab is still loading: it still shows the previous claude.ai page,
+whose URL carries a `code=true` parameter that Pi would send as the code.
+OpenAI's Codex login uses port 1455 and also offers a device-code flow; see
+[Let a browser login reach the agent](network-egress-jail.md#let-a-browser-login-reach-the-agent)
+to relay it too.
 
 Pi's configuration, credentials, extensions and sessions live in
 `~/.pi/agent`. The installer shares `~/.pi` through `/user-terminal-config`.

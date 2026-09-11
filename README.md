@@ -104,7 +104,9 @@ each image records the launcher version it was tested with, and
   authenticate OpenAI or Anthropic with `/login`, and switch using `/model`.
   A localhost relay defaults to port 1920 and discovers lllm2's model and
   context at startup, keeping the network jail enabled. The same relay serves
-  Claude and Codex, and `local-port` lines in the conf add further ports. Pi has its own
+  Claude and Codex, and `local-port` lines in the conf add further ports. A
+  reverse `callback-port` relay lets Pi's Claude Pro/Max browser login
+  complete inside the jail. Pi has its own
   persistent credentials and a launch guard. See [Use Pi](docs/how-to/use-pi.md)
   for setup and guard limitations.
   `WITH_PI=0 ./install` skips downloading Pi.

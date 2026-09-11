@@ -636,6 +636,16 @@ parse_config() {
 }${value}"
                 export CLAUDE_SANDBOX_LOCAL_PORTS
                 ;;
+            callback-port)
+                # Outer-loopback TCP ports relayed INTO the jail, the reverse of
+                # local-port (ADR 0021): a browser on the host reaches an OAuth
+                # callback server the agent opens on its own loopback. Repeatable;
+                # merged with CLAUDE_SANDBOX_CALLBACK_PORTS from the environment.
+                [ -z "$value" ] && continue
+                CLAUDE_SANDBOX_CALLBACK_PORTS="${CLAUDE_SANDBOX_CALLBACK_PORTS:+${CLAUDE_SANDBOX_CALLBACK_PORTS}
+}${value}"
+                export CLAUDE_SANDBOX_CALLBACK_PORTS
+                ;;
             allow-write)
                 [ -z "$value" ] && continue
                 CLAUDE_SANDBOX_ALLOW_WRITE="${CLAUDE_SANDBOX_ALLOW_WRITE:+${CLAUDE_SANDBOX_ALLOW_WRITE}
@@ -790,7 +800,7 @@ netns_holder() {
                 || echo "claude-sandbox: egress jail — could not route allow-ip $aip" >&2
         done <<< "$CLAUDE_SANDBOX_ALLOW_IP"
     fi
-    if [ -n "${CLAUDE_JAIL_LOCAL_PORTS:-}" ]; then
+    if [ -n "${CLAUDE_JAIL_LOCAL_PORTS:-}${CLAUDE_JAIL_CALLBACK_PORTS:-}" ]; then
         local_model_inner "$@"
     else
         exec "$@"
@@ -843,6 +853,49 @@ valid_tcp_port() {
     [[ "$1" =~ ^[1-9][0-9]{0,4}$ ]] && (( $1 <= 65535 ))
 }
 
+# The callback set (ADR 0021): ports relayed the OTHER way, from the outer
+# container's loopback into the jail, so a host browser can complete an OAuth
+# login against the callback server an agent opens on its own 127.0.0.1 (Pi's
+# Claude Pro/Max login on 53692; Codex CLI and Pi's Codex login on 1455).
+# Same word forms as local-port; deduplicated; one line per port.
+callback_port_words() {
+    printf '%s' "${CLAUDE_SANDBOX_CALLBACK_PORTS:-}" | tr ',\n' '  '
+}
+
+callback_ports() {
+    local p seen=" "
+    for p in $(callback_port_words); do
+        case "$seen" in *" $p "*) continue ;; esac
+        seen="$seen$p "
+        printf '%s\n' "$p"
+    done
+}
+
+callback_enabled() {
+    [ -n "$(callback_ports)" ]
+}
+
+# A port cannot be relayed both ways: the outbound relay's in-jail listener
+# would sit on the port the agent needs for its own server, and the inbound
+# listener outside would sit on the host service's port.
+validate_callback_ports() {
+    local port ok=0
+    for port in $(callback_port_words); do
+        if ! valid_tcp_port "$port"; then
+            echo "claude-sandbox: callback-port entries must be 1–65535, got '$port'." >&2
+            ok=1
+        elif local_ports | grep -qx "$port"; then
+            echo "claude-sandbox: port $port is listed as both callback-port and local-port/local-model-port." >&2
+            ok=1
+        fi
+    done
+    return "$ok"
+}
+
+port_in_use() {
+    [ -n "$(ss -H -ltn "sport = :$1")" ]
+}
+
 # Each socat owns a new process group, including forked connections. Kill every
 # group on exit so neither streaming requests nor listeners outlive the agent.
 stop_relay() {
@@ -857,14 +910,18 @@ stop_relay() {
 # Run OUTSIDE the jail. One private pathname socket per port bridges the network
 # namespaces without adding any IP route or mapping the host's entire loopback
 # interface. Sockets live in CLAUDE_JAIL_RELAY_DIR under /tmp, which bwrap masks.
-local_model_outer() {
-    command -v socat >/dev/null 2>&1 || jail_fail "needs socat for local-port relays"
-    command -v setsid >/dev/null 2>&1 || jail_fail "needs setsid for local-port relays"
-    local port
+relay_dir_init() {
+    command -v socat >/dev/null 2>&1 || jail_fail "needs socat for loopback relays"
+    command -v setsid >/dev/null 2>&1 || jail_fail "needs setsid for loopback relays"
     CLAUDE_JAIL_RELAY_DIR="$CLAUDE_JAIL_DIR/relay"
-    CLAUDE_JAIL_LOCAL_PORTS="$(local_ports | tr '\n' ' ')"
     mkdir -m 0700 "$CLAUDE_JAIL_RELAY_DIR"
-    export CLAUDE_JAIL_RELAY_DIR CLAUDE_JAIL_LOCAL_PORTS
+    export CLAUDE_JAIL_RELAY_DIR
+}
+
+local_model_outer() {
+    local port
+    CLAUDE_JAIL_LOCAL_PORTS="$(local_ports | tr '\n' ' ')"
+    export CLAUDE_JAIL_LOCAL_PORTS
     for port in $CLAUDE_JAIL_LOCAL_PORTS; do
         setsid socat "UNIX-LISTEN:$CLAUDE_JAIL_RELAY_DIR/$port.sock,mode=0600,fork" \
             "TCP4:127.0.0.1:$port" &
@@ -874,14 +931,44 @@ local_model_outer() {
     done
 }
 
+# Run OUTSIDE the jail: the inbound half of a callback-port relay (ADR 0021).
+# This end LISTENS on the outer loopback, so unlike local_model_outer it can
+# collide with whatever already owns the port (a second agent session, an
+# unwrapped agent on the host). Fail soft: the session launches without that
+# relay and the browser fails fast instead of hanging. Only the ports that did
+# start are handed to the holder, so the inner side never waits on a socket
+# that has no listener behind it.
+callback_outer() {
+    local port started=""
+    for port in $(callback_ports); do
+        if port_in_use "$port"; then
+            echo "claude-sandbox: callback-port $port is already in use on this host; browser logins on that port will not reach this session." >&2
+            continue
+        fi
+        setsid socat "TCP4-LISTEN:$port,bind=127.0.0.1,reuseaddr,fork" \
+            "UNIX-CONNECT:$CLAUDE_JAIL_RELAY_DIR/in-$port.sock" &
+        model_relay="$model_relay $!"
+        if wait_for port_in_use "$port"; then
+            started="$started$port "
+        else
+            echo "claude-sandbox: callback-port $port relay failed to start; browser logins on that port will not reach this session." >&2
+        fi
+    done
+    CLAUDE_JAIL_CALLBACK_PORTS="$started"
+    export CLAUDE_JAIL_CALLBACK_PORTS
+}
+
 # Run in the HOLDER's netns, before bwrap masks /tmp and enters its PID namespace.
 # The agent sees only these loopback listeners, never the host-side Unix sockets.
+# Callback ports run the other way: this end listens on the private socket and
+# connects to the agent's loopback listener only when a browser arrives, so an
+# agent that is not mid-login costs nothing and the browser is refused, not hung.
 local_model_inner() {
     local relay="" child="" rc=0 port
     trap 'stop_relay $relay; if [ -n "$child" ]; then kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; fi' EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM HUP
-    for port in $CLAUDE_JAIL_LOCAL_PORTS; do
+    for port in ${CLAUDE_JAIL_LOCAL_PORTS:-}; do
         setsid socat "TCP4-LISTEN:$port,bind=127.0.0.1,reuseaddr,fork" \
             "UNIX-CONNECT:$CLAUDE_JAIL_RELAY_DIR/$port.sock" &
         relay="$relay $!"
@@ -889,6 +976,13 @@ local_model_inner() {
         # service or require it to be running just to use a cloud provider.
         wait_for local_model_listening "$port" \
             || jail_fail "— loopback listener for port $port failed to start"
+    done
+    for port in ${CLAUDE_JAIL_CALLBACK_PORTS:-}; do
+        setsid socat "UNIX-LISTEN:$CLAUDE_JAIL_RELAY_DIR/in-$port.sock,mode=0600,fork" \
+            "TCP4:127.0.0.1:$port" &
+        relay="$relay $!"
+        wait_for test -S "$CLAUDE_JAIL_RELAY_DIR/in-$port.sock" \
+            || jail_fail "— callback relay for port $port failed to start"
     done
     "$@" <&0 &
     child=$!
@@ -974,10 +1068,17 @@ netns_launch() {
     trap 'exit 143' TERM HUP
     CLAUDE_JAIL_READY="$CLAUDE_JAIL_DIR/ready"
     export CLAUDE_JAIL_READY
-    unset CLAUDE_JAIL_LOCAL_PORTS CLAUDE_JAIL_RELAY_DIR
+    unset CLAUDE_JAIL_LOCAL_PORTS CLAUDE_JAIL_CALLBACK_PORTS CLAUDE_JAIL_RELAY_DIR
     validate_local_model_port || exit 1
+    validate_callback_ports || exit 1
+    if local_model_enabled || callback_enabled; then
+        relay_dir_init
+    fi
     if local_model_enabled; then
         local_model_outer
+    fi
+    if callback_enabled; then
+        callback_outer
     fi
 
     # The holder runs in a fresh `bash -c`, so every function it calls must be

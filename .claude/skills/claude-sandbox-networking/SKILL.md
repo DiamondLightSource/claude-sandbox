@@ -247,6 +247,35 @@ logs `no default via/dev` → exits 4 = the dev-only-default edge (a default rou
 with no `via <gw>`), to be handled then. Both `--network=host` and bridge/NAT are
 now validated.
 
+## Loopback relays — the ONLY paths across the netns boundary (ADRs 19, 20, 21)
+
+pasta's port forwarding and gateway mapping are OFF for every agent (`-t none
+-u none -T none -U none --no-map-gw`, ADR 19): auto-forwarding exposed
+unrelated host-loopback listeners. What crosses instead is one socat pair per
+port over a private Unix socket in the jail's `/tmp` relay dir (bwrap masks
+it), started by `netns_launch` (outer end) and `local_model_inner` (holder
+netns, before bwrap). Two directions, two conf keys:
+
+- **Outbound** `local-model-port` (shipped 1920, Pi's lllm2 discovery) +
+  `local-port` lines / `CLAUDE_SANDBOX_LOCAL_PORTS` (ADR 20): inner socat
+  LISTENS on the agent's 127.0.0.1, outer socat CONNECTS to the outer
+  loopback. Fatal if a relay can't start.
+- **Inbound** `callback-port` lines / `CLAUDE_SANDBOX_CALLBACK_PORTS` (ADR 21,
+  2026-09-11): outer socat LISTENS on the outer 127.0.0.1, inner socat
+  connects to the agent's loopback per connection. Exists because pi's
+  Claude Pro/Max `/login` opens `127.0.0.1:53692` inside the jail and has no
+  code-display fallback (dropped upstream in pi 0.59.0); Claude Code has the
+  code page + random port so needs nothing; Codex is 1455 with a device-auth
+  alternative. Shipped default `53692`. **Fails SOFT** on a taken port (warn,
+  launch anyway) because the listening end can collide with a second session
+  or an unwrapped agent. A port may not be in both sets
+  (`validate_callback_ports`).
+
+Neither adds a route; the host side is always the outer container's IPv4
+loopback (host's under `--net=host`, the container's own in bridge mode, where
+the published-image launcher would have to publish the port — not done).
+Don't reach for pasta `-t/-T` to "simplify" either direction.
+
 ## Refuse / don't re-derive
 
 - Re-proposing the **`HTTPS_PROXY` env-var proxy** (#31 Option D) as *security* —

@@ -89,6 +89,42 @@ has `--host-net`. Each relayed port exposes the whole service behind it, so
 list only what you would hand the agent outright. Every other localhost port
 stays unreachable, and the relays stop with the session.
 
+## Let a browser login reach the agent
+
+Some logins run the other way: the agent opens a small HTTP server on its
+own loopback and the provider redirects your browser to
+`http://localhost:<port>/...`. Pi's Claude Pro/Max login does this on port
+53692 and has no other route. Inside the jail that port is not on the host's
+loopback, so the browser tab would spin. The `callback-port` relay
+({ref}`adr-callback-port-relay`) listens on the outer container's
+`127.0.0.1:<port>` and hands each connection to the same port inside the
+agent's loopback. The shipped conf relays 53692; add others with one line
+per port:
+
+```ini
+callback-port = 1455    # Codex CLI and Pi's Codex login
+callback-port = 1456    # Pi's Radius login
+```
+
+Or for one session:
+
+```bash
+CLAUDE_SANDBOX_CALLBACK_PORTS=1455 codex
+```
+
+Only fixed ports can be relayed. Claude Code's login picks a random port and
+offers a code to paste instead, so it needs nothing here. A port may not also
+appear as `local-port` or `local-model-port`. If the port is already taken on
+the host, by another session or an agent run outside the sandbox, the session
+still starts, prints a warning naming the port, and that browser login falls
+back to pasting the redirect URL from the browser's address bar. When
+nothing inside is listening the browser is refused at once, never held.
+
+The browser must be able to reach the outer container's loopback: on the
+same machine that is `--net=host`; from a laptop, VS Code forwards the
+detected port automatically. A bridge-mode container needs the port
+published on the host loopback first.
+
 ## A note on Channel Access for Claude
 
 Claude's private netns has no LAN broadcast domain, so EPICS Channel Access
