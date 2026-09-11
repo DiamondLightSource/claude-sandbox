@@ -62,6 +62,14 @@ providers configured in Pi share the Pi store. Host `OPENAI_API_KEY` and
 `ANTHROPIC_API_KEY` variables remain stripped; use `/login` to save credentials
 instead of changing the environment allowlist.
 
+The launcher appends a short environment note to Pi's system prompt from
+`/usr/libexec/claude-sandbox/pi-system.md`: the root filesystem is read-only,
+there is no `apt-get` or `sudo`, Python tooling goes through `uv` and `uvx`,
+and outbound network access is allowlisted. Without it Pi cannot tell it is
+sandboxed and wastes turns on system-wide installs. The file is root-owned and
+read-only inside the session. Your own additions still work through Pi's
+usual `~/.pi/agent/APPEND_SYSTEM.md` or a project `AGENTS.md`.
+
 See Pi's [provider documentation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/providers.md)
 for authentication details.
 

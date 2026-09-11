@@ -72,6 +72,7 @@ RUN bash -c ' \
     install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/codex)"; \
     install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/pi)"; \
     install_file "$SCRIPT_DIR/pi-run" "$(prefixed /usr/libexec/claude-sandbox/pi-run)"; \
+    install_file "$SCRIPT_DIR/pi-system.md" "$(prefixed /usr/libexec/claude-sandbox/pi-system.md)" 0644; \
     install_file "$SCRIPT_DIR/claude-sandbox" "$(prefixed /usr/local/bin/claude-sandbox)"; \
     apt_install; \
     install_claude_binary; \
