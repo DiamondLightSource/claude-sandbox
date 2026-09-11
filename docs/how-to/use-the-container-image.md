@@ -113,6 +113,31 @@ convention devcontainers use, so a host that runs both shares one Claude
 login, memory, and settings. You log in to Claude once, not once per
 container.
 
+## Python: a ready venv, kept apart from the host's
+
+The image bakes a uv-managed Python (`PYTHON_VERSION` build arg, 3.13) into
+the read-only root and ships an empty virtual environment at `/cache/venv`,
+already active: `python` is on the PATH from the first prompt, and
+`uv sync` / `uv add` / `uv run` install into it because the image sets
+`UV_PROJECT_ENVIRONMENT` there. uv's package cache and `uvx` tool installs
+live under `/cache` too.
+
+Two consequences worth knowing:
+
+- **Your workspace `.venv` is never touched.** The container's environment
+  lives outside the mounted directory, so a venv the host created keeps its
+  host interpreter, and the container never writes container-only paths
+  into it. Each side runs its own uv against its own environment.
+- **It persists per project, not per session.** `/cache` is in the named
+  container's writable layer: installed packages survive session restarts,
+  and `--recreate` wipes them. Home inside the jail is ephemeral by design,
+  so anything a tool puts under `~/.cache` (Playwright browsers, for
+  instance) is gone at the next launch unless you point it at `/cache` with
+  a `pass-env` line in the conf.
+
+The devcontainer route gets none of this: there the project's own
+devcontainer supplies Python, and the sandbox installer stays bash-only.
+
 ## Configure the sandbox
 
 Per-session (create-time) settings are environment variables, passed
@@ -181,8 +206,9 @@ reads it on every invocation; it is not remembered).
 ## Limitations
 
 - **Your toolchain isn't in the image.** The base is the DLS
-  ubuntu-devcontainer (git, build-essential, uv, gh/glab, just…), not
-  your site's module system or cross-compilers. Claude can read, edit,
+  ubuntu-devcontainer (git, build-essential, uv, gh/glab, just…) plus one
+  baked Python and an empty venv (see above), not your site's module
+  system or cross-compilers. Claude can read, edit,
   build what the image supports, and commit; site-specific builds may
   still happen outside the container.
 - **Claude's version is the image's.** By design (disabled updater);

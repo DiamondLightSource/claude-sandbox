@@ -63,3 +63,20 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   return bare version strings). **#81** per-project
   `.claude-sandbox.conf` — see the Invariant 4 carve-out in the
   `claude-sandbox` skill.
+- **Image-only Python (2026-09-11)**: the `claude-sandbox` stage bakes a
+  uv-managed interpreter at `/opt/uv/python` and an active venv at
+  `/cache/venv` (`UV_PROJECT_ENVIRONMENT`, `VIRTUAL_ENV`, `UV_CACHE_DIR`,
+  `UV_TOOL_DIR` all under `/cache`, which the shipped conf already
+  `allow-write`s). Why `/cache` and not the workspace: the mounted dir has
+  the same path on the host, so a workspace `.venv` ping-pongs between the
+  host's interpreter and the container's, and its `bin/python` symlink
+  dangles on whichever side didn't build it last. Why not `install.sh`:
+  dogfood ≈ guest would then push a venv into every clone+install
+  devcontainer, against the bash-only rule. **Refuse:** moving these
+  steps into `install.sh` or the `developer` stage; pointing
+  `UV_PROJECT_ENVIRONMENT` back into the workspace; binding `~/.cache`
+  back "so Playwright persists" (home is ephemeral on purpose — the fix
+  is `pass-env`/`PLAYWRIGHT_BROWSERS_PATH` under `/cache`). The
+  pass-through of `UV_PYTHON_INSTALL_DIR`/`UV_TOOL_DIR` in the shadow is
+  what stops uv re-downloading the baked interpreter each session;
+  `tests/bwrap_argv.sh` scenario 8c guards it.

@@ -90,6 +90,10 @@ jobs:
               /etc/claude-code/managed-settings.json
             /usr/libexec/claude-sandbox/claude --version
             /usr/libexec/claude-sandbox/pi-dist/pi --version
+            # Image-only Python: baked interpreter, shared venv under /cache
+            test -x /cache/venv/bin/python
+            python -c "import sys; assert sys.prefix == \"/cache/venv\", sys.prefix"
+            case "$(uv python find 3.13)" in /opt/uv/python/*) ;; *) echo "managed python not under /opt/uv/python"; exit 1 ;; esac
           '
 
       - name: "Test: launcher-version label matches the baked script"

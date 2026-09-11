@@ -88,6 +88,31 @@ RUN bash -c ' \
     wire_user_statusline; \
     rm -rf /var/lib/apt/lists/*'
 
+# Python for the agent — IMAGE-ONLY by design. The devcontainer stage and
+# clone+install guests get none of this (the sandbox itself is bash-only;
+# a venv is the guest project's business). Here there is no project
+# devcontainer to supply one, so the image does: a uv-managed interpreter
+# baked into the read-only root, and a shared venv + uv cache + tool dir
+# under /cache, which the shipped conf already binds rw (allow-write =
+# /cache) and which lives in the named container's writable layer — so
+# it persists across sessions, is per-project for free (one container per
+# directory), and is wiped by --recreate. UV_PROJECT_ENVIRONMENT keeps
+# `uv sync`/`uv add` out of the workspace: the host's own .venv there is
+# never touched, and the container's interpreter path never leaks into
+# it. The shadow passes VIRTUAL_ENV and the UV_* vars through --clearenv
+# and appends $VIRTUAL_ENV/bin to the jail PATH (never prepends —
+# Invariant 1). Home stays ephemeral on purpose.
+ARG PYTHON_VERSION=3.13
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python \
+    UV_PROJECT_ENVIRONMENT=/cache/venv \
+    VIRTUAL_ENV=/cache/venv \
+    UV_CACHE_DIR=/cache/uv \
+    UV_TOOL_DIR=/cache/uv-tools \
+    PATH=/cache/venv/bin:$PATH
+RUN uv python install --no-progress "$PYTHON_VERSION" \
+    && uv venv /cache/venv --python "$PYTHON_VERSION" \
+    && uv cache clean --quiet
+
 # No USER directive, deliberately (the DLS base-image pattern): the
 # supported runtime is a ROOTLESS engine, where in-container root maps
 # to the unprivileged invoking host user via user namespaces — root in
