@@ -20,4 +20,14 @@ export PI_SKIP_VERSION_CHECK=1
 if [ "${CLAUDE_SANDBOX_LOCAL_MODEL_PORT:-0}" != 0 ]; then
     claude-sandbox pi-local --port "$CLAUDE_SANDBOX_LOCAL_MODEL_PORT" >/dev/null 2>&1 || true
 fi
+# Append the sandbox environment note to Pi's system prompt: the jail is
+# invisible from inside, so without it Pi reaches for apt/pip and stalls on
+# the read-only root. Root-owned under /usr/libexec (ro in-session), so the
+# agent cannot edit its own instructions. Skipped for Pi's management
+# subcommands, which take no prompt flags, and when the note is absent.
+prompt=/usr/libexec/claude-sandbox/pi-system.md
+case "${1:-}" in
+    install|remove|uninstall|update|list|config|auth) ;;
+    *) if [ -f "$prompt" ]; then set -- --append-system-prompt "$prompt" "$@"; fi ;;
+esac
 exec "$real" "$@"

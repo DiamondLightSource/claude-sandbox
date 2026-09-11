@@ -377,11 +377,12 @@ install_pi_binary() (
     printf '%s\n' "$version" > "$dest/.sandbox-version"
 )
 
-# install_file: byte-stable copy of src → dst at mode 0755. Refuses
+# install_file: byte-stable copy of src → dst, mode 0755 unless a third
+# argument names one (0644 for data such as the Pi system note). Refuses
 # if src is missing (loud-fail beats a downstream errno). cmp -s
 # short-circuits so a re-run is a true no-op when content matches.
 install_file() {
-    local src="$1" dst="$2"
+    local src="$1" dst="$2" mode="${3:-0755}"
     if [ ! -f "$src" ]; then
         echo "claude-sandbox: cannot find $src" >&2
         exit 1
@@ -390,7 +391,7 @@ install_file() {
     if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
         return 0
     fi
-    install -m 0755 "$src" "$dst"
+    install -m "$mode" "$src" "$dst"
 }
 
 # install_file_if_absent: place src at dst (mode 0755) only when dst is
@@ -923,6 +924,7 @@ main() {
     install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/codex)"
     install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/pi)"
     install_file "$SCRIPT_DIR/pi-run" "$(prefixed /usr/libexec/claude-sandbox/pi-run)"
+    install_file "$SCRIPT_DIR/pi-system.md" "$(prefixed /usr/libexec/claude-sandbox/pi-system.md)" 0644
     # The helper CLI (gh-auth, glab-auth, update, verify, version) —
     # on PATH so it works after the install clone is deleted.
     install_file "$SCRIPT_DIR/claude-sandbox" "$(prefixed /usr/local/bin/claude-sandbox)"

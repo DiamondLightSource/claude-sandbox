@@ -178,6 +178,10 @@ assert_eq sibling-session-blocked 2 "$rc"
 )
 assert_parse pi-shadow cmp -s "$SHADOW" "$tmp/install/usr/local/bin/pi"
 expect_file "$tmp/install/usr/libexec/claude-sandbox/pi-run"
+expect_file "$tmp/install/usr/libexec/claude-sandbox/pi-system.md"
+assert_parse pi-system-note cmp -s "$REPO_ROOT/.devcontainer/claude-sandbox/pi-system.md" "$tmp/install/usr/libexec/claude-sandbox/pi-system.md"
+if grep -q "uvx" "$tmp/install/usr/libexec/claude-sandbox/pi-system.md"; then pass; else fail "pi system note does not mention uv"; fi
+assert_eq pi-system-note-mode 644 "$(stat -c %a "$tmp/install/usr/libexec/claude-sandbox/pi-system.md")"
 assert_eq pi-shared "$tmp/shared/.pi" "$(readlink "$HOME/.pi")"
 
 # Exercise the real release installer with a tiny local tarball and transport
