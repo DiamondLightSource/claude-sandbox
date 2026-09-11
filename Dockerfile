@@ -113,6 +113,21 @@ RUN uv python install --no-progress "$PYTHON_VERSION" \
     && uv venv /cache/venv --python "$PYTHON_VERSION" \
     && uv cache clean --quiet
 
+# Node.js LTS for the agent — IMAGE-ONLY, same reasoning as the Python
+# block. Copied from the official image like uv is from astral's: the
+# noble base has no npm, and its apt `npm` is npm 9 on the end-of-life
+# Node 18 (Playwright's package wants >= 20) behind ~360 dependency
+# packages. This gives `pi install npm:...` (extensions land on the shared
+# ~/.pi, so they persist across containers), npx, and a current node.
+# /usr/local/bin precedes /usr/bin on the jail PATH, so the installer's
+# apt nodejs 18 is shadowed, not removed (guests still rely on it).
+ARG NODE_VERSION=22
+COPY --from=node:${NODE_VERSION}-slim /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:${NODE_VERSION}-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && node --version && npm --version && npx --version
+
 # No USER directive, deliberately (the DLS base-image pattern): the
 # supported runtime is a ROOTLESS engine, where in-container root maps
 # to the unprivileged invoking host user via user namespaces — root in

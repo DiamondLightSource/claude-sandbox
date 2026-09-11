@@ -95,6 +95,10 @@ jobs:
             python -c "import sys; assert sys.prefix == \"/cache/venv\", sys.prefix"
             # (uv python find would answer with the active venv itself)
             grep -q "^home = /opt/uv/python/" /cache/venv/pyvenv.cfg
+            # Image-only Node LTS: node/npm/npx from the official image
+            case "$(node --version)" in v22.*) ;; *) echo "node is not v22: $(node --version)"; exit 1 ;; esac
+            npm --version >/dev/null
+            npx --version >/dev/null
           '
 
       - name: "Test: launcher-version label matches the baked script"
