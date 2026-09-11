@@ -18,7 +18,7 @@ shadow at `/usr/local/bin/claude` — which is a sandbox escape.
 ## Decision
 
 After install, **relocate** the real binary to
-`/usr/libexec/claude-sandbox/claude` (off the user's PATH; commit `1f103a3`).
+`/usr/libexec/agent-sandbox/claude` (off the user's PATH; commit `1f103a3`).
 The shadow binds it back to `~/.local/bin/claude` *inside* the sandbox so
 Claude's `installMethod=native` self-check still sees the conventional path.
 Plain `claude` from any shell then always resolves to the shadow; you cannot

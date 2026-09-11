@@ -45,7 +45,7 @@ exit 7
 MOCK
 chmod +x "$MOCK_DIR/codex"
 run_launch() {
-    "$REPO_ROOT/.devcontainer/claude-sandbox/codex-launch" "$MOCK_DIR/codex" "$@"
+    "$REPO_ROOT/.devcontainer/agent-sandbox/codex-launch" "$MOCK_DIR/codex" "$@"
 }
 
 run_launch -c 'model="test model"' agents --no-alt-screen
@@ -92,7 +92,7 @@ assert_not_contains no-client-on-failure "$(cat "$MOCK_DIR/args")" agents
 # Terminating the supervisor must stop both children and remove its socket.
 : >"$MOCK_DIR/stopped"
 MOCK_WAIT=1 bash -c 'source "$1"; shift; codex_launch "$@"' test \
-    "$REPO_ROOT/.devcontainer/claude-sandbox/codex-launch" "$MOCK_DIR/codex" agents &
+    "$REPO_ROOT/.devcontainer/agent-sandbox/codex-launch" "$MOCK_DIR/codex" agents &
 supervisor=$!
 for attempt in {1..100}; do
     [ -f "$MOCK_DIR/client-ready" ] && break
@@ -108,7 +108,7 @@ assert_eq signal-runtime-cleaned no "$(test -e "${endpoint#unix://}" && echo yes
 
 # A TERM-resistant server must be killed rather than hang the launcher.
 SECONDS=0
-MOCK_STUBBORN=1 timeout 8 "$REPO_ROOT/.devcontainer/claude-sandbox/codex-launch" \
+MOCK_STUBBORN=1 timeout 8 "$REPO_ROOT/.devcontainer/agent-sandbox/codex-launch" \
     "$MOCK_DIR/codex" agents
 assert_eq stubborn-client-exit 7 "$?"
 if [ "$SECONDS" -lt 8 ]; then pass; else fail 'server cleanup exceeded deadline'; fi
@@ -122,10 +122,10 @@ cat >"$MOCK_DIR/launcher" <<'LAUNCHER'
 printf '%s\n' "$@"
 LAUNCHER
 chmod +x "$MOCK_DIR/launcher"
-sed -e "s|/usr/libexec/claude-sandbox/codex-launch|$MOCK_DIR/launcher|g" \
-    -e "s|/usr/libexec/claude-sandbox/codex-dist/bin/codex|$MOCK_DIR/codex|g" \
-    "$REPO_ROOT/.devcontainer/claude-sandbox/claude-shadow" >"$MOCK_DIR/shadow"
-nested="$(IS_SANDBOX=1 CLAUDE_SHADOW_SOURCE_ONLY=0 CLAUDE_SANDBOX_AGENT=codex \
+sed -e "s|/usr/libexec/agent-sandbox/codex-launch|$MOCK_DIR/launcher|g" \
+    -e "s|/usr/libexec/agent-sandbox/codex-dist/bin/codex|$MOCK_DIR/codex|g" \
+    "$REPO_ROOT/.devcontainer/agent-sandbox/agent-shadow" >"$MOCK_DIR/shadow"
+nested="$(IS_SANDBOX=1 CLAUDE_SHADOW_SOURCE_ONLY=0 AGENT_SANDBOX_AGENT=codex \
     bash "$MOCK_DIR/shadow" agents --no-alt-screen)"
 assert_eq nested-launch "$MOCK_DIR/codex
 agents

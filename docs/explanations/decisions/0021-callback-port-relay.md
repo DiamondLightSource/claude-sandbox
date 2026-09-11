@@ -47,7 +47,7 @@ socket and connecting to the agent's loopback only when a connection
 arrives. No IP route is added and pasta's forwarding stays off.
 
 The set comes from repeatable `callback-port` lines in the root-owned conf
-merged with `CLAUDE_SANDBOX_CALLBACK_PORTS` from the environment,
+merged with `AGENT_SANDBOX_CALLBACK_PORTS` from the environment,
 deduplicated and validated like `local-port`. A port may not appear in both
 sets: the outbound relay would hold the port the agent needs, and the
 inbound listener would hold the host service's port.

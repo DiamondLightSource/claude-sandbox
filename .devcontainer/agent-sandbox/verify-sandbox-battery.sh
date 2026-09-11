@@ -16,7 +16,7 @@
 #   - Single source of truth: the command markdown documents the WHY of
 #     each check; this script is the WHAT that actually runs.
 #
-# WHERE IT LIVES: installed to /usr/libexec/claude-sandbox (off the
+# WHERE IT LIVES: installed to /usr/libexec/agent-sandbox (off the
 # user's PATH, root-owned, ro-bound inside the sandbox via `--ro-bind /
 # /`) — same neighbourhood and tamper-resistance as sandbox-verify.sh /
 # sandbox-gate.sh and the relocated real binary. A compromised in-session
@@ -246,14 +246,14 @@ check_17() {
                 n=split(opts,o,","); for(i=1;i<=n;i++) if(o[i]=="rw") exit 0
                 exit 1}' /proc/self/mountinfo; then
         # /workspaces is rw-bound — only allowed with the explicit opt-in.
-        [ "${CLAUDE_SANDBOX_WORKSPACE_ROOT:-}" = "/workspaces" ] || return 1
+        [ "${AGENT_SANDBOX_WORKSPACE_ROOT:-}" = "/workspaces" ] || return 1
     fi
     return 0
 }
 if check_17; then
     result 17 "workspace scoped to \$PWD (not broad /workspaces)" 0
 else
-    result 17 "workspace scoped to \$PWD (not broad /workspaces)" 1 "/workspaces is rw-bound without CLAUDE_SANDBOX_WORKSPACE_ROOT opt-in"
+    result 17 "workspace scoped to \$PWD (not broad /workspaces)" 1 "/workspaces is rw-bound without AGENT_SANDBOX_WORKSPACE_ROOT opt-in"
 fi
 
 # 18 — config read from /etc, not the rw workspace. Inspect the installed
@@ -263,15 +263,15 @@ check_18() {
     local shadow
     shadow="$(command -v claude || true)"
     [ -n "$shadow" ] || { EXTRA_DETAIL="no claude shadow found on PATH"; return 1; }
-    grep -qF 'CONFIG_PATH="/etc/claude-sandbox.conf"' "$shadow" \
+    grep -qF 'CONFIG_PATH="/etc/agent-sandbox.conf"' "$shadow" \
         && grep -qF 'parse_config "$CONFIG_PATH"' "$shadow" \
         && ! grep -q 'parse_config.*\.devcontainer' "$shadow"
 }
 EXTRA_DETAIL=""
 if check_18; then
-    result 18 "config read from /etc/claude-sandbox.conf (no \$PWD/.devcontainer read)" 0
+    result 18 "config read from /etc/agent-sandbox.conf (no \$PWD/.devcontainer read)" 0
 else
-    result 18 "config read from /etc/claude-sandbox.conf (no \$PWD/.devcontainer read)" 1 "${EXTRA_DETAIL:-shadow does not pin CONFIG_PATH to /etc}"
+    result 18 "config read from /etc/agent-sandbox.conf (no \$PWD/.devcontainer read)" 1 "${EXTRA_DETAIL:-shadow does not pin CONFIG_PATH to /etc}"
 fi
 
 # 19 — egress jail active (or deliberately disabled). Blackhole routes

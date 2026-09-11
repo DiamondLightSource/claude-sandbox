@@ -10,7 +10,7 @@
 # CI-green. This test exercises netns_holder's routing in a THROWAWAY netns so
 # such a regression fails CI.
 #
-# Strategy: drive the REAL netns_holder function (sourced from claude-shadow,
+# Strategy: drive the REAL netns_holder function (sourced from agent-shadow,
 # not a re-implementation, so the test can't drift from the shipped logic) inside
 # an `unshare -rn` user+net namespace. We synthesise a default route + a
 # connected subnet on a dummy interface instead of attaching pasta, so the
@@ -29,7 +29,7 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SHADOW="$REPO_ROOT/.devcontainer/claude-sandbox/claude-shadow"
+SHADOW="$REPO_ROOT/.devcontainer/agent-sandbox/agent-shadow"
 
 # Shared PASS/FAIL counters + finish().
 # shellcheck source=lib.sh
@@ -72,7 +72,7 @@ leg_skip() {
     echo "SKIP($1): $2" >&2
 }
 
-[ -r "$SHADOW" ] || skip "claude-shadow not found at $SHADOW"
+[ -r "$SHADOW" ] || skip "agent-shadow not found at $SHADOW"
 command -v unshare >/dev/null 2>&1 || skip "unshare (util-linux) not available"
 command -v ip      >/dev/null 2>&1 || skip "ip (iproute2) not available"
 
@@ -97,7 +97,7 @@ echo "egress_jail: caps present — exercising netns_holder routing"
 # ---------------------------------------------------------------------------
 # Pull netns_holder (and its helpers jail_fail / wait_for / route_field) into
 # scope WITHOUT running the launch body. CLAUDE_SHADOW_SOURCE_ONLY=1 makes
-# claude-shadow define-and-return. JAIL_DNS_FWD is defined by the shadow too.
+# agent-shadow define-and-return. JAIL_DNS_FWD is defined by the shadow too.
 # ---------------------------------------------------------------------------
 CLAUDE_SHADOW_SOURCE_ONLY=1
 export CLAUDE_SHADOW_SOURCE_ONLY
@@ -106,7 +106,7 @@ source "$SHADOW"
 
 for fn in netns_holder jail_fail wait_for route_field; do
     if ! declare -F "$fn" >/dev/null; then
-        fail "claude-shadow did not define $fn (source-only contract broke)"
+        fail "agent-shadow did not define $fn (source-only contract broke)"
         finish "egress_jail"; exit $?
     fi
 done
@@ -182,7 +182,7 @@ run_holder() {
             # Env the holder consumes.
             export CLAUDE_JAIL_READY="$RUNDIR/ready"
             : > "$CLAUDE_JAIL_READY"
-            export CLAUDE_SANDBOX_ALLOW_IP="$TALLOW"
+            export AGENT_SANDBOX_ALLOW_IP="$TALLOW"
 
             export CLAUDE_SHADOW_SOURCE_ONLY=1
             # shellcheck source=/dev/null
@@ -373,8 +373,8 @@ if declare -F jail_stage_dns >/dev/null; then
             mount --bind "$RUNDIR/resolv4.conf" /etc/resolv.conf || exit 1
             CLAUDE_SHADOW_SOURCE_ONLY=1 . "$SHADOW"
             jail_stage_dns
-            cp "$CLAUDE_SANDBOX_JAIL_RESOLV" "$OUT" 2>/dev/null
-            rm -f "$CLAUDE_SANDBOX_JAIL_RESOLV"
+            cp "$AGENT_SANDBOX_JAIL_RESOLV" "$OUT" 2>/dev/null
+            rm -f "$AGENT_SANDBOX_JAIL_RESOLV"
         ' >/dev/null 2>&1 && [ -s "$L4_OUT" ]; then
         # Forwarder is the only nameserver, even though a routable one existed.
         got="$(awk '/^nameserver/{print $2}' "$L4_OUT" | tr '\n' ' ')"
@@ -389,7 +389,7 @@ if declare -F jail_stage_dns >/dev/null; then
         leg_skip leg4 "could not stage a resolv.conf fixture in a mount namespace"
     fi
 else
-    fail "leg4 — claude-shadow did not define jail_stage_dns"
+    fail "leg4 — agent-shadow did not define jail_stage_dns"
 fi
 
 finish "egress_jail"

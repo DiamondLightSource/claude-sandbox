@@ -6,15 +6,15 @@ without leaking the token into your shell history.
 ## Authenticate
 
 ```bash
-claude-sandbox gh-auth
-claude-sandbox glab-auth
-claude-sandbox glab-auth gitlab.example.com
+agent-sandbox gh-auth
+agent-sandbox glab-auth
+agent-sandbox glab-auth gitlab.example.com
 ```
 
-- `claude-sandbox gh-auth` authenticates `github.com`.
-- `claude-sandbox glab-auth` (no argument) authenticates the self-hosted
+- `agent-sandbox gh-auth` authenticates `github.com`.
+- `agent-sandbox glab-auth` (no argument) authenticates the self-hosted
   Diamond GitLab instance, `gitlab.diamond.ac.uk`.
-- `claude-sandbox glab-auth gitlab.example.com` authenticates any other
+- `agent-sandbox glab-auth gitlab.example.com` authenticates any other
   GitLab instance (including `gitlab.com`).
 
 Each command walks you through a fine-grained-PAT prompt, feeds the
@@ -31,7 +31,7 @@ OAuth popup.
 > **Internal (RFC1918) forge?** With the egress jail on (the default),
 > pushing to a forge on an internal IP also needs that IP punched
 > through the RFC1918 blackhole via `allow-ip` in
-> `/etc/claude-sandbox.conf` — otherwise authentication succeeds but the
+> `/etc/agent-sandbox.conf` — otherwise authentication succeeds but the
 > push fails at the network layer. The shipped conf already allows
 > Diamond's GitLab (`172.23.142.119`); for a different internal forge
 > see [Configure the network egress jail](network-egress-jail.md).
@@ -43,14 +43,14 @@ radius small:
 
 - **Fine-grained, single repo** — grant write access only to the
   repository you are actively working on.
-- **Short expiry** — 7–30 days. Re-pasting via `claude-sandbox gh-auth`
+- **Short expiry** — 7–30 days. Re-pasting via `agent-sandbox gh-auth`
   takes seconds.
 - **No `workflow` scope** unless Claude needs to edit GitHub Actions
   files. **No `admin:*` or org-wide write scopes.**
 - **GitLab** — equivalent fine-grained project tokens; `api` scope only
   if you need push, otherwise `read_repository` + `write_repository`.
 
-`claude-sandbox gh-auth` / `claude-sandbox glab-auth` keep the token out
+`agent-sandbox gh-auth` / `agent-sandbox glab-auth` keep the token out
 of shell history but do **not** enforce scope discipline — that is
 yours.
 

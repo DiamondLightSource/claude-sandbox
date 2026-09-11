@@ -25,7 +25,7 @@ intact?" is answered in three places:
 A natural architecture review flags the overlap as duplication and proposes
 extracting a shared integrity-check module so the surfaces cannot drift. That
 would conflict with the project's load-bearing self-containment principle —
-`claude-shadow` deliberately inlines its argv builder rather than sourcing a
+`agent-shadow` deliberately inlines its argv builder rather than sourcing a
 library "so the shadow is a single file you can read top-to-bottom" — and it
 would couple `verify-sandbox.md`, whose value is being a standalone,
 human-readable summary of the threat model with per-check rationale, to an

@@ -1,10 +1,10 @@
 ---
-name: claude-sandbox-networking
+name: agent-sandbox-networking
 description: >-
   Network egress, firewall, and lateral-movement design for this repo's bwrap
-  Claude sandbox. The per-process egress jail (netns + pasta routing allowlist,
+  agent sandbox (Claude Code, Codex, Pi). The per-process egress jail (netns + pasta routing allowlist,
   ADR 0015, issue #56) is ON by default as of 2026-06-18, fail-closed, with a
-  CLAUDE_SANDBOX_EGRESS_JAIL=0 escape hatch — overriding ADR 0005's earlier
+  AGENT_SANDBOX_EGRESS_JAIL=0 escape hatch — overriding ADR 0005's earlier
   open-egress default. Surface
   BEFORE proposing or discussing ANY network change: egress filtering, firewall
   / nftables / iptables / DOCKER-USER, `--unshare-net`, netns / veth, pasta /
@@ -13,7 +13,7 @@ description: >-
   networking (EPICS / Channel Access / pvAccess / PMAC).
 ---
 
-# claude-sandbox-networking
+# agent-sandbox-networking
 
 Read before designing or sketching any network-egress change. The live design
 is **issue #56**; this skill is the durable context + the guards that stop
@@ -25,8 +25,8 @@ As of **2026-06-18** the per-process egress jail is the **default** posture
 (`docs/explanations/decisions/0015-network-egress-jail.md`, **Accepted**). It is
 **fail-closed**: if `/dev/net/tun` / pasta / unshare are missing, `claude`
 refuses to launch (it does NOT silently fall back to open egress). The escape
-hatch is `CLAUDE_SANDBOX_EGRESS_JAIL=0` (env, per session) or `egress-jail = 0`
-in `/etc/claude-sandbox.conf` (per host); env wins over conf. Mechanically it's
+hatch is `AGENT_SANDBOX_EGRESS_JAIL=0` (env, per session) or `egress-jail = 0`
+in `/etc/agent-sandbox.conf` (per host); env wins over conf. Mechanically it's
 still a layer *beneath* bwrap (a holder netns), not an in-core firewall — that
 part of ADR 0005's reasoning stands.
 
@@ -41,7 +41,7 @@ pre-2026-06-18 state.
 ## ALL DNS goes through pasta `--dns-forward` (issues #60, #11 — both fixed)
 
 `jail_stage_dns()` **always** binds a `resolv.conf` naming `192.0.2.53` over
-Claude's (via `CLAUDE_SANDBOX_JAIL_RESOLV`, applied in `bwrap_argv_build`),
+Claude's (via `AGENT_SANDBOX_JAIL_RESOLV`, applied in `bwrap_argv_build`),
 copying the host's `search`/`domain`/`options` lines across — dropping those
 breaks short-name resolution at sites with a search list. pasta attaches with
 `--dns-forward 192.0.2.53` (RFC5737 TEST-NET — non-routable, outside every
@@ -120,7 +120,7 @@ semantics vs rootless podman — so the fail-closed jail refuses to launch
 `claude`. Not fixable by seccomp/apparmor-unconfined or the userns sysctl (all
 were lifted when this reproduced). Consequences: rootless podman stays the
 supported runtime; the published-image how-to documents the rootful-docker
-caveat (escape hatch `CLAUDE_SANDBOX_EGRESS_JAIL=0`, weaker posture); and any
+caveat (escape hatch `AGENT_SANDBOX_EGRESS_JAIL=0`, weaker posture); and any
 CI that exercises a real jailed launch must run the container under **rootless
 podman** (`docker save | podman load`, then `podman run --device /dev/net/tun
 --security-opt label=disable ...`) — see the e2e test in
@@ -192,17 +192,17 @@ protection. Even with a full *effective* cap set gained via a child `unshare
 `EPERM` — bwrap's locked mounts are immutable from a descendant userns. Inert.
 
 **Structure:** the setup is inlined as `netns_launch()` / `netns_holder()` (+ the
-`egress_jail_enabled` predicate) *inside* `claude-shadow`, NOT a sourced module — preserves the single-file auditability ADR 0014 / 0008 rest
+`egress_jail_enabled` predicate) *inside* `agent-shadow`, NOT a sourced module — preserves the single-file auditability ADR 0014 / 0008 rest
 on. Revisit extraction (its own ADR) only if the net code outgrows the shadow.
 
 **STATUS — IMPLEMENTED + END-TO-END VALIDATED (2026-06-18).** Probe + real
-binary both green on a real rootless host: `CLAUDE_SANDBOX_EGRESS_JAIL=1 claude
+binary both green on a real rootless host: `AGENT_SANDBOX_EGRESS_JAIL=1 claude
 -p` reaches the API through the jail; route-immutability battery passes; Cohort B
 `allow-ip` device path confirmed reachable; same-subnet host blackholed. Lives in
-`claude-shadow` (`parse_config` `egress-jail`/`allow-ip` keys, `egress_jail_enabled`
+`agent-shadow` (`parse_config` `egress-jail`/`allow-ip` keys, `egress_jail_enabled`
 predicate + inlined `netns_holder`/`netns_launch`), **ON by default** — disable
-with `CLAUDE_SANDBOX_EGRESS_JAIL=0` (env) or `egress-jail = 0` in
-`/etc/claude-sandbox.conf`. Requires `/dev/net/tun` (`devcontainer.json` runArgs
+with `AGENT_SANDBOX_EGRESS_JAIL=0` (env) or `egress-jail = 0` in
+`/etc/agent-sandbox.conf`. Requires `/dev/net/tun` (`devcontainer.json` runArgs
 `--device=/dev/net/tun`) — the one hard container-side dep; **fail-closed** if
 pasta/unshare/tun missing (`claude` won't launch — the error names the `=0`
 escape hatch), never a silent unjailed fallback. Interactive
@@ -257,10 +257,10 @@ it), started by `netns_launch` (outer end) and `local_model_inner` (holder
 netns, before bwrap). Two directions, two conf keys:
 
 - **Outbound** `local-model-port` (shipped 1920, Pi's lllm2 discovery) +
-  `local-port` lines / `CLAUDE_SANDBOX_LOCAL_PORTS` (ADR 20): inner socat
+  `local-port` lines / `AGENT_SANDBOX_LOCAL_PORTS` (ADR 20): inner socat
   LISTENS on the agent's 127.0.0.1, outer socat CONNECTS to the outer
   loopback. Fatal if a relay can't start.
-- **Inbound** `callback-port` lines / `CLAUDE_SANDBOX_CALLBACK_PORTS` (ADR 21,
+- **Inbound** `callback-port` lines / `AGENT_SANDBOX_CALLBACK_PORTS` (ADR 21,
   2026-09-11): outer socat LISTENS on the outer 127.0.0.1, inner socat
   connects to the agent's loopback per connection. Exists because pi's
   Claude Pro/Max `/login` opens `127.0.0.1:53692` inside the jail and has no
@@ -318,4 +318,4 @@ Don't reach for pasta `-t/-T` to "simplify" either direction.
 | Native dual-sandbox / Cohort A | issue **#33** (open) |
 | Egress-open decision / scope | ADRs `0005-network-egress-open`, `0002-credential-isolation-tool` |
 | Feasibility / route-immutability probes (now tracked under `diagnostics/`) | `diagnostics/probe-network-jail.sh` (full pasta egress + route-immutability battery), `diagnostics/probe-network-jail-caps.sh` (cap-ceiling diligence), `diagnostics/probe-network-layers.sh` (splits tun-INDEPENDENT core from tun-DEPENDENT forwarder) — run UNJAILED |
-| Egress-jail code (holder + pasta attach + route lock) — inlined, **implemented + on by default** | `.devcontainer/claude-sandbox/claude-shadow`: `egress_jail_enabled` predicate, `netns_launch()` orchestrator, `netns_holder()` (bwrap KEEPS omitting `--unshare-net`; the holder owns the netns) |
+| Egress-jail code (holder + pasta attach + route lock) — inlined, **implemented + on by default** | `.devcontainer/agent-sandbox/agent-shadow`: `egress_jail_enabled` predicate, `netns_launch()` orchestrator, `netns_holder()` (bwrap KEEPS omitting `--unshare-net`; the holder owns the netns) |

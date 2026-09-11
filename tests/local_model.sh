@@ -4,7 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$REPO_ROOT/tests/lib.sh"
 export CLAUDE_SHADOW_SOURCE_ONLY=1
-source "$REPO_ROOT/.devcontainer/claude-sandbox/claude-shadow"
+source "$REPO_ROOT/.devcontainer/agent-sandbox/agent-shadow"
 if ! unshare -rn true 2>/dev/null || [ ! -e /dev/net/tun ]; then
     echo 'SKIP: local_model.sh requires user/net namespaces and /dev/net/tun'
     [ "${EGRESS_JAIL_REQUIRE:-0}" != 1 ]
@@ -14,10 +14,10 @@ for dep in socat pasta ss curl; do command -v "$dep" >/dev/null; done
 tmp="$(mktemp -d)"
 server="" other="" second="" taken=""
 trap 'stop_relay "$server" "$other" "$second" "$taken"; rm -rf "$tmp"' EXIT
-export CLAUDE_SANDBOX_LOCAL_MODEL_PORT=31920
-export CLAUDE_SANDBOX_LOCAL_PORTS=31922
-export CLAUDE_SANDBOX_CALLBACK_PORTS=31955
-unset CLAUDE_SANDBOX_ALLOW_IP
+export AGENT_SANDBOX_LOCAL_MODEL_PORT=31920
+export AGENT_SANDBOX_LOCAL_PORTS=31922
+export AGENT_SANDBOX_CALLBACK_PORTS=31955
+unset AGENT_SANDBOX_ALLOW_IP
 assert_eq relay-set $'31920\n31922' "$(local_ports)"
 assert_eq callback-set 31955 "$(callback_ports)"
 setsid socat TCP4-LISTEN:31920,bind=127.0.0.1,reuseaddr,fork EXEC:/bin/cat &

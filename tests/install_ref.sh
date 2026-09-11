@@ -4,7 +4,7 @@
 #
 # The shim defaults to the newest stable RELEASE TAG so that a first
 # install (the documented clone one-liner, which lands on the default
-# branch) and a later `claude-sandbox update` agree on what "current"
+# branch) and a later `agent-sandbox update` agree on what "current"
 # means. Two properties here are load-bearing and must not regress:
 #
 #   1. It NEVER silently retargets a deliberate checkout. A team pins a
@@ -25,7 +25,7 @@
 # root — not for anything it does (the stub installer touches nothing), only
 # to clear the shim's own `id -u` gate, which is part of the contract under
 # test. In a devcontainer you are already root; CI uses `sudo -E`.
-# CLAUDE_SANDBOX_SMOKE=1 would clear that gate too, but it also forces
+# AGENT_SANDBOX_SMOKE=1 would clear that gate too, but it also forces
 # --here, which is precisely what the interesting cases here are not.
 
 set -uo pipefail
@@ -45,7 +45,7 @@ source "$REPO_ROOT/tests/lib.sh"
 T="$(mktemp -d)"
 register_cleanup "$T"
 
-# The stub stands in for .devcontainer/claude-sandbox/install.sh. It records
+# The stub stands in for .devcontainer/agent-sandbox/install.sh. It records
 # that it ran into $STUB_MARKER — a path OUTSIDE the clone, so recording a
 # run never dirties the tree under test.
 STUB=$(cat <<'STUBEOF'
@@ -60,9 +60,9 @@ git_q() { git -C "$1" -c user.email=t@t -c user.name=t "${@:2}"; }
 # Build the origin: four commits, tagged so that the newest tag overall is a
 # PRERELEASE and the newest stable one is 2.0.0.
 ORIGIN="$T/origin"
-mkdir -p "$ORIGIN/.devcontainer/claude-sandbox"
+mkdir -p "$ORIGIN/.devcontainer/agent-sandbox"
 git -C "$ORIGIN" init -q -b main
-printf '%s\n' "$STUB" > "$ORIGIN/.devcontainer/claude-sandbox/install.sh"
+printf '%s\n' "$STUB" > "$ORIGIN/.devcontainer/agent-sandbox/install.sh"
 for rev in 1.0.0 2.0.0 2.1.0-beta.1 unreleased; do
     # Every commit carries the shim UNDER TEST, so checking out any tag
     # exercises the real code path, against the stub installer.
@@ -138,17 +138,17 @@ assert_eq "dirty tree refuses" "1|$(git -C "$W" rev-parse --short HEAD)|NOTRUN" 
 
 # --- 6. A smoke run must never retarget the tree it is testing -------------
 fresh_clone "$W"
-CLAUDE_SANDBOX_SMOKE=1 STUB_MARKER="$T/smoke-marker" bash "$W/install" >/dev/null 2>&1
-assert_eq "CLAUDE_SANDBOX_SMOKE=1 forces --here" \
+AGENT_SANDBOX_SMOKE=1 STUB_MARKER="$T/smoke-marker" bash "$W/install" >/dev/null 2>&1
+assert_eq "AGENT_SANDBOX_SMOKE=1 forces --here" \
     "$(git -C "$ORIGIN" rev-parse --short HEAD)" "$(git -C "$W" rev-parse --short HEAD)"
 
 # --- 7. Not a git clone (tarball / vendored copy) --------------------------
 # There are no revisions to choose between, so the default installs what is
 # there; --release has nothing to resolve and says so rather than guessing.
 TAR="$T/tarball"
-mkdir -p "$TAR/.devcontainer/claude-sandbox"
+mkdir -p "$TAR/.devcontainer/agent-sandbox"
 cp "$SHIM" "$TAR/install"
-printf '%s\n' "$STUB" > "$TAR/.devcontainer/claude-sandbox/install.sh"
+printf '%s\n' "$STUB" > "$TAR/.devcontainer/agent-sandbox/install.sh"
 rm -f "$T/last-marker"
 STUB_MARKER="$T/last-marker" bash "$TAR/install" > "$T/last-out" 2>&1
 assert_eq "no .git — installs the files as they are" "ran" \

@@ -1,4 +1,4 @@
-# Contribute to claude-sandbox
+# Contribute to agent-sandbox
 
 A task recipe for contributors. For the design rationale behind the
 bash-only constraint and the sandbox itself, see the
@@ -7,16 +7,16 @@ bash-only constraint and the sandbox itself, see the
 ## File an issue or open a discussion
 
 Issues and pull requests are handled through
-[GitHub](https://github.com/DiamondLightSource/claude-sandbox/issues). Check for an
+[GitHub](https://github.com/DiamondLightSource/agent-sandbox/issues). Check for an
 existing issue before filing a new one.
 
 - **Bug report or concrete change** → file an
-  [issue](https://github.com/DiamondLightSource/claude-sandbox/issues). If the change
+  [issue](https://github.com/DiamondLightSource/agent-sandbox/issues). If the change
   is large, file the issue *before* opening a pull request so the scope can be
   agreed first.
 - **Open-ended question or idea** → if it isn't obvious when it could be
   "closed", raise it as a
-  [discussion](https://github.com/DiamondLightSource/claude-sandbox/discussions)
+  [discussion](https://github.com/DiamondLightSource/agent-sandbox/discussions)
   instead.
 
 ## Respect the bash-only ethos
@@ -33,13 +33,13 @@ There is no task runner — the suites are plain bash, run directly from a
 clone (or from this repo's own devcontainer):
 
 ```bash
-CLAUDE_SANDBOX_SMOKE=1 bash tests/bwrap_argv.sh   # shadow's bwrap argv
-CLAUDE_SANDBOX_SMOKE=1 bash tests/smoke.sh        # installer file placement
+AGENT_SANDBOX_SMOKE=1 bash tests/bwrap_argv.sh   # shadow's bwrap argv
+AGENT_SANDBOX_SMOKE=1 bash tests/smoke.sh        # installer file placement
 bash tests/install_ref.sh                         # which ref `install` picks
 bash tests/egress_jail.sh                         # network egress jail
 ```
 
-`CLAUDE_SANDBOX_SMOKE=1` keeps the first two off the network and out of
+`AGENT_SANDBOX_SMOKE=1` keeps the first two off the network and out of
 `/`; they install into a tmpdir instead. All four want **root** — which a
 devcontainer already gives you, so no `sudo`; CI adds it because its
 runner is not root. `tests/egress_jail.sh` needs
@@ -58,7 +58,7 @@ To install the checkout you are working on, pass `--here`:
 ```
 
 `install` defaults to the newest release tag, so that a user's first
-install and their later `claude-sandbox update` agree on what "current"
+install and their later `agent-sandbox update` agree on what "current"
 means. On a feature branch, a detached checkout, or a dirty tree it
 refuses rather than quietly discarding your work — `--here` is the answer
 whenever you mean "install what I have".

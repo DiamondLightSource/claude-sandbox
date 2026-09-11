@@ -11,7 +11,7 @@ in `/user-terminal-config/bashrc` that executes on a container's first
 shell. Add the install one-liner there:
 
 ```bash
-cd /tmp && rm -rf claude-sandbox && git clone https://github.com/DiamondLightSource/claude-sandbox && claude-sandbox/install
+cd /tmp && rm -rf agent-sandbox && git clone https://github.com/DiamondLightSource/agent-sandbox && agent-sandbox/install
 ```
 
 Every devcontainer you open then installs the sandbox on first use,
@@ -35,7 +35,7 @@ with no per-project setup beyond the three `devcontainer.json` items.
 
 ## Forge access and the Diamond network
 
-- `claude-sandbox glab-auth` defaults to `gitlab.diamond.ac.uk`; the
+- `agent-sandbox glab-auth` defaults to `gitlab.diamond.ac.uk`; the
   shipped configuration already punches Diamond's GitLab through the
   egress jail's internal-network blackhole. Any other internal host a
   session must reach needs an `allow-ip` entry; see
@@ -49,11 +49,11 @@ with no per-project setup beyond the three `devcontainer.json` items.
 The main page prescribes one route to keep the instructions simple.
 Also supported:
 
-- **The prebuilt container image**: sandboxed Claude with no
+- **The prebuilt container image**: sandboxed Claude Code with no
   devcontainer at all, via rootless Podman and a small launcher. See
   [Use the container image](../how-to/use-the-container-image.md).
 - **Team rollout at a pinned tag**: a project's `postCreate` clones
-  claude-sandbox at a pinned release and installs it, so every teammate
+  agent-sandbox at a pinned release and installs it, so every teammate
   gets an identical, reviewable sandbox with no manual step. See
   [Sandbox a team devcontainer](../how-to/sandbox-a-team-devcontainer.md).
 
