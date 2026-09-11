@@ -11,7 +11,7 @@ register_cleanup "$tmp"
 export HOME="$tmp/home"
 mkdir -p "$HOME/.pi/agent" "$HOME/.claude" "$HOME/.codex" "$HOME/.cache"
 touch "$HOME/.claude.json"
-unset CLAUDE_SANDBOX_ALLOW_WRITE CLAUDE_SANDBOX_PASS_ENV CLAUDE_SANDBOX_NO_FORGE CLAUDE_SANDBOX_LOCAL_PORTS
+unset CLAUDE_SANDBOX_ALLOW_WRITE CLAUDE_SANDBOX_PASS_ENV CLAUDE_SANDBOX_NO_FORGE CLAUDE_SANDBOX_LOCAL_PORTS CLAUDE_SANDBOX_CALLBACK_PORTS
 
 assert_eq detect-pi pi "$(detect_agent /usr/local/bin/pi '')"
 agent_profile pi
@@ -77,6 +77,34 @@ argv="$(bwrap_argv_build /repo "$AGENT_REAL")"
 assert_not_contains no-discovery-without-model-port "$argv" CLAUDE_SANDBOX_LOCAL_MODEL_PORT
 unset CLAUDE_SANDBOX_LOCAL_MODEL_PORT CLAUDE_SANDBOX_LOCAL_PORTS
 if CLAUDE_SANDBOX_LOCAL_MODEL_PORT=0 local_model_enabled; then fail 'relay enabled with nothing configured'; else pass; fi
+
+# Callback set (ADR 0021): the inbound relay. Shipped default is Pi's Claude
+# login port; entries merge with the environment, deduplicate, validate like
+# local-port, and may never overlap the outbound set.
+unset CLAUDE_SANDBOX_LOCAL_MODEL_PORT CLAUDE_SANDBOX_LOCAL_PORTS CLAUDE_SANDBOX_CALLBACK_PORTS
+parse_config "$REPO_ROOT/.devcontainer/claude-sandbox.conf"
+assert_eq shipped-callback-port 53692 "$(callback_ports)"
+assert_parse shipped-callback-valid validate_callback_ports
+assert_parse shipped-callback-enabled callback_enabled
+unset CLAUDE_SANDBOX_LOCAL_MODEL_PORT CLAUDE_SANDBOX_LOCAL_PORTS CLAUDE_SANDBOX_CALLBACK_PORTS
+if callback_enabled; then fail 'callback relay enabled without configuration'; else pass; fi
+printf 'callback-port = 53692\ncallback-port = 1455\ncallback-port = 53692\n' > "$tmp/conf"
+export CLAUDE_SANDBOX_CALLBACK_PORTS='1456,1455'
+parse_config "$tmp/conf"
+assert_eq callback-set $'1456\n1455\n53692' "$(callback_ports)"
+assert_parse callback-set-valid validate_callback_ports
+unset CLAUDE_SANDBOX_CALLBACK_PORTS
+for port in -1 65536 '1455,fork' localhost:1455 01455 99999999999999999999; do
+    if CLAUDE_SANDBOX_CALLBACK_PORTS="$port" validate_callback_ports 2>/dev/null; then
+        fail "accepted invalid callback-port entry: $port"
+    else pass; fi
+done
+if CLAUDE_SANDBOX_LOCAL_MODEL_PORT=1920 CLAUDE_SANDBOX_CALLBACK_PORTS=1920 validate_callback_ports 2>/dev/null; then
+    fail 'accepted the model port as a callback-port'
+else pass; fi
+if CLAUDE_SANDBOX_LOCAL_MODEL_PORT=0 CLAUDE_SANDBOX_LOCAL_PORTS=8082 CLAUDE_SANDBOX_CALLBACK_PORTS='53692 8082' validate_callback_ports 2>/dev/null; then
+    fail 'accepted a local-port as a callback-port'
+else pass; fi
 
 cli="$REPO_ROOT/.devcontainer/claude-sandbox/claude-sandbox"
 printf '{"providers":{"other":{"apiKey":"preserve"}}}\n' > "$HOME/.pi/agent/models.json"
