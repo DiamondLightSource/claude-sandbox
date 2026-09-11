@@ -1,30 +1,33 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
-[![Docs](https://img.shields.io/badge/docs-online-blue.svg)](https://diamondlightsource.github.io/claude-sandbox/)
+[![Docs](https://img.shields.io/badge/docs-online-blue.svg)](https://diamondlightsource.github.io/agent-sandbox/)
 
-# claude-sandbox
+# agent-sandbox
 
-bwrap-isolated Claude Code for Debian/Ubuntu devcontainers (rootless Podman is
-the supported runtime; rootless Docker likely works but is untested with the
-default egress jail). A hostile prompt, file, or
-tool result cannot reach your host credentials, IDE bridges, or shell
-environment. The protection is launch-time: plain `claude` resolves to a shadow
-that wraps the real binary in `bwrap`, and a global integrity guard fails loud
-and closed if it is ever launched unwrapped.
+bwrap-isolated coding agents for Debian/Ubuntu devcontainers (rootless Podman
+is the supported runtime; rootless Docker likely works but is untested with
+the default egress jail). One sandbox wraps **Claude Code**, **OpenAI Codex
+CLI** and **Pi** (with Anthropic, OpenAI or local models): a hostile prompt,
+file, or tool result cannot reach your host credentials, IDE bridges, or shell
+environment. The protection is launch-time: plain `claude`, `codex` and `pi`
+resolve to a shadow that wraps the real binary in `bwrap`, and a global
+integrity guard fails loud and closed if an agent is ever launched unwrapped.
 
-📖 **Documentation: <https://diamondlightsource.github.io/claude-sandbox/>**
+Claude Code is the primary agent and the one the tutorials and how-tos walk
+through; the same install gives you the others.
 
-## Why Use Claude Sandbox
+📖 **Documentation: <https://diamondlightsource.github.io/agent-sandbox/>**
+
+## Why use agent-sandbox
 
 Agents are vulnerable to prompt injection embedded in the text they process (web pages, commit messages etc). This can allow a bad actor to take control of your agent. Agents can also make mistakes.
 
 The blast radius for badly behaved agents can be very large when they are running as a user whose credentials are within their reach. All your credentials are often available to an agent running under your account on your workstation.
 
-For this reason Claude code will default to asking for user approval for every tool call it is going to make. But in real use this leads to 'approval fatigue' where users stop checking what the agent is about to do. 'auto-mode' is a partial fix for this as a second agent acts as a classifier for all tool calls and approves those that don't look dangerous. Unfortunately auto-mode has been demonstrated to be defeated by careful prompt injection.
+For this reason coding agents such as Claude Code default to asking for user approval for every tool call they are going to make. But in real use this leads to 'approval fatigue' where users stop checking what the agent is about to do. Classifier-based 'auto' modes are a partial fix, where a second model approves tool calls that don't look dangerous. Unfortunately such modes have been demonstrated to be defeated by careful prompt injection.
 
-Hence, Anthropic recommend running Claude Code in an isolated environment where it does not have access to your credentials and you carefully control what network devices and filesystem folders it does have access to. claude-sandbox allows you to have that control inside a developer container running locally on your workstation.
+Hence, agent vendors recommend running the agent in an isolated environment where it does not have access to your credentials and you carefully control what network devices and filesystem folders it does have access to. agent-sandbox gives you that control inside a developer container running locally on your workstation, for every agent it wraps.
 
 This report demonstrates key sandbox isolation properties: https://gist.github.com/gilesknap/582a289874e65b89fc99f09df37cf121.
-
 
 
 ## Install
@@ -33,7 +36,7 @@ Inside any Debian/Ubuntu devcontainer (running as `root`, the typical
 rootless-podman pattern):
 
 ```
-cd /tmp && rm -rf claude-sandbox && git clone https://github.com/DiamondLightSource/claude-sandbox && claude-sandbox/install
+cd /tmp && rm -rf agent-sandbox && git clone https://github.com/DiamondLightSource/agent-sandbox && agent-sandbox/install
 ```
 
 This installs the newest **release**, not the tip of `main` — `install`
@@ -46,8 +49,8 @@ Nothing depends on the clone after install, so a clone in `/tmp` is fine —
 it evaporates with the container. The installer is idempotent; wire the
 same one-liner into your devcontainer's `postCreate.sh` to re-establish it
 on every rebuild (or clone at a pinned tag for a reviewable rollout — see
-the [team how-to][team-howto]). Afterwards, `claude-sandbox update`
-upgrades to the latest release and `claude-sandbox version` reports what
+the [team how-to][team-howto]). Afterwards, `agent-sandbox update`
+upgrades to the latest release and `agent-sandbox version` reports what
 you have.
 
 The [getting-started tutorial][tutorial] has the full walkthrough, including the
@@ -56,22 +59,22 @@ devcontainers.
 
 ### Not a devcontainer user? Prebuilt image
 
-A published image (`ghcr.io/diamondlightsource/claude-sandbox`) ships the whole sandbox
-pre-installed — any Linux host with rootless podman can run sandboxed Claude
-Code with no devcontainer and no root access (docker is untested with the
-egress jail):
+A published image (`ghcr.io/diamondlightsource/agent-sandbox`) ships the whole sandbox
+pre-installed — any Linux host with rootless podman can run a sandboxed agent
+(Claude Code by default; `--agent codex` or `--agent pi` for the others) with
+no devcontainer and no root access (docker is untested with the egress jail):
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/DiamondLightSource/claude-sandbox/main/container/claude-container
-chmod +x claude-container
-cd ~/src/my-project && ./claude-container
+curl -fsSLO https://raw.githubusercontent.com/DiamondLightSource/agent-sandbox/main/container/agent-container
+chmod +x agent-container
+cd ~/src/my-project && ./agent-container
 ```
 
 The launcher runs unsandboxed on your host — it is ~200 lines of bash; read it
 before you run it. See [Use the prebuilt container image][container] for
 pinning the fetch to a fixed ref, persistence, forge auth, and configuration;
 each image records the launcher version it was tested with, and
-`claude-container` tells you when your copy is out of date.
+`agent-container` tells you when your copy is out of date.
 
 ## What you get
 
@@ -100,7 +103,7 @@ each image records the launcher version it was tested with, and
   incompatible with the container's procfs view. Explicit `--remote`
   connections use the server you specify. The automatic server belongs to
   this invocation; it is not shared across terminals.
-- **Pi with cloud or local models**: run `pi` (or `claude-container --agent pi`),
+- **Pi with cloud or local models**: run `pi` (or `agent-container --agent pi`),
   authenticate OpenAI or Anthropic with `/login`, and switch using `/model`.
   A localhost relay defaults to port 1920 and discovers lllm2's model and
   context at startup, keeping the network jail enabled. The same relay serves
@@ -140,13 +143,13 @@ GitHub Pages on every push to `main`.
 
 See [`LICENSE`](./LICENSE).
 
-[tutorial]: https://diamondlightsource.github.io/claude-sandbox/tutorials/getting-started.html
-[team-howto]: https://diamondlightsource.github.io/claude-sandbox/how-to/sandbox-a-team-devcontainer.html
-[howto]: https://diamondlightsource.github.io/claude-sandbox/how-to.html
-[reference]: https://diamondlightsource.github.io/claude-sandbox/reference.html
-[explain]: https://diamondlightsource.github.io/claude-sandbox/explanations.html
-[arch]: https://diamondlightsource.github.io/claude-sandbox/explanations/architecture.html
-[threat]: https://diamondlightsource.github.io/claude-sandbox/explanations/threat-model.html
-[jail]: https://diamondlightsource.github.io/claude-sandbox/explanations/decisions/0015-network-egress-jail.html
-[contribute]: https://diamondlightsource.github.io/claude-sandbox/how-to/contribute.html
-[container]: https://diamondlightsource.github.io/claude-sandbox/how-to/use-the-container-image.html
+[tutorial]: https://diamondlightsource.github.io/agent-sandbox/tutorials/getting-started.html
+[team-howto]: https://diamondlightsource.github.io/agent-sandbox/how-to/sandbox-a-team-devcontainer.html
+[howto]: https://diamondlightsource.github.io/agent-sandbox/how-to.html
+[reference]: https://diamondlightsource.github.io/agent-sandbox/reference.html
+[explain]: https://diamondlightsource.github.io/agent-sandbox/explanations.html
+[arch]: https://diamondlightsource.github.io/agent-sandbox/explanations/architecture.html
+[threat]: https://diamondlightsource.github.io/agent-sandbox/explanations/threat-model.html
+[jail]: https://diamondlightsource.github.io/agent-sandbox/explanations/decisions/0015-network-egress-jail.html
+[contribute]: https://diamondlightsource.github.io/agent-sandbox/how-to/contribute.html
+[container]: https://diamondlightsource.github.io/agent-sandbox/how-to/use-the-container-image.html

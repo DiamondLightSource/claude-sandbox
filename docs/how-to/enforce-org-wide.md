@@ -1,7 +1,7 @@
 # Enforce sandbox use across an organisation
 
 Make Claude Code on a *host* machine refuse to run and redirect the user
-to claude-sandbox, so the default path for everyone is the isolated
+to agent-sandbox, so the default path for everyone is the isolated
 devcontainer rather than an unwrapped session against host credentials.
 
 This is for IT / platform teams rolling the sandbox out as policy. It is
@@ -32,7 +32,7 @@ the sandbox?". It blocks unconditionally.
 ## 1. The gate script
 
 Deploy root-owned, off the user's `PATH`, e.g.
-`/usr/libexec/claude-sandbox/corp-gate.sh` (`0755`):
+`/usr/libexec/agent-sandbox/corp-gate.sh` (`0755`):
 
 ```bash
 #!/usr/bin/env bash
@@ -43,10 +43,10 @@ set -uo pipefail
 # naive user can't trivially avoid the policy. Document it only in an
 # internal runbook that makes the user acknowledge they are giving up
 # credential isolation.
-[ "${DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED:-}" = "1" ] && exit 0
+[ "${DANGEROUSLY_ALLOW_AGENT_SANDBOX_UNWRAPPED:-}" = "1" ] && exit 0
 
-echo "BLOCKED by IT policy: Claude Code must be run inside claude-sandbox so host
-credentials stay isolated. Set it up: https://github.com/DiamondLightSource/claude-sandbox
+echo "BLOCKED by IT policy: Claude Code must be run inside agent-sandbox so host
+credentials stay isolated. Set it up: https://github.com/DiamondLightSource/agent-sandbox
 (clone + ./install, then launch claude inside the devcontainer)." >&2
 exit 2
 ```
@@ -65,7 +65,7 @@ Write this to the OS-specific managed-settings path (root-owned, `0644`):
 {
   "hooks": {
     "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "bash /usr/libexec/claude-sandbox/corp-gate.sh" }] }
+      { "hooks": [{ "type": "command", "command": "bash /usr/libexec/agent-sandbox/corp-gate.sh" }] }
     ]
   }
 }
@@ -77,7 +77,7 @@ user/project hooks, which is what you want.
 
 ## Knobs
 
-- **Hard enforcement.** Drop the `DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED` line
+- **Hard enforcement.** Drop the `DANGEROUSLY_ALLOW_AGENT_SANDBOX_UNWRAPPED` line
   from the gate to remove the bypass entirely.
 - **Claude Code on the web.** Add `[ "${CLAUDE_CODE_REMOTE:-}" = "true" ]
   && exit 0` as the first check if your org uses Claude Code on the web

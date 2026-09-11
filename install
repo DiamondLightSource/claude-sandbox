@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# claude-sandbox installer shim. Resolves WHICH REVISION to install, then
-# execs the real installer under .devcontainer/claude-sandbox/.
+# agent-sandbox installer shim. Resolves WHICH REVISION to install, then
+# execs the real installer under .devcontainer/agent-sandbox/.
 #
-#   cd /tmp && rm -rf claude-sandbox && \
-#       git clone https://github.com/DiamondLightSource/claude-sandbox && \
-#       claude-sandbox/install
+#   cd /tmp && rm -rf agent-sandbox && \
+#       git clone https://github.com/DiamondLightSource/agent-sandbox && \
+#       agent-sandbox/install
 #
 # By default this installs the newest stable RELEASE TAG — not the tip of
 # the default branch. The one-liner above clones `main`, and main is
-# unreleased work; `claude-sandbox update` has always installed the newest
+# unreleased work; `agent-sandbox update` has always installed the newest
 # tag, so without this a first install and every later update disagreed
 # about what "current" means.
 #
@@ -60,19 +60,19 @@ while [ $# -gt 0 ]; do
         -h|--help)
             usage; exit 0 ;;
         *)
-            echo "claude-sandbox: unknown argument '$1'" >&2
+            echo "agent-sandbox: unknown argument '$1'" >&2
             usage; exit 2 ;;
     esac
 done
 
-if [ "$(id -u)" -ne 0 ] && [ "${CLAUDE_SANDBOX_SMOKE:-0}" != "1" ]; then
-    echo "claude-sandbox: refusing — run as root (apt-get install needs it)." >&2
+if [ "$(id -u)" -ne 0 ] && [ "${AGENT_SANDBOX_SMOKE:-0}" != "1" ]; then
+    echo "agent-sandbox: refusing — run as root (apt-get install needs it)." >&2
     exit 1
 fi
 
 # A smoke run tests the checkout it was pointed at; it must never retarget
 # that checkout out from under the test.
-if [ "${CLAUDE_SANDBOX_SMOKE:-0}" = "1" ]; then
+if [ "${AGENT_SANDBOX_SMOKE:-0}" = "1" ]; then
     MODE=here
 fi
 
@@ -80,11 +80,11 @@ git_here() { git -C "$SCRIPT_DIR" "$@"; }
 
 if [ "$MODE" != here ] && ! git_here rev-parse --git-dir >/dev/null 2>&1; then
     if [ "$MODE" = release ]; then
-        echo "claude-sandbox: --release needs a git clone, and $SCRIPT_DIR is not one." >&2
+        echo "agent-sandbox: --release needs a git clone, and $SCRIPT_DIR is not one." >&2
         exit 1
     fi
     # A tarball/vendored copy has no revisions to choose between.
-    echo "claude-sandbox: not a git clone — installing these files as they are." >&2
+    echo "agent-sandbox: not a git clone — installing these files as they are." >&2
     MODE=here
 fi
 
@@ -101,7 +101,7 @@ if [ "$MODE" = default ]; then
         pinned="locally modified"
     fi
     if [ -n "$pinned" ]; then
-        echo "claude-sandbox: this clone is $pinned — refusing to silently replace it with the newest release." >&2
+        echo "agent-sandbox: this clone is $pinned — refusing to silently replace it with the newest release." >&2
         echo "  install --here            install this checkout as it is" >&2
         echo "  install --release [REF]   retarget to REF (default: newest release tag)" >&2
         exit 1
@@ -121,17 +121,17 @@ if [ "$MODE" != here ]; then
         REF="$(git_here tag --sort=-v:refname | awk '!/-/ && !found { print; found=1 }')"
     fi
     if [ -z "$REF" ]; then
-        echo "claude-sandbox: no release tags found — installing $(git_here rev-parse --short HEAD)." >&2
+        echo "agent-sandbox: no release tags found — installing $(git_here rev-parse --short HEAD)." >&2
     else
-        echo "claude-sandbox: installing release $REF"
+        echo "agent-sandbox: installing release $REF"
         # `git checkout` rewrites THIS FILE while bash is still reading it
         # incrementally, which corrupts the rest of the run. Put everything
         # after the checkout in argv (bash -c), never in this file, so
         # nothing reads the old bytes once they are gone.
         exec bash -c \
             'git -C "$1" checkout --quiet "$2" && exec bash "$1/install" --here' \
-            claude-sandbox-install "$SCRIPT_DIR" "$REF"
+            agent-sandbox-install "$SCRIPT_DIR" "$REF"
     fi
 fi
 
-exec bash "$SCRIPT_DIR/.devcontainer/claude-sandbox/install.sh"
+exec bash "$SCRIPT_DIR/.devcontainer/agent-sandbox/install.sh"

@@ -21,7 +21,7 @@ across several Python modules made them **harder** to audit, not easier.
 
 Bash-only. The security surface is two short bash files — the shadow and the
 installer — that you can read top to bottom. No `pyproject.toml`, `uv.lock`,
-`src/claude_sandbox/`, or `test_*.py`. The one allowed Python is the fully
+`src/agent_sandbox/`, or `test_*.py`. The one allowed Python is the fully
 isolated `docs/` toolchain (Sphinx), which touches nothing security-critical.
 
 ## Consequences
@@ -31,7 +31,7 @@ isolated `docs/` toolchain (Sphinx), which touches nothing security-critical.
 - Tests are bash: `tests/bwrap_argv.sh` (pure argv-builder assertions),
   `tests/smoke.sh`, `tests/promote.sh`.
 - Root `CLAUDE.md` states the rule ("Bash-only. No Python package, no uv, no
-  pytest — don't add them back"); the `claude-sandbox` skill (Reversal 1) lists
+  pytest — don't add them back"); the `agent-sandbox` skill (Reversal 1) lists
   the regressions to refuse ("a small Python CLI for nicer errors," "bring back
   pytest — it's only a little code").
 - The v2 "ship as a PyPI package / `uvx` one-liner" idea (issue #26) reopens

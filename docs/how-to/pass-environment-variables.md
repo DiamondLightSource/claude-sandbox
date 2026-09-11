@@ -44,17 +44,17 @@ the environment first.
 ## Forward a variable
 
 Name it with `pass-env` in the sandbox config — edit
-`/etc/claude-sandbox.conf` in the container (you are root):
+`/etc/agent-sandbox.conf` in the container (you are root):
 
 ```ini
-# /etc/claude-sandbox.conf
+# /etc/agent-sandbox.conf
 pass-env = DOCKER_HOST
 pass-env = MY_SERVICES_PATH, MY_FIXTURE_DIR
 ```
 
 Comma- or space-separate the names, and/or repeat the key. The next
 `claude` launch picks it up. Edits are per-devcontainer and not
-persisted — a rebuild, re-install, or `claude-sandbox update` restores
+persisted — a rebuild, re-install, or `agent-sandbox update` restores
 the shipped defaults.
 
 These are **names, not assignments**. The value is read from the
@@ -64,11 +64,11 @@ unset at launch is skipped.
 
 ## Forward one for a single session
 
-`CLAUDE_SANDBOX_PASS_ENV` does the same thing without touching the conf,
+`AGENT_SANDBOX_PASS_ENV` does the same thing without touching the conf,
 which is handy for a one-off:
 
 ```console
-$ CLAUDE_SANDBOX_PASS_ENV=DOCKER_HOST claude
+$ AGENT_SANDBOX_PASS_ENV=DOCKER_HOST claude
 ```
 
 ## What you cannot forward

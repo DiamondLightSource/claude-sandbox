@@ -7,7 +7,7 @@ shadow, the relocated real binary, the [integrity
 guard](../explanations/integrity-guard), and the [network egress
 jail](network-egress-jail).
 
-Image: `ghcr.io/diamondlightsource/claude-sandbox:latest` (amd64 + arm64), built
+Image: `ghcr.io/diamondlightsource/agent-sandbox:latest` (amd64 + arm64), built
 by CI from the same `install.sh` the devcontainer runs — plus a weekly
 rebuild so the baked-in Claude tracks upstream releases. The in-image
 auto-updater is deliberately disabled (that is part of the integrity
@@ -31,24 +31,24 @@ container update itself.
 Fetch the launcher and put it on your `PATH`:
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/DiamondLightSource/claude-sandbox/main/container/claude-container
-chmod +x claude-container
+curl -fsSLO https://raw.githubusercontent.com/DiamondLightSource/agent-sandbox/main/container/agent-container
+chmod +x agent-container
 ```
 
 The launcher runs **unsandboxed on your host**, so give it the scrutiny
 that deserves: it is ~200 lines of plain bash — read it before you run
 it. For fixed provenance, replace `main` in the URL with a release tag
-or commit SHA (any ref that contains `container/claude-container`) and
+or commit SHA (any ref that contains `container/agent-container`) and
 re-fetch the same pinned ref when you update:
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/DiamondLightSource/claude-sandbox/<tag-or-commit>/container/claude-container
+curl -fsSLO https://raw.githubusercontent.com/DiamondLightSource/agent-sandbox/<tag-or-commit>/container/agent-container
 ```
 
 You don't have to watch this repo for launcher fixes: each published
 image carries a label naming the launcher version it was built and
 tested with, and on every run the launcher compares itself against your
-locally pulled image (`claude-container --version` prints your copy's
+locally pulled image (`agent-container --version` prints your copy's
 version). When your copy is older it prints a `curl` command pinned to
 the exact revision the image was built from; it never updates itself —
 the launcher runs unsandboxed, so replacing it stays a deliberate,
@@ -58,13 +58,13 @@ Then, from any project directory:
 
 ```bash
 cd ~/src/my-project
-claude-container
+agent-container
 ```
 
 The first run pulls the image, creates a container named after the
 project directory, and starts sandboxed `claude` with the project
 mounted read-write. Later runs reuse the same container. Everything
-you know from the devcontainer applies inside: `claude-sandbox verify`
+you know from the devcontainer applies inside: `agent-sandbox verify`
 runs the live battery, the egress jail is on by default, and plain
 `claude` can only ever resolve to the shadow.
 
@@ -77,11 +77,11 @@ project directory** rather than a throwaway `--rm` container:
   lifetime — the same container-scoped credential model as a
   devcontainer, without re-pasting a PAT on every launch. Credentials
   are never mounted from the host.
-- `claude-container --recreate` removes and recreates it (do this after
+- `agent-container --recreate` removes and recreates it (do this after
   pulling a newer image, or to change create-time settings). Forge
   logins must then be re-done — that ceremony is the deliberate cost of
   keeping PAT blast radius small.
-- The container's own process is an idle keeper; every `claude-container`
+- The container's own process is an idle keeper; every `agent-container`
   run is a new session exec'd into it, so `--agent`, `--shell` and any
   agent arguments apply on every run. A second run in the same project
   while a session is active opens another session in the same container.
@@ -95,29 +95,29 @@ project directory** rather than a throwaway `--rm` container:
 ## Authenticate to forges
 
 Forge logins run outside the sandbox but inside the container, where the
-`claude-sandbox` CLI is on PATH. `--shell` opens a plain, unsandboxed bash
+`agent-sandbox` CLI is on PATH. `--shell` opens a plain, unsandboxed bash
 there; authenticate, then start the agent from that shell or from a fresh
-`claude-container` run:
+`agent-container` run:
 
 ```bash
-claude-container --shell
-claude-sandbox gh-auth
-claude-sandbox glab-auth gitlab.example.com
+agent-container --shell
+agent-sandbox gh-auth
+agent-sandbox glab-auth gitlab.example.com
 exit
-claude-container
+agent-container
 ```
 
 See [Authenticate with forges](authenticate-with-forges) for the
 recommended PAT scopes.
 
 Note: inside the published image, update by pulling a newer image and
-recreating the container (`claude-container --recreate`), not with
-`claude-sandbox update` — the CLI refuses there.
+recreating the container (`agent-container --recreate`), not with
+`agent-sandbox update` — the CLI refuses there.
 
 ## Persist login and memory
 
 The launcher mounts `~/.config/terminal-config` (override:
-`CLAUDE_SANDBOX_SHARED_CONFIG`) at `/user-terminal-config`, and the
+`AGENT_SANDBOX_SHARED_CONFIG`) at `/user-terminal-config`, and the
 entrypoint symlinks `~/.claude` and `~/.claude.json` into it — the same
 convention devcontainers use, so a host that runs both shares one Claude
 login, memory, and settings. You log in to Claude once, not once per
@@ -154,23 +154,23 @@ Per-session (create-time) settings are environment variables, passed
 through automatically when the container is created:
 
 ```bash
-CLAUDE_SANDBOX_NO_FORGE=1 claude-container          # no forge creds inside
+AGENT_SANDBOX_NO_FORGE=1 agent-container          # no forge creds inside
 ```
 
 They are frozen into the container at create time — `--recreate` to
 change them.
 
-Durable settings go in `~/.config/claude-sandbox.conf` (override:
-`CLAUDE_SANDBOX_CONF`), written in the normal
-[claude-sandbox.conf format](../reference/configuration). When the file
+Durable settings go in `~/.config/agent-sandbox.conf` (override:
+`AGENT_SANDBOX_CONF`), written in the normal
+[agent-sandbox.conf format](../reference/configuration). When the file
 exists the launcher mounts it **read-only** over
-`/etc/claude-sandbox.conf` — the canonical path the shadow reads. The
+`/etc/agent-sandbox.conf` — the canonical path the shadow reads. The
 usual rule that the conf must live outside the sandbox's writable set
 still holds: inside the container it is at `/etc` and read-only, so a
 compromised session cannot widen its own binds for the next launch.
 
 ```ini
-# ~/.config/claude-sandbox.conf
+# ~/.config/agent-sandbox.conf
 allow-ip = 172.23.1.3        # keep this IOC reachable past the blackhole
 ```
 
@@ -178,7 +178,7 @@ To make extra folders writable, `--mount` binds them into the container
 *and* adds a matching `allow-write` entry for the sandbox:
 
 ```bash
-claude-container --mount ~/src/shared-lib
+agent-container --mount ~/src/shared-lib
 ```
 
 ## Run Codex instead of Claude
@@ -187,7 +187,7 @@ The image ships both agents behind the same shadow, so either is sandboxed
 identically. Pick one with `--agent`:
 
 ```bash
-claude-container --agent codex
+agent-container --agent codex
 ```
 
 Codex signs in separately from Claude (its credentials live in `~/.codex`,
@@ -205,11 +205,11 @@ device access for Claude is still granted per-IP with `allow-ip`.
 ## Update
 
 ```bash
-podman pull ghcr.io/diamondlightsource/claude-sandbox:latest
-claude-container --recreate
+podman pull ghcr.io/diamondlightsource/agent-sandbox:latest
+agent-container --recreate
 ```
 
-If you launch with `CLAUDE_SANDBOX_ENGINE=docker`, pull with `docker`
+If you launch with `AGENT_SANDBOX_ENGINE=docker`, pull with `docker`
 instead — and set the variable on the `--recreate` run too (the launcher
 reads it on every invocation; it is not remembered).
 
@@ -223,7 +223,7 @@ reads it on every invocation; it is not remembered).
   still happen outside the container.
 - **Claude's version is the image's.** By design (disabled updater);
   pull + `--recreate` to update.
-- **Rootless podman is the supported engine.** `CLAUDE_SANDBOX_ENGINE=docker`
+- **Rootless podman is the supported engine.** `AGENT_SANDBOX_ENGINE=docker`
   exists, but under *rootful* docker the egress jail's pasta attach is
   denied (`Couldn't open user namespace ... Permission denied` — differing
   namespace/ptrace semantics), so `claude` fail-closes at launch. Rootless

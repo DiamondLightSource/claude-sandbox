@@ -21,7 +21,7 @@ that shared, cross-container file.
 Deliver the guard through Claude Code's **managed-settings** layer
 (`/etc/claude-code/managed-settings.json`) — the highest-precedence tier, which
 a user cannot override or remove from user-scope — with two hooks whose scripts
-live in `/usr/libexec/claude-sandbox/` (root-owned, off-PATH, **ro inside the
+live in `/usr/libexec/agent-sandbox/` (root-owned, off-PATH, **ro inside the
 sandbox**):
 
 - `SessionStart → sandbox-verify.sh`: advisory full integrity battery, warns

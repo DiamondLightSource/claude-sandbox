@@ -1,17 +1,17 @@
 ---
-name: claude-sandbox
-description: Architecture invariants, refuse-lists, and walked-back paths for this repo's bwrap sandbox core (shadow, installer, integrity guard). Surface before editing `.devcontainer/claude-sandbox/*`, `install`, `tests/`, `.github/workflows/ci.yml`, or `.claude/commands/verify-sandbox.md` — or before any suggestion to re-add Python tooling, persist gh/glab PATs, auto-edit devcontainer.json, read conf from the workspace, move the integrity guard out of managed-settings, re-enable the auto-updater, expose a host container-engine socket, or pass-env secrets. Container-image/launcher topics: claude-sandbox-container skill. Network/egress topics: claude-sandbox-networking skill.
+name: agent-sandbox
+description: Architecture invariants, refuse-lists, and walked-back paths for this repo's bwrap sandbox core (shadow, installer, integrity guard). Surface before editing `.devcontainer/agent-sandbox/*`, `install`, `tests/`, `.github/workflows/ci.yml`, or `.claude/commands/verify-sandbox.md` — or before any suggestion to re-add Python tooling, persist gh/glab PATs, auto-edit devcontainer.json, read conf from the workspace, move the integrity guard out of managed-settings, re-enable the auto-updater, expose a host container-engine socket, or pass-env secrets. Container-image/launcher topics: agent-sandbox-container skill. Network/egress topics: agent-sandbox-networking skill.
 ---
 
-# claude-sandbox
+# agent-sandbox
 
 Project-specific architecture decisions. The code documents *what*;
 this skill documents *why* and *what regressions to refuse*. Threat
-model: [threat model](https://diamondlightsource.github.io/claude-sandbox/explanations/threat-model.html); live verification: `/verify-sandbox`
+model: [threat model](https://diamondlightsource.github.io/agent-sandbox/explanations/threat-model.html); live verification: `/verify-sandbox`
 (the command markdown `.claude/commands/verify-sandbox.md` documents the
 *why* of each check; the phase-1 PASS/FAIL battery is the committed
-script `.devcontainer/claude-sandbox/verify-sandbox-battery.sh`, run by
-absolute path from `/usr/libexec/claude-sandbox`).
+script `.devcontainer/agent-sandbox/verify-sandbox-battery.sh`, run by
+absolute path from `/usr/libexec/agent-sandbox`).
 
 **Why the 21-check battery is a committed script, not inline in the
 command markdown** (refuse a "simplify it back inline" request): slash
@@ -28,7 +28,7 @@ sandbox.
 ## Invariant 0 — ONE shadow file, many agents, dispatching on `argv[0]`
 
 The sandbox wraps Claude Code **and** OpenAI's Codex CLI (the client
-for GPT-6 Astra). `install.sh` places the *same* `claude-shadow` at
+for GPT-6 Astra). `install.sh` places the *same* `agent-shadow` at
 `/usr/local/bin/claude` and `/usr/local/bin/codex`; `detect_agent`
 picks the profile from the name it was invoked as, and
 `agent_profile` holds everything that differs — the real binary, the
@@ -52,7 +52,7 @@ and would abort codex), and the per-agent `--setenv` list. See
   validity check requires `codex-package.json`, `bin/codex`,
   `bin/codex-code-mode-host`, `codex-path/rg` (ripgrep) and
   `codex-resources/bwrap` together — so `install.sh` copies the whole
-  release dir to `/usr/libexec/claude-sandbox/codex-dist/` (resolving
+  release dir to `/usr/libexec/agent-sandbox/codex-dist/` (resolving
   the vendor's symlink first; relocating the link relocates nothing)
   and the shadow execs it IN PLACE, no bind-back. Don't "simplify"
   that to a single-file bind: it strips codex of its search tool and
@@ -63,7 +63,7 @@ and would abort codex), and the per-agent `--setenv` list. See
   is why tar fails under a rootless container — the tarball carries
   uid/gid 1001 and tar-as-root cannot restore that ownership, so the
   whole install aborts. Both were found the hard way.
-- Making `CLAUDE_SANDBOX_AGENT` accept anything outside the closed
+- Making `AGENT_SANDBOX_AGENT` accept anything outside the closed
   `claude|codex` set, or letting it name a binary path.
 - Installing the `codex` shadow *conditionally* on the codex binary
   being present. The shadow must own the name on `$PATH` before the
@@ -92,11 +92,11 @@ shell rc. After the next shell, `which claude` resolves past the
 bwrap shadow at `/usr/local/bin/claude` → **sandbox escape via
 plain `claude`**. OpenAI's `chatgpt.com/codex/install.sh` behaves the
 same way, so `install_codex_binary` performs the same relocation, to
-`/usr/libexec/claude-sandbox/codex-dist/bin/codex` (the whole release
+`/usr/libexec/agent-sandbox/codex-dist/bin/codex` (the whole release
 package, not a bare binary — see Invariant 0).
 
 `install_claude_binary` fixes this by relocating the real binary to
-`/usr/libexec/claude-sandbox/claude` (off the user's PATH). The
+`/usr/libexec/agent-sandbox/claude` (off the user's PATH). The
 shadow binds it back to `~/.local/bin/claude` *inside* the sandbox
 so Claude's `installMethod=native` self-check still sees the
 conventional path.
@@ -113,7 +113,7 @@ conventional path.
 relocate — provided plain `claude` still cannot resolve past
 `/usr/local/bin/claude`.
 
-## Invariant 2 — PATs are container-scoped; `claude-sandbox gh-auth` per rebuild is deliberate
+## Invariant 2 — PATs are container-scoped; `agent-sandbox gh-auth` per rebuild is deliberate
 
 The re-paste-on-rebuild ceremony for `gh` / `glab` PATs is the cost
 of keeping blast radius small: fine-grained PATs typically cover
@@ -209,12 +209,12 @@ Root `CLAUDE.md` carries the rule; this is the why.
 - "Let's bring back pytest / uv / a `src/` package — it's only a
   little code."
 - Anything that re-introduces `pyproject.toml`, `uv.lock`,
-  `src/claude_sandbox/`, or `test_*.py`.
+  `src/agent_sandbox/`, or `test_*.py`.
 
 ### Reversal 2 — extracted from python-copier-template
 
 Originally embedded in `python-copier-template` as
-`.devcontainer/claude-sandbox.sh` (`unshare -m` + tmpfs overlays).
+`.devcontainer/agent-sandbox.sh` (`unshare -m` + tmpfs overlays).
 Extracted because a security tool needs one canonical, audit-friendly
 home — not a templated copy per project — and a standalone repo gets
 the bwrap defences, versioned releases, its own CI, and
@@ -229,7 +229,7 @@ is prior art, **not** maintained.
 ### Reversal 3 — `just promote` (copy-by-value into targets)
 
 `just promote` (PR #20, ADR 0010) copied the install machinery —
-`install.sh`, `claude-shadow`, the guard scripts, the battery — by
+`install.sh`, `agent-shadow`, the guard scripts, the battery — by
 value into target workspaces so they became self-sufficient hosts.
 Removed 2026-07-24 (ADR 0017): frozen per-project copies of
 security-critical code have no update channel (a fix here never
@@ -245,7 +245,7 @@ variant ADR 0010 rightly declined (that ran whatever HEAD happened
 to be checked out).
 
 **Refuse without justification:**
-- Re-adding any mechanism that copies `install.sh` / `claude-shadow` /
+- Re-adding any mechanism that copies `install.sh` / `agent-shadow` /
   the guard scripts into a consuming repo (promote by another name,
   vendoring recipes, "sync" scripts).
 - Pointing a target's `postCreate` at a mutable shared clone's HEAD —
@@ -288,10 +288,10 @@ stayed strict.
 
 ## Invariant 4 — config is host-global at `/etc`, never read from the workspace
 
-`claude-shadow` reads its config from `/etc/claude-sandbox.conf`
+`agent-shadow` reads its config from `/etc/agent-sandbox.conf`
 (`CONFIG_PATH`), placed by `install.sh`'s `install_conf` from the clone's
-`.devcontainer/claude-sandbox.conf` and re-stamped on every rebuild via
-postCreate. It is NOT read from `$PWD/.devcontainer/claude-sandbox.conf`
+`.devcontainer/agent-sandbox.conf` and re-stamped on every rebuild via
+postCreate. It is NOT read from `$PWD/.devcontainer/agent-sandbox.conf`
 anymore (that call site moved in PR for the global-conf change).
 
 Two reasons, one load-bearing for the threat model:
@@ -304,16 +304,16 @@ Two reasons, one load-bearing for the threat model:
 - **Ergonomics.** One global conf means `allow-write = /cache` (uv) and
   friends apply to `claude` in every workspace with nothing added to
   individual repos. The documented user flow (2026-07-24, post
-  disposable-clone install) is editing `/etc/claude-sandbox.conf`
+  disposable-clone install) is editing `/etc/agent-sandbox.conf`
   directly from an unsandboxed root shell — same trust boundary, the
   shadow re-reads it at every launch. Edits are per-container and are
-  reset by a rebuild / re-install / `claude-sandbox update`; persistence
+  reset by a rebuild / re-install / `agent-sandbox update`; persistence
   across rebuilds is an open follow-up. Teams bake persistent conf into
   the pinned clone before `./install` runs.
 
 `parse_config` still takes the path as `$1` (tests pass a fixture); only
 the launch-time call site is pinned to `CONFIG_PATH`. Env vars
-(`CLAUDE_SANDBOX_*`) still override per session. A team ships custom
+(`AGENT_SANDBOX_*`) still override per session. A team ships custom
 conf by writing it into the clone before `postCreate` runs `./install`
 (see docs/how-to/sandbox-a-team-devcontainer.md).
 
@@ -322,7 +322,7 @@ conf by writing it into the clone before `postCreate` runs `./install`
   sandbox-rw path. The conf source must stay outside the jail's rw set.
   **One approved carve-out, not yet implemented — issue #81**: the
   container *launcher* (host code, runs before any jailed code) may
-  source `$PWD/.claude-sandbox.conf` ONLY with the full gate design —
+  source `$PWD/.agent-sandbox.conf` ONLY with the full gate design —
   host-side approved-hash store in `~/.config` (outside every mount),
   print-conf-and-approve on change, content frozen at container create
   (never a live bind), out-of-tree `allow-write`/`workspace-root`
@@ -346,17 +346,17 @@ settings tier, which a user **cannot override or remove** by editing
 their own `~/.claude/settings.json`. Two hooks, wired by
 `install_guard_scripts` + `wire_managed_settings`:
 
-- `SessionStart` → `/usr/libexec/claude-sandbox/sandbox-verify.sh`: full
+- `SessionStart` → `/usr/libexec/agent-sandbox/sandbox-verify.sh`: full
   integrity battery, warns loudly when unwrapped. **Cannot block**
   (SessionStart only injects messages/context — exit 2 does *not* abort).
-- `UserPromptSubmit` → `/usr/libexec/claude-sandbox/sandbox-gate.sh`:
+- `UserPromptSubmit` → `/usr/libexec/agent-sandbox/sandbox-gate.sh`:
   lean fail-closed gate, `exit 2` (blocks the prompt) unless
   `IS_SANDBOX=1`. Escape hatch: the ROOT-OWNED flag
   `/etc/claude-code/allow-unwrapped` (stamped by `install.sh` when
-  `DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED=1`, or `sudo touch`). It is a flag under `/etc`, NOT an
+  `DANGEROUSLY_ALLOW_AGENT_SANDBOX_UNWRAPPED=1`, or `sudo touch`). It is a flag under `/etc`, NOT an
   env var, because a confined Claude can write `~/.claude/settings.json`
   (host-shared) and Claude Code exports its `env` block into later
-  sessions — so the old `CLAUDE_SANDBOX_ALLOW_UNWRAPPED=1` env hatch was
+  sessions — so the old `AGENT_SANDBOX_ALLOW_UNWRAPPED=1` env hatch was
   forgeable from inside the jail and persistently neutralised the gate on
   a later unwrapped launch (deep-review H4). `/etc` is ro in the sandbox
   and not host-shared. Both hooks skip on `CLAUDE_CODE_REMOTE=true`.
@@ -374,7 +374,7 @@ safe-by-construction):
   disable the guard — only `root` editing `/etc` or a deliberate
   `./install` can. This closes the "user edits shared settings and drops
   the hooks" reopening of the silent-disable hole.
-- Hook **scripts** in `/usr/libexec/claude-sandbox/` are root-owned,
+- Hook **scripts** in `/usr/libexec/agent-sandbox/` are root-owned,
   off-PATH, and **ro inside the sandbox** (`--ro-bind / /`) — exactly
   like the relocated real binary. Under `~/.claude` they'd be rw-bound
   and a compromised session could rewrite `sandbox-gate.sh` to `exit 0`.
@@ -450,13 +450,13 @@ is the operator's job, not each user's. Switches that weaken the sandbox
 stay supported for operators who know the risks, but must NOT be
 surfaced in user-facing docs or in code messages:
 
-- `CLAUDE_SANDBOX_EGRESS_JAIL=0` / conf `egress-jail = 0`: never named
+- `AGENT_SANDBOX_EGRESS_JAIL=0` / conf `egress-jail = 0`: never named
   in how-tos, the tutorial, README, shipped-conf comments, or the
   shadow's error/warning messages (`jail_fail` names only the real fix).
   Reference pages say "an operator opt-out exists but is deliberately
   not documented"; explanations keep their *analytical* mentions — the
   fail-closed-plus-hatch design is a fact auditors need.
-- `DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED=1` (install-time seam;
+- `DANGEROUSLY_ALLOW_AGENT_SANDBOX_UNWRAPPED=1` (install-time seam;
   renamed 2026-07-24 from `ALLOW_UNWRAPPED`, whose old name is dead —
   smoke asserts it no longer stamps the flag; the flag path
   `/etc/claude-code/allow-unwrapped` is unchanged). Managing the flag is
@@ -487,7 +487,7 @@ install before exec'ing `install.sh`:
 | `install --release [REF]` | REF, or newest stable tag; retargets even a pinned/dirty clone |
 
 Why the default is a tag, not the checkout: the documented one-liner clones
-`main` (unreleased work) while `claude-sandbox update` has always installed
+`main` (unreleased work) while `agent-sandbox update` has always installed
 the newest tag — so a first install and every later update disagreed about
 what "current" means. Release selection now lives in `install` only, and
 `cmd_update` delegates to it: **one** implementation of "what is current".
@@ -513,7 +513,7 @@ nothing in the diff to show for it.
 - Removing the prerelease filter, or the `bash -c` argv trick around the
   checkout — `git checkout` rewrites `install` while bash is still reading
   it, so everything after the checkout must live in argv, not in the file.
-- Letting `CLAUDE_SANDBOX_SMOKE=1` retarget: a smoke run must test the
+- Letting `AGENT_SANDBOX_SMOKE=1` retarget: a smoke run must test the
   checkout it was pointed at.
 
 Coverage: `tests/install_ref.sh` (hermetic — builds its own origin+clone
@@ -544,7 +544,7 @@ will be root-in-container — `sandbox-gate.sh`'s BLOCKED message and
 install hints (`sudo apt-get install passt`). They're aimed at "the host
 operator", who in the DLS devcontainer flow is root already.
 
-## glab / gh helper-CLI foot-guns (`claude-sandbox glab-auth`)
+## glab / gh helper-CLI foot-guns (`agent-sandbox glab-auth`)
 
 Verified against glab 1.36 / gh 2.45 while fixing #11-adjacent breakage:
 
@@ -575,7 +575,7 @@ rename-replace, and `_is_mount`'s `[ -e ]` misreads ESTALE as absent.
 Workaround (verified 2026-07-24, 59/59):
 
 ```bash
-HOME=$(mktemp -d) CLAUDE_SANDBOX_SMOKE=1 bash tests/smoke.sh
+HOME=$(mktemp -d) AGENT_SANDBOX_SMOKE=1 bash tests/smoke.sh
 ```
 
 `tests/bwrap_argv.sh` runs fine in-jail. `tests/egress_jail.sh` cannot
@@ -583,12 +583,12 @@ HOME=$(mktemp -d) CLAUDE_SANDBOX_SMOKE=1 bash tests/smoke.sh
 
 ## Third consumer — the published container image
 
-The image `ghcr.io/diamondlightsource/claude-sandbox` + `container/claude-container`
+The image `ghcr.io/diamondlightsource/agent-sandbox` + `container/agent-container`
 launcher (PR #78) is the third consumer after dogfood and guest. Its
 design decisions (image build sources `install.sh`, entrypoint re-runs,
 PAT scoping via named containers, ro-mounted conf, notify-only launcher
 versioning, parked issues #79/#80/#81) live in the
-**`claude-sandbox-container` skill** — split out so they load only on
+**`agent-sandbox-container` skill** — split out so they load only on
 image/launcher topics. Touch the root `Dockerfile`, `container/*`, or
 `.github/workflows/container.yml` → read that skill first.
 
@@ -596,20 +596,20 @@ image/launcher topics. Touch the root `Dockerfile`, `container/*`, or
 
 | Concern                       | File                                                |
 |-------------------------------|-----------------------------------------------------|
-| bwrap argv construction + agent profiles | `.devcontainer/claude-sandbox/claude-shadow` (installed as BOTH `claude` and `codex`) |
-| Codex managed guard (`/etc/codex/*.toml`) | `wire_codex_managed` in `.devcontainer/claude-sandbox/install.sh` |
-| Installer (relocate + wire)   | `.devcontainer/claude-sandbox/install.sh`           |
+| bwrap argv construction + agent profiles | `.devcontainer/agent-sandbox/agent-shadow` (installed as BOTH `claude` and `codex`) |
+| Codex managed guard (`/etc/codex/*.toml`) | `wire_codex_managed` in `.devcontainer/agent-sandbox/install.sh` |
+| Installer (relocate + wire)   | `.devcontainer/agent-sandbox/install.sh`           |
 | Root-shim installer entry     | `install`                                           |
 | bwrap argv unit tests         | `tests/bwrap_argv.sh`                               |
 | End-to-end install smoke test | `tests/smoke.sh`                                    |
 | CI workflow                   | `.github/workflows/ci.yml`                          |
-| Container image / launcher design | `claude-sandbox-container` skill (root `Dockerfile`, `container/*`, `.github/workflows/container.yml`) |
+| Container image / launcher design | `agent-sandbox-container` skill (root `Dockerfile`, `container/*`, `.github/workflows/container.yml`) |
 | Live verification spec (why)  | `.claude/commands/verify-sandbox.md`                |
-| Phase-1 battery script (what) | `.devcontainer/claude-sandbox/verify-sandbox-battery.sh` |
-| Global SessionStart verifier  | `.devcontainer/claude-sandbox/sandbox-verify.sh`    |
-| Global UserPromptSubmit gate  | `.devcontainer/claude-sandbox/sandbox-gate.sh`      |
-| Threat model + binds rationale| [sphinx docs](https://diamondlightsource.github.io/claude-sandbox/explanations/threat-model.html) |
-| Helper CLI (gh-auth, glab-auth, update, verify, version) | `.devcontainer/claude-sandbox/claude-sandbox` |
-| Network egress / firewall / lateral-movement design | `claude-sandbox-networking` skill (kept separate so it loads only on network topics) |
+| Phase-1 battery script (what) | `.devcontainer/agent-sandbox/verify-sandbox-battery.sh` |
+| Global SessionStart verifier  | `.devcontainer/agent-sandbox/sandbox-verify.sh`    |
+| Global UserPromptSubmit gate  | `.devcontainer/agent-sandbox/sandbox-gate.sh`      |
+| Threat model + binds rationale| [sphinx docs](https://diamondlightsource.github.io/agent-sandbox/explanations/threat-model.html) |
+| Helper CLI (gh-auth, glab-auth, update, verify, version) | `.devcontainer/agent-sandbox/agent-sandbox` |
+| Network egress / firewall / lateral-movement design | `agent-sandbox-networking` skill (kept separate so it loads only on network topics) |
 
 Touching any of these → re-read this skill first.

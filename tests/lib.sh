@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
-# Shared test harness for the claude-sandbox bash test suite
+# Shared test harness for the agent-sandbox bash test suite
 # (bwrap_argv.sh, smoke.sh). Sourced — defines the PASS/FAIL
 # counters, the assertion helpers, a jq predicate wrapper, and a
 # register-once EXIT cleanup. Source-safe: defining functions and zeroing
