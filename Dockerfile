@@ -16,6 +16,11 @@
 #                    developer stage and is installed by the same install.sh
 #                    the devcontainer runs — dogfood ≈ guest ≈ image, one
 #                    installer, one audit surface.
+# Global-scope ARG: `COPY --from` cannot expand a stage-scoped one, so the
+# Node source is a named stage (used by the claude-sandbox stage below).
+ARG NODE_VERSION=22
+FROM node:${NODE_VERSION}-slim AS node
+
 FROM ghcr.io/diamondlightsource/ubuntu-devcontainer:noble AS developer
 
 FROM developer AS claude-sandbox
@@ -121,9 +126,8 @@ RUN uv python install --no-progress "$PYTHON_VERSION" \
 # ~/.pi, so they persist across containers), npx, and a current node.
 # /usr/local/bin precedes /usr/bin on the jail PATH, so the installer's
 # apt nodejs 18 is shadowed, not removed (guests still rely on it).
-ARG NODE_VERSION=22
-COPY --from=node:${NODE_VERSION}-slim /usr/local/bin/node /usr/local/bin/node
-COPY --from=node:${NODE_VERSION}-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
     && node --version && npm --version && npx --version
