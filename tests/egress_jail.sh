@@ -139,7 +139,7 @@ JAIL_TEST_ALLOWIP="203.0.113.7"      # RFC5737 TEST-NET-3 allow-ip device
 # table to OUTFILE. PRE is optional shell run INSIDE the netns BEFORE the holder
 # (used by the fail-closed leg to sabotage `ip`). Returns the holder's rc.
 run_holder() {
-    local outfile="$1" pre="${2:-}"
+    local outfile="$1" pre="${2:-}" gateway_route="${3:-0}"
     : > "$outfile"
     # The body runs inside `unshare -rn` as a fresh `bash -c`, so it must
     # re-source the shadow to get netns_holder, and re-export the env the holder
@@ -149,7 +149,7 @@ run_holder() {
     # scope-link route itself (as it would from pasta --config-net), so there is
     # no need to pass the subnet literal in — that's the point of leg1.
     unshare -rnm env \
-        SHADOW="$SHADOW" OUTFILE="$outfile" PRE="$pre" \
+        SHADOW="$SHADOW" OUTFILE="$outfile" PRE="$pre" GATEWAY_ROUTE="$gateway_route" \
         TGW="$JAIL_TEST_GW" TADDR="$JAIL_TEST_ADDR" \
         TDNS="$JAIL_TEST_DNS" TALLOW="$JAIL_TEST_ALLOWIP" RUNDIR="$RUNDIR" \
         bash -c '
@@ -163,6 +163,9 @@ run_holder() {
             ip link add jailtest0 type dummy 2>/dev/null || true
             ip link set jailtest0 up
             ip addr add "$TADDR" dev jailtest0
+            if [ "$GATEWAY_ROUTE" = 1 ]; then
+                ip route replace "$TGW/32" dev jailtest0 proto static
+            fi
             ip route replace default via "$TGW" dev jailtest0
 
             # resolv.conf fixture. A routable resolver ON the connected subnet:
@@ -247,6 +250,21 @@ else fail "leg1 — allow-ip device $JAIL_TEST_ALLOWIP not reachable via gateway
 # DNS forwarder /32 (issue #60) punched back. JAIL_DNS_FWD comes from the shadow.
 if has "^${JAIL_DNS_FWD//./\\.}(/32)? via ${JAIL_TEST_GW//./\\.}"; then pass
 else fail "leg1 — DNS forwarder $JAIL_DNS_FWD not punched back via gateway"; fi
+
+# Regression: Azure DHCP can mirror an explicit scope-link /32 for the
+# gateway. It must remain an allowed host route after subnet blackholing.
+GW_ROUTES="$RUNDIR/gateway-routes.txt"
+if run_holder "$GW_ROUTES" "" 1; then
+    if grep -Eq "^${JAIL_TEST_GW//./\.}(/32)? dev jailtest0" "$GW_ROUTES" \
+        && ! grep -Eq "^blackhole ${JAIL_TEST_GW//./\.}(/32)?( |$)" "$GW_ROUTES"; then
+        pass
+    else
+        cat "$GW_ROUTES" >&2
+        fail "leg1 — pre-existing gateway /32 was blackholed"
+    fi
+else
+    fail "leg1 — holder aborted with a pre-existing gateway /32"
+fi
 
 # ===========================================================================
 # Leg 2 — FAIL CLOSED. Sabotage `ip` for the holder so a load-bearing
