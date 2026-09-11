@@ -93,7 +93,8 @@ jobs:
             # Image-only Python: baked interpreter, shared venv under /cache
             test -x /cache/venv/bin/python
             python -c "import sys; assert sys.prefix == \"/cache/venv\", sys.prefix"
-            case "$(uv python find 3.13)" in /opt/uv/python/*) ;; *) echo "managed python not under /opt/uv/python"; exit 1 ;; esac
+            # (uv python find would answer with the active venv itself)
+            grep -q "^home = /opt/uv/python/" /cache/venv/pyvenv.cfg
           '
 
       - name: "Test: launcher-version label matches the baked script"
