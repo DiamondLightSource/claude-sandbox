@@ -89,6 +89,9 @@ project directory** rather than a throwaway `--rm` container:
 - Only `--host-net` and `--mount` are fixed at create time. On every reuse
   the launcher prints which container it is reconnecting to and, if you
   passed either of those, that they are being ignored until `--recreate`.
+- Pulling a newer image does not touch an existing container. The reuse
+  notice says so when the container's image differs from the one now
+  pulled, and `--recreate` is the way to move a project onto it.
 - A container made by a launcher older than 0.4 has an agent baked in as
   its process; the launcher refuses to reuse it and asks for `--recreate`.
 
