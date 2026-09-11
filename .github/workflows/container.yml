@@ -90,6 +90,11 @@ jobs:
               /etc/claude-code/managed-settings.json
             /usr/libexec/claude-sandbox/claude --version
             /usr/libexec/claude-sandbox/pi-dist/pi --version
+            # Image-only Python: baked interpreter, shared venv under /cache
+            test -x /cache/venv/bin/python
+            python -c "import sys; assert sys.prefix == \"/cache/venv\", sys.prefix"
+            # (uv python find would answer with the active venv itself)
+            grep -q "^home = /opt/uv/python/" /cache/venv/pyvenv.cfg
           '
 
       - name: "Test: launcher-version label matches the baked script"

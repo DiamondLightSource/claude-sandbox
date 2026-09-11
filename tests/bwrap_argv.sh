@@ -38,6 +38,7 @@ source "$SHADOW"
 # canonical-PATH assertion. Scenarios that exercise these vars set them
 # explicitly in their own subshell, so clearing them here is safe.
 unset VIRTUAL_ENV UV_PROJECT_ENVIRONMENT UV_CACHE_DIR UV_PYTHON_CACHE_DIR \
+      UV_PYTHON_INSTALL_DIR UV_TOOL_DIR \
       PRE_COMMIT_HOME CLAUDE_SANDBOX_WORKSPACE_ROOT CLAUDE_SANDBOX_NO_FORGE \
       CLAUDE_SANDBOX_ALLOW_WRITE CLAUDE_SANDBOX_EGRESS_JAIL CLAUDE_SANDBOX_ALLOW_IP \
       CLAUDE_SANDBOX_JAIL_RESOLV
@@ -233,6 +234,14 @@ ARGV8B="$(HOME="$TMPHOME" VIRTUAL_ENV="$TMPHOME/venv" \
 assert_contains scenario8b-venv-appended "$ARGV8B" \
     "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$TMPHOME/.local/bin:$TMPHOME/venv/bin"
 assert_pair scenario8b-venv-passthrough "$ARGV8B" '--setenv' 'VIRTUAL_ENV'
+# The container image (Dockerfile, claude-sandbox stage) relies on these two
+# reaching the jail: without them uv re-downloads the baked interpreter and
+# re-installs tools into the ephemeral home every session.
+ARGV8C="$(HOME="$TMPHOME" UV_PYTHON_INSTALL_DIR=/opt/uv/python UV_TOOL_DIR=/cache/uv-tools \
+    CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
+    bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+assert_pair scenario8c-uv-python-dir "$ARGV8C" '--setenv' 'UV_PYTHON_INSTALL_DIR'
+assert_pair scenario8c-uv-tool-dir "$ARGV8C" '--setenv' 'UV_TOOL_DIR'
 
 # --- Scenario 9: CLAUDE_SANDBOX_NO_FORGE=1 omits forge token dirs ---
 # $TMPHOME/.config/gh and glab-cli were created in scenario 4b.

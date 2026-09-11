@@ -472,7 +472,8 @@ bwrap_argv_build() {
     local pass_through_var
     for pass_through_var in \
         TERM LANG LC_ALL LC_CTYPE LC_MESSAGES LC_TIME LC_COLLATE LC_NUMERIC LC_MONETARY \
-        VIRTUAL_ENV UV_PROJECT_ENVIRONMENT UV_CACHE_DIR UV_PYTHON_CACHE_DIR PRE_COMMIT_HOME \
+        VIRTUAL_ENV UV_PROJECT_ENVIRONMENT UV_CACHE_DIR UV_PYTHON_CACHE_DIR \
+        UV_PYTHON_INSTALL_DIR UV_TOOL_DIR PRE_COMMIT_HOME \
         CLAUDE_SANDBOX_WORKSPACE_ROOT; do
         if [ -n "${!pass_through_var:-}" ]; then
             argv+=( --setenv "$pass_through_var" "${!pass_through_var}" )
