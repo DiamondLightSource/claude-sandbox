@@ -24,14 +24,14 @@ server under test. Nothing in the jail lets a Claude or Codex session reach
 any of them. `allow-ip` punches an IP route through the gateway, which cannot
 reach loopback, and pasta's port forwarding and gateway mapping are
 deliberately disabled for all agents (ADR 19). The only remaining option was
-the `CLAUDE_SANDBOX_EGRESS_JAIL=0` escape hatch, which gives the session the
+the `AGENT_SANDBOX_EGRESS_JAIL=0` escape hatch, which gives the session the
 whole host network to reach one local port.
 
 ## Decision
 
 Make the relay a **set of ports for every agent**. `local-model-port` keeps
 its meaning as the port Pi discovers a model on and stays in the set; the new
-repeatable `local-port` key adds further ports, and `CLAUDE_SANDBOX_LOCAL_PORTS`
+repeatable `local-port` key adds further ports, and `AGENT_SANDBOX_LOCAL_PORTS`
 in the environment adds ports for one session. Conf and environment entries
 are merged and deduplicated. The Pi-only gate on `local_model_enabled` is
 gone.

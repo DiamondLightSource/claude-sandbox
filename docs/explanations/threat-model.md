@@ -1,6 +1,6 @@
 # Threat model
 
-`claude-sandbox` exists to answer one question: *what can go wrong when a
+`agent-sandbox` exists to answer one question: *what can go wrong when a
 developer runs Claude Code inside a devcontainer, and which of those failures
 is this tool responsible for preventing?* This page explains the reasoning
 behind the boundary. For the hard, look-it-up tables — the exact defences and
@@ -163,11 +163,11 @@ blast-radius arithmetic:
 - GitLab gets the equivalent: project-scoped tokens, `api` only if you need
   push, otherwise `read_repository` + `write_repository`.
 
-The `claude-sandbox gh-auth` / `claude-sandbox glab-auth` helpers keep the token out of shell
+The `agent-sandbox gh-auth` / `agent-sandbox glab-auth` helpers keep the token out of shell
 history, but they do **not** enforce scope — that part is irreducibly yours.
 
 When a session genuinely does not need to push, the right move is to remove the
-exposure entirely rather than rely on a tight token: `CLAUDE_SANDBOX_NO_FORGE=1`
+exposure entirely rather than rely on a tight token: `AGENT_SANDBOX_NO_FORGE=1`
 in `remoteEnv` skips the `gh`/`glab` binds and strips the credential helpers
 from the generated gitconfig, so `git push` fails by design. The exact
 mechanism and how to set it are in
@@ -193,8 +193,8 @@ leaving the internet, DNS, and the device IPs you list as `allow-ip` reachable �
 so Claude still works while a compromised session has nowhere internal to pivot.
 It is **fail-closed**: if `/dev/net/tun`, pasta, or `unshare` is unavailable,
 `claude` refuses to launch rather than silently fall back to open egress. The
-escape hatch `CLAUDE_SANDBOX_EGRESS_JAIL=0` (env, or `egress-jail = 0` in
-`/etc/claude-sandbox.conf`) restores the older shared-host-netns world of
+escape hatch `AGENT_SANDBOX_EGRESS_JAIL=0` (env, or `egress-jail = 0` in
+`/etc/agent-sandbox.conf`) restores the older shared-host-netns world of
 {ref}`adr-network-egress-open`. Normal, non-Claude shells keep host networking
 untouched. The operational recipe — adding the required `--device=/dev/net/tun`
 or allow-listing a device — is in
@@ -207,7 +207,7 @@ This tool is not an alternative to Claude Code's own sandbox — they are
 composable layers covering different surfaces, and the strongest posture runs
 both.
 
-- **`claude-sandbox` (this repo)** provides two things: **credential protection**
+- **`agent-sandbox` (this repo)** provides two things: **credential protection**
   (the bwrap bind model — env scrubbing, the strict-under-`$HOME` inversion,
   masked IPC/runtime sockets) and **sideways / lateral network isolation** (the
   egress jail blackholes RFC1918 so a compromised session cannot pivot to

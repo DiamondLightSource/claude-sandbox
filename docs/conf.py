@@ -1,10 +1,10 @@
-# Sphinx configuration for the claude-sandbox documentation site.
+# Sphinx configuration for the agent-sandbox documentation site.
 # Docs-only build: there is no Python package to autodoc.
 
 # -- Project information -----------------------------------------------------
-project = "claude-sandbox"
+project = "agent-sandbox"
 author = "Giles Knap"
-html_title = "claude-sandbox"
+html_title = "agent-sandbox"
 
 # -- General configuration ---------------------------------------------------
 extensions = [
@@ -36,18 +36,18 @@ html_css_files = ["custom.css"]
 html_show_sphinx = False
 
 html_theme_options = {
-    "github_url": "https://github.com/DiamondLightSource/claude-sandbox",
+    "github_url": "https://github.com/DiamondLightSource/agent-sandbox",
     "use_edit_page_button": True,
     "navigation_with_keys": False,
     "icon_links": [],
-    "logo": {"text": "claude-sandbox"},
+    "logo": {"text": "agent-sandbox"},
     "navbar_end": ["theme-switcher", "navbar-icon-links"],
 }
 
 # Wires up the "edit this page" button.
 html_context = {
     "github_user": "DiamondLightSource",
-    "github_repo": "claude-sandbox",
+    "github_repo": "agent-sandbox",
     "github_version": "main",
     "doc_path": "docs",
 }

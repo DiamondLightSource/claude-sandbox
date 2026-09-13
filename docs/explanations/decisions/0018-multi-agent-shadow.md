@@ -47,10 +47,10 @@ sandbox sets for itself.
 
 **One shadow file, installed under both names, dispatching on `argv[0]`.**
 
-`install.sh` places the *same* `claude-shadow` at `/usr/local/bin/claude` and
+`install.sh` places the *same* `agent-shadow` at `/usr/local/bin/claude` and
 `/usr/local/bin/codex`. The script resolves an **agent profile** from the name
 it was invoked as; everything security-critical is shared code below that
-point. A closed-set `CLAUDE_SANDBOX_AGENT` override exists for tests and
+point. A closed-set `AGENT_SANDBOX_AGENT` override exists for tests and
 renamed symlinks, and can only ever select a hard-coded profile — never an
 arbitrary binary.
 
@@ -64,7 +64,7 @@ are the same sandbox".
 **The guard is delivered through Codex's managed layer, not its user config.**
 `/etc/codex/requirements.toml` carries the `SessionStart` verifier and the
 `UserPromptSubmit` gate, pointing at the same root-owned
-`/usr/libexec/claude-sandbox/*.sh` scripts. This is the same reasoning as
+`/usr/libexec/agent-sandbox/*.sh` scripts. This is the same reasoning as
 {ref}`adr-managed-settings-guard`: the entries live in `/etc` (not removable by
 editing a user file), and the scripts live off-PATH and read-only inside the
 sandbox (not rewritable to `exit 0` from inside the jail). It matters
@@ -132,7 +132,7 @@ managed-settings path already makes.
     alongside ripgrep (`codex-path/rg`) and Codex's own bwrap and zsh helpers
     (`codex-resources/`) — the vendor's own validity check requires them
     together. So the *whole release directory* is copied to
-    `/usr/libexec/claude-sandbox/codex-dist/`, and codex is exec'd **in place**
+    `/usr/libexec/agent-sandbox/codex-dist/`, and codex is exec'd **in place**
     from there with no bind-back: `/usr/libexec` is already visible via
     `--ro-bind / /`, the package's internal layout stays intact, and the binary
     we exec is consequently **read-only** in the session. That is strictly

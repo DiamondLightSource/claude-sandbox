@@ -2,7 +2,7 @@
 # Run ONLY in a disposable container with the sandbox and Pi already installed.
 # The Container workflow runs this against the actual built image on both archs.
 set -euo pipefail
-test -x /usr/libexec/claude-sandbox/pi-dist/pi
+test -x /usr/libexec/agent-sandbox/pi-dist/pi
 rg --version >/dev/null
 fdfind --version >/dev/null
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -28,10 +28,10 @@ for _ in {1..100}; do
     sleep 0.05
 done
 cd /work
-unset CLAUDE_SANDBOX_LOCAL_MODEL_PORT
+unset AGENT_SANDBOX_LOCAL_MODEL_PORT
 # Avoid catalog/version traffic in this test. The production profile leaves
 # catalog refresh enabled so cloud logins can discover their available models.
-export PI_OFFLINE=1 CLAUDE_SANDBOX_PASS_ENV=PI_OFFLINE
+export PI_OFFLINE=1 AGENT_SANDBOX_PASS_ENV=PI_OFFLINE
 run_pi() {
     local rc=0
     rm -f /work/tool-proof /work/battery /tmp/pi-search-results.json
@@ -57,7 +57,7 @@ run_pi
 jq -e '.providers.lllm2.models[0].id == "renamed-model" and .providers.lllm2.models[0].contextWindow == 65536' "$HOME/.pi/agent/models.json" >/dev/null
 cp "$HOME/.pi/agent/models.json" "$tmp/before-offline"
 printf should-not-discover > /tmp/pi-model-id
-CLAUDE_SANDBOX_LOCAL_MODEL_PORT=0 timeout --foreground 20 pi --version > "$tmp/disabled" 2>&1
+AGENT_SANDBOX_LOCAL_MODEL_PORT=0 timeout --foreground 20 pi --version > "$tmp/disabled" 2>&1
 cmp "$tmp/before-offline" "$HOME/.pi/agent/models.json"
 kill -TERM -- "-$server"
 wait "$server" 2>/dev/null || true

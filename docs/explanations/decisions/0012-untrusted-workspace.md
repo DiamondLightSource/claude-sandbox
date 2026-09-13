@@ -14,7 +14,7 @@ The workspace is bound rw into the sandbox, so a compromised session can write
 to it. Two facets followed from taking that seriously. (1) The early bind
 exposed all of `/workspaces` — every sibling project — rw. (2) Sandbox config
 (`workspace-root`, `allow-write`, …) was first read from
-`$PWD/.devcontainer/claude-sandbox.conf`, *inside* the rw workspace.
+`$PWD/.devcontainer/agent-sandbox.conf`, *inside* the rw workspace.
 
 ## Decision
 
@@ -22,8 +22,8 @@ Treat the rw workspace as **attacker-writable input**, on two fronts:
 
 - **Default the workspace bind to `$PWD`** — only the current project is
   writable (PR #29, issue #28). Restoring the broad `/workspaces` bind is an
-  explicit opt-in (`CLAUDE_SANDBOX_WORKSPACE_ROOT=/workspaces`).
-- **Read sandbox config from host-global `/etc/claude-sandbox.conf`**, never
+  explicit opt-in (`AGENT_SANDBOX_WORKSPACE_ROOT=/workspaces`).
+- **Read sandbox config from host-global `/etc/agent-sandbox.conf`**, never
   from the workspace (PR #32, commit `f6fcc3d`). `/etc` is not in the rw bind
   set. A per-workspace conf is attacker-writable from inside the jail: a
   compromised session could write `allow-write = /` (or `workspace-root = /`)
@@ -33,7 +33,7 @@ Treat the rw workspace as **attacker-writable input**, on two fronts:
 
 - One global conf applies to every workspace with nothing added per repo; edit
   the clone conf and re-run `./install` (a rebuild does it via `postCreate`) to
-  change it. Per-session `CLAUDE_SANDBOX_*` env vars remain the supported
+  change it. Per-session `AGENT_SANDBOX_*` env vars remain the supported
   per-session override.
 - `verify-sandbox` check 18 guards that the installed shadow reads `/etc` and
   has no `$PWD/.devcontainer` read.

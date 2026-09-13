@@ -43,10 +43,10 @@ disabling the jail for that host (see below).
 
 Device IPs you still need (an EPICS IOC, a PMAC, your internal GitLab) must be
 punched through the blackhole with `allow-ip` in the sandbox config. Edit
-`/etc/claude-sandbox.conf` in the container (you are root):
+`/etc/agent-sandbox.conf` in the container (you are root):
 
 ```ini
-# /etc/claude-sandbox.conf
+# /etc/agent-sandbox.conf
 allow-ip = 172.23.142.119   # internal GitLab forge
 allow-ip = 172.23.1.3       # an EPICS IOC / PMAC
 ```
@@ -57,7 +57,7 @@ working. `allow-ip` lives in `/etc`, **not** the workspace, so a compromised
 session cannot widen its own reach.
 
 The next `claude` launch picks the change up. Edits are per-devcontainer
-and not persisted — a rebuild, re-install, or `claude-sandbox update`
+and not persisted — a rebuild, re-install, or `agent-sandbox update`
 restores the shipped defaults, so re-apply afterwards (teams bake a
 persistent conf in at install time — see
 [Sandbox a team devcontainer](sandbox-a-team-devcontainer.md)).
@@ -69,7 +69,7 @@ gateway, and the jail disables pasta's port forwarding. What the jail offers
 instead is a relay for chosen TCP ports from the outer container's loopback to
 the same ports on the agent's loopback ({ref}`adr-local-port-all-agents`).
 The shipped conf relays `1920`, lllm2's model API, through `local-model-port`.
-Add ports with `local-port`, one per line, in `/etc/claude-sandbox.conf`:
+Add ports with `local-port`, one per line, in `/etc/agent-sandbox.conf`:
 
 ```ini
 local-port = 8082    # lllm2 panel and its experiments API
@@ -80,7 +80,7 @@ For one session, add ports through the environment instead of editing the
 root-owned conf; the two are merged:
 
 ```bash
-CLAUDE_SANDBOX_LOCAL_PORTS=8082 claude
+AGENT_SANDBOX_LOCAL_PORTS=8082 claude
 ```
 
 The outer container must share the services' network namespace: this
@@ -109,7 +109,7 @@ callback-port = 1456    # Pi's Radius login
 Or for one session:
 
 ```bash
-CLAUDE_SANDBOX_CALLBACK_PORTS=1455 codex
+AGENT_SANDBOX_CALLBACK_PORTS=1455 codex
 ```
 
 Only fixed ports can be relayed. Claude Code's login picks a random port and
@@ -137,5 +137,5 @@ broadcast.
 - [Threat model](../explanations/threat-model.md) — why lateral movement is the
   risk this jail addresses, and how it meshes with the native sandbox.
 - [Configuration](../reference/configuration.md) — the `egress-jail` / `allow-ip`
-  conf keys and the `CLAUDE_SANDBOX_EGRESS_JAIL` environment variable.
+  conf keys and the `AGENT_SANDBOX_EGRESS_JAIL` environment variable.
 - {ref}`adr-network-egress-jail` — the full design (Design D).

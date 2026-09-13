@@ -11,7 +11,7 @@ Accepted
 ## Context
 
 The sandbox originally lived embedded in `python-copier-template` as
-`.devcontainer/claude-sandbox.sh` — a single bash script using `unshare -m` plus
+`.devcontainer/agent-sandbox.sh` — a single bash script using `unshare -m` plus
 tmpfs overlays. Carrying a security tool as a templated copy means one drifting
 copy in every generated project and no canonical thing to audit or verify.
 
@@ -24,7 +24,7 @@ this repo, not embed it.
 
 ## Consequences
 
-- `python-copier-template`'s `.devcontainer/claude-sandbox.sh` remains as prior
+- `python-copier-template`'s `.devcontainer/agent-sandbox.sh` remains as prior
   art but is **not** maintained.
 - We refuse, without fresh justification, a `template/` directory or
   `copier.yml` here, and "let's keep a copy synced into python-copier-template."

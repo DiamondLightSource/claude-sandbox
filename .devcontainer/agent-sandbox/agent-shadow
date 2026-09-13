@@ -19,10 +19,10 @@ set -euo pipefail
 
 GITCONFIG_PATH="/etc/claude-gitconfig"
 # Host-global config, placed by install.sh from the clone's
-# .devcontainer/claude-sandbox.conf and re-stamped on every rebuild.
+# .devcontainer/agent-sandbox.conf and re-stamped on every rebuild.
 # Read from /etc (not the workspace) so a compromised session can't edit
 # it to widen the next launch's binds — see parse_config below.
-CONFIG_PATH="/etc/claude-sandbox.conf"
+CONFIG_PATH="/etc/agent-sandbox.conf"
 
 # In-netns DNS forwarder address for the egress jail (ADR 0015, issues #60 and #11).
 # ALL of Claude's DNS goes here — it is the jail's single resolver. pasta's
@@ -76,14 +76,14 @@ filter_chrome_args() {
 # "surface too big to audit in one read" that the bash-only rewrite
 # walked back from.
 #
-# The real binaries live off the user's PATH (/usr/libexec/claude-sandbox/)
+# The real binaries live off the user's PATH (/usr/libexec/agent-sandbox/)
 # so plain `claude` / `codex` always resolve to the shadow in
 # /usr/local/bin. Both vendors' installers drop their binary in
 # ~/.local/bin AND prepend that dir to the user's shell rc; install.sh
 # relocates both so the rc-mutation is inert (Invariant 1).
 
 # detect_agent ARGV0 OVERRIDE: name the agent this invocation wraps.
-# OVERRIDE (CLAUDE_SANDBOX_AGENT) exists for tests and for reaching a
+# OVERRIDE (AGENT_SANDBOX_AGENT) exists for tests and for reaching a
 # shadow through a differently-named symlink. It is matched against a
 # CLOSED set and can only ever select a hard-coded profile below — it can
 # never name an arbitrary binary for the sandbox to launch.
@@ -93,7 +93,7 @@ detect_agent() {
         case "$override" in
             claude|codex|pi) printf '%s\n' "$override"; return 0 ;;
             *)
-                echo "claude-sandbox: unknown CLAUDE_SANDBOX_AGENT '$override' (expected: claude, codex, pi)." >&2
+                echo "agent-sandbox: unknown AGENT_SANDBOX_AGENT '$override' (expected: claude, codex, pi)." >&2
                 return 1
                 ;;
         esac
@@ -121,7 +121,7 @@ agent_profile() {
     AGENT="$1"
     case "$1" in
         claude)
-            AGENT_REAL="/usr/libexec/claude-sandbox/claude"
+            AGENT_REAL="/usr/libexec/agent-sandbox/claude"
             AGENT_INNER_REL=".local/bin/claude"
             # Bound back to the conventional path inside the sandbox so
             # Claude's installMethod=native self-check sees what it expects
@@ -148,7 +148,7 @@ agent_profile() {
             # This is strictly better
             # than Claude's bind-back — the binary we exec is READ-ONLY in the
             # session, so an in-session self-update cannot rewrite it.
-            AGENT_REAL="/usr/libexec/claude-sandbox/codex-dist/bin/codex"
+            AGENT_REAL="/usr/libexec/agent-sandbox/codex-dist/bin/codex"
             AGENT_INNER_REL=""
             AGENT_BIND_BACK=0
             # CODEX_HOME defaults to ~/.codex and holds config.toml,
@@ -187,7 +187,7 @@ agent_profile() {
         pi)
             # A fixed launcher checks the sandbox before starting the standalone
             # release. Both live under the read-only /usr/libexec tree.
-            AGENT_REAL="/usr/libexec/claude-sandbox/pi-run"
+            AGENT_REAL="/usr/libexec/agent-sandbox/pi-run"
             AGENT_INNER_REL=""
             AGENT_BIND_BACK=0
             AGENT_HOME_DIRS=( .pi )
@@ -199,7 +199,7 @@ agent_profile() {
             AGENT_LABEL="Pi"
             ;;
         *)
-            echo "claude-sandbox: unknown agent '$1'." >&2
+            echo "agent-sandbox: unknown agent '$1'." >&2
             AGENT=""
             return 1
             ;;
@@ -223,13 +223,13 @@ agent_inner_path() {
 # Pass the real executable explicitly so the launcher has no relocation path.
 agent_exec_argv() {
     if [ "$AGENT" = codex ]; then
-        printf '%s\n' /usr/libexec/claude-sandbox/codex-launch "$AGENT_REAL"
+        printf '%s\n' /usr/libexec/agent-sandbox/codex-launch "$AGENT_REAL"
     else
         agent_inner_path "$1"
     fi
 }
 
-AGENT="$(detect_agent "${0:-claude}" "${CLAUDE_SANDBOX_AGENT:-}")" || exit 1
+AGENT="$(detect_agent "${0:-claude}" "${AGENT_SANDBOX_AGENT:-}")" || exit 1
 agent_profile "$AGENT" || exit 1
 
 # Recursion guard: if IS_SANDBOX=1 is already set we are inside the
@@ -251,12 +251,12 @@ if [ "$CLAUDE_SHADOW_SOURCE_ONLY" != "1" ] && [ "${IS_SANDBOX:-}" = "1" ]; then
 fi
 
 # Export so the inlined bwrap_argv_build picks up the gitconfig path.
-export CLAUDE_SANDBOX_GITCONFIG_PATH="$GITCONFIG_PATH"
+export AGENT_SANDBOX_GITCONFIG_PATH="$GITCONFIG_PATH"
 
 # BwrapArgvBuilder: pure-function emitting the bwrap argv. Deterministic
 # given (workspace, real_claude, "$@") and ($HOME,
-# $CLAUDE_SANDBOX_GITCONFIG_PATH, $CLAUDE_SANDBOX_NO_FORGE,
-# $CLAUDE_SANDBOX_ALLOW_WRITE, $CLAUDE_SANDBOX_PASS_ENV — plus whatever
+# $AGENT_SANDBOX_GITCONFIG_PATH, $AGENT_SANDBOX_NO_FORGE,
+# $AGENT_SANDBOX_ALLOW_WRITE, $AGENT_SANDBOX_PASS_ENV — plus whatever
 # variables that last one names). No I/O, no subprocesses — sourced by
 # tests/bwrap_argv.sh and called in isolation.
 #
@@ -270,7 +270,7 @@ bwrap_argv_build() {
     local real_agent="$1"; shift
 
     local home="${HOME:-/root}"
-    local gitconfig_path="${CLAUDE_SANDBOX_GITCONFIG_PATH:-/etc/claude-gitconfig}"
+    local gitconfig_path="${AGENT_SANDBOX_GITCONFIG_PATH:-/etc/claude-gitconfig}"
 
     local -a argv=(
         bwrap
@@ -312,10 +312,10 @@ bwrap_argv_build() {
     # Python, etc. just work without per-tool allowlist additions.
     # Bets on XDG discipline — a tool that drops creds under
     # ~/.local/share/<tool>/ instead of ~/.config/<tool>/ would leak.
-    # gh/glab token dirs are skipped when CLAUDE_SANDBOX_NO_FORGE=1 — the
+    # gh/glab token dirs are skipped when AGENT_SANDBOX_NO_FORGE=1 — the
     # operator has declared this session should not push to any forge.
     local -a forge_rels=( .config/gh .config/glab-cli )
-    if [ "${CLAUDE_SANDBOX_NO_FORGE:-}" = "1" ]; then
+    if [ "${AGENT_SANDBOX_NO_FORGE:-}" = "1" ]; then
         forge_rels=()
     fi
     local rel
@@ -383,13 +383,13 @@ bwrap_argv_build() {
     # (ssh-agent, gpg-agent, dbus, keyring sockets) stays masked. Keep
     # allow-write after the masks; hoisting it above them would let a mask
     # clobber the operator's bind silently.
-    if [ -n "${CLAUDE_SANDBOX_ALLOW_WRITE:-}" ]; then
+    if [ -n "${AGENT_SANDBOX_ALLOW_WRITE:-}" ]; then
         while IFS= read -r extra_path; do
             [ -z "$extra_path" ] && continue
             if [ -e "$extra_path" ]; then
                 argv+=( --bind "$extra_path" "$extra_path" )
             fi
-        done <<< "$CLAUDE_SANDBOX_ALLOW_WRITE"
+        done <<< "$AGENT_SANDBOX_ALLOW_WRITE"
     fi
 
     # Defence-in-depth file masks. Strict-under-/root already hides the
@@ -413,8 +413,8 @@ bwrap_argv_build() {
     # host's so Claude queries the forwarder instead of the dead stub. Gated on
     # the env var (set only on that path) so the non-jail / routable-resolver
     # argv — and the bwrap_argv unit test — are byte-for-byte unchanged.
-    if [ -n "${CLAUDE_SANDBOX_JAIL_RESOLV:-}" ] && [ -r "${CLAUDE_SANDBOX_JAIL_RESOLV}" ]; then
-        argv+=( --ro-bind "$CLAUDE_SANDBOX_JAIL_RESOLV" /etc/resolv.conf )
+    if [ -n "${AGENT_SANDBOX_JAIL_RESOLV:-}" ] && [ -r "${AGENT_SANDBOX_JAIL_RESOLV}" ]; then
+        argv+=( --ro-bind "$AGENT_SANDBOX_JAIL_RESOLV" /etc/resolv.conf )
     fi
 
     argv+=(
@@ -453,13 +453,13 @@ bwrap_argv_build() {
     argv+=( --setenv IS_SANDBOX "1" )
     # Which agent's session this is, for the in-sandbox verifier: check 03
     # asserts the EXACT contents of $HOME, so it has to know whose config dir
-    # legitimately belongs there. Deliberately NOT named CLAUDE_SANDBOX_AGENT:
+    # legitimately belongs there. Deliberately NOT named AGENT_SANDBOX_AGENT:
     # that variable is detect_agent's override, and a nested `claude` spawned
     # inside a codex session would then re-dispatch to codex.
     argv+=( --setenv IS_SANDBOX_AGENT "$AGENT" )
     # Pi's discovery runs inside the jail, through the relayed model port.
-    if [ "${CLAUDE_SANDBOX_LOCAL_MODEL_PORT:-0}" != 0 ]; then
-        argv+=( --setenv CLAUDE_SANDBOX_LOCAL_MODEL_PORT "$CLAUDE_SANDBOX_LOCAL_MODEL_PORT" )
+    if [ "${AGENT_SANDBOX_LOCAL_MODEL_PORT:-0}" != 0 ]; then
+        argv+=( --setenv AGENT_SANDBOX_LOCAL_MODEL_PORT "$AGENT_SANDBOX_LOCAL_MODEL_PORT" )
     fi
     argv+=( --setenv GIT_CONFIG_GLOBAL "$gitconfig_path" )
     argv+=( --setenv GIT_CONFIG_SYSTEM "/dev/null" )
@@ -474,13 +474,13 @@ bwrap_argv_build() {
         TERM LANG LC_ALL LC_CTYPE LC_MESSAGES LC_TIME LC_COLLATE LC_NUMERIC LC_MONETARY \
         VIRTUAL_ENV UV_PROJECT_ENVIRONMENT UV_CACHE_DIR UV_PYTHON_CACHE_DIR \
         UV_PYTHON_INSTALL_DIR UV_TOOL_DIR PRE_COMMIT_HOME \
-        CLAUDE_SANDBOX_WORKSPACE_ROOT; do
+        AGENT_SANDBOX_WORKSPACE_ROOT; do
         if [ -n "${!pass_through_var:-}" ]; then
             argv+=( --setenv "$pass_through_var" "${!pass_through_var}" )
         fi
     done
 
-    # Operator-configured passthrough (pass-env in claude-sandbox.conf).
+    # Operator-configured passthrough (pass-env in agent-sandbox.conf).
     # The list above is what Claude itself needs; this is for what the
     # *project* needs — DOCKER_HOST for a container-based test suite, and
     # the like. Opt-in by name, so --clearenv stays the default and the
@@ -489,14 +489,14 @@ bwrap_argv_build() {
     # Names only: values are read from the launching environment here, not
     # from the conf, so pass-env can forward a variable the operator's
     # shell already has but cannot invent a value of its own.
-    if [ -n "${CLAUDE_SANDBOX_PASS_ENV:-}" ]; then
+    if [ -n "${AGENT_SANDBOX_PASS_ENV:-}" ]; then
         # Split on comma/space/newline so `pass-env = A, B` and repeated
         # pass-env lines both work. Word splitting is the point here, and
         # a local IFS keeps it from leaking into the caller.
         local old_ifs="$IFS"
         IFS=$', \t\n'
         # shellcheck disable=SC2206  # deliberate split on IFS
-        local -a pass_names=( $CLAUDE_SANDBOX_PASS_ENV )
+        local -a pass_names=( $AGENT_SANDBOX_PASS_ENV )
         IFS="$old_ifs"
         local pass_name
         for pass_name in "${pass_names[@]+"${pass_names[@]}"}"; do
@@ -519,7 +519,7 @@ bwrap_argv_build() {
                 # bound ~/.codex to an unbound tmpfs path, silently losing
                 # the login on exit. The profile's bind is the supported
                 # location, so the sandbox's own value wins here too.
-                CODEX_HOME|CLAUDE_CONFIG_DIR|CLAUDE_SANDBOX_AGENT) continue ;;
+                CODEX_HOME|CLAUDE_CONFIG_DIR|AGENT_SANDBOX_AGENT) continue ;;
                 # IS_SANDBOX_AGENT is emitted ABOVE this loop, and a later
                 # --setenv of the same name wins — so forwarding it here would
                 # let the conf overwrite the sandbox's own value. It is what
@@ -562,21 +562,21 @@ bwrap_argv_build() {
 
 # resolve_workspace_root: pure function picking the rw bind-mount root.
 # Priority:
-#   1. CLAUDE_SANDBOX_WORKSPACE_ROOT — explicit override. Set to /workspaces
+#   1. AGENT_SANDBOX_WORKSPACE_ROOT — explicit override. Set to /workspaces
 #      in your devcontainer remoteEnv to restore the old broad bind and make
 #      sibling projects writable. Set to any absolute path for a custom root.
 #   2. Default: $PWD. Only the current project directory is writable.
 # Stdout: resolved path. No I/O, no subprocesses — sourced by tests.
 resolve_workspace_root() {
     local pwd_in="$1"
-    if [ -n "${CLAUDE_SANDBOX_WORKSPACE_ROOT:-}" ]; then
-        printf '%s\n' "$CLAUDE_SANDBOX_WORKSPACE_ROOT"
+    if [ -n "${AGENT_SANDBOX_WORKSPACE_ROOT:-}" ]; then
+        printf '%s\n' "$AGENT_SANDBOX_WORKSPACE_ROOT"
     else
         printf '%s\n' "$pwd_in"
     fi
 }
 
-# parse_config: read the host-global /etc/claude-sandbox.conf and apply
+# parse_config: read the host-global /etc/agent-sandbox.conf and apply
 # recognised keys. Format: "key = value" or bare "key" for boolean
 # flags; # comments and blank lines are ignored.
 # Env vars already set take precedence — the config supplies defaults.
@@ -605,53 +605,53 @@ parse_config() {
         fi
         case "$key" in
             workspace-root)
-                [ -n "$value" ] && : "${CLAUDE_SANDBOX_WORKSPACE_ROOT:=$value}"
-                export CLAUDE_SANDBOX_WORKSPACE_ROOT
+                [ -n "$value" ] && : "${AGENT_SANDBOX_WORKSPACE_ROOT:=$value}"
+                export AGENT_SANDBOX_WORKSPACE_ROOT
                 ;;
             no-forge)
-                : "${CLAUDE_SANDBOX_NO_FORGE:=1}"
-                export CLAUDE_SANDBOX_NO_FORGE
+                : "${AGENT_SANDBOX_NO_FORGE:=1}"
+                export AGENT_SANDBOX_NO_FORGE
                 ;;
             egress-jail)
                 # Per-process network egress jail (ADR 0015, Design D). ON by
                 # default — see egress_jail_enabled(); this conf key only needs
                 # to appear to TURN IT OFF on a host: `egress-jail = 0`. A bare
                 # `egress-jail` (no value) just reaffirms on. := no-ops when the
-                # var is already set, so an env CLAUDE_SANDBOX_EGRESS_JAIL=0 wins
+                # var is already set, so an env AGENT_SANDBOX_EGRESS_JAIL=0 wins
                 # over the conf.
-                : "${CLAUDE_SANDBOX_EGRESS_JAIL:=${value:-1}}"
-                export CLAUDE_SANDBOX_EGRESS_JAIL
+                : "${AGENT_SANDBOX_EGRESS_JAIL:=${value:-1}}"
+                export AGENT_SANDBOX_EGRESS_JAIL
                 ;;
             local-model-port)
                 # The port Pi discovers a model on; always part of the relay set
                 # (ADR 0020). 0 drops it and Pi's discovery. Env wins over conf.
-                : "${CLAUDE_SANDBOX_LOCAL_MODEL_PORT:=${value:-1920}}"
-                export CLAUDE_SANDBOX_LOCAL_MODEL_PORT
+                : "${AGENT_SANDBOX_LOCAL_MODEL_PORT:=${value:-1920}}"
+                export AGENT_SANDBOX_LOCAL_MODEL_PORT
                 ;;
             local-port)
                 # Extra outer-loopback TCP ports relayed into the jail (ADR 0020).
                 # Repeatable; accumulated like allow-ip, and merged with any
-                # CLAUDE_SANDBOX_LOCAL_PORTS already in the environment.
+                # AGENT_SANDBOX_LOCAL_PORTS already in the environment.
                 [ -z "$value" ] && continue
-                CLAUDE_SANDBOX_LOCAL_PORTS="${CLAUDE_SANDBOX_LOCAL_PORTS:+${CLAUDE_SANDBOX_LOCAL_PORTS}
+                AGENT_SANDBOX_LOCAL_PORTS="${AGENT_SANDBOX_LOCAL_PORTS:+${AGENT_SANDBOX_LOCAL_PORTS}
 }${value}"
-                export CLAUDE_SANDBOX_LOCAL_PORTS
+                export AGENT_SANDBOX_LOCAL_PORTS
                 ;;
             callback-port)
                 # Outer-loopback TCP ports relayed INTO the jail, the reverse of
                 # local-port (ADR 0021): a browser on the host reaches an OAuth
                 # callback server the agent opens on its own loopback. Repeatable;
-                # merged with CLAUDE_SANDBOX_CALLBACK_PORTS from the environment.
+                # merged with AGENT_SANDBOX_CALLBACK_PORTS from the environment.
                 [ -z "$value" ] && continue
-                CLAUDE_SANDBOX_CALLBACK_PORTS="${CLAUDE_SANDBOX_CALLBACK_PORTS:+${CLAUDE_SANDBOX_CALLBACK_PORTS}
+                AGENT_SANDBOX_CALLBACK_PORTS="${AGENT_SANDBOX_CALLBACK_PORTS:+${AGENT_SANDBOX_CALLBACK_PORTS}
 }${value}"
-                export CLAUDE_SANDBOX_CALLBACK_PORTS
+                export AGENT_SANDBOX_CALLBACK_PORTS
                 ;;
             allow-write)
                 [ -z "$value" ] && continue
-                CLAUDE_SANDBOX_ALLOW_WRITE="${CLAUDE_SANDBOX_ALLOW_WRITE:+${CLAUDE_SANDBOX_ALLOW_WRITE}
+                AGENT_SANDBOX_ALLOW_WRITE="${AGENT_SANDBOX_ALLOW_WRITE:+${AGENT_SANDBOX_ALLOW_WRITE}
 }${value}"
-                export CLAUDE_SANDBOX_ALLOW_WRITE
+                export AGENT_SANDBOX_ALLOW_WRITE
                 ;;
             allow-ip)
                 # Device IPs the jail keeps reachable past the RFC1918 blackhole
@@ -659,15 +659,15 @@ parse_config() {
                 # separated like allow-write. Read from /etc only (never the
                 # workspace), so a compromised session can't widen its own reach.
                 [ -z "$value" ] && continue
-                CLAUDE_SANDBOX_ALLOW_IP="${CLAUDE_SANDBOX_ALLOW_IP:+${CLAUDE_SANDBOX_ALLOW_IP}
+                AGENT_SANDBOX_ALLOW_IP="${AGENT_SANDBOX_ALLOW_IP:+${AGENT_SANDBOX_ALLOW_IP}
 }${value}"
-                export CLAUDE_SANDBOX_ALLOW_IP
+                export AGENT_SANDBOX_ALLOW_IP
                 ;;
             pass-env)
                 [ -z "$value" ] && continue
-                CLAUDE_SANDBOX_PASS_ENV="${CLAUDE_SANDBOX_PASS_ENV:+${CLAUDE_SANDBOX_PASS_ENV}
+                AGENT_SANDBOX_PASS_ENV="${AGENT_SANDBOX_PASS_ENV:+${AGENT_SANDBOX_PASS_ENV}
 }${value}"
-                export CLAUDE_SANDBOX_PASS_ENV
+                export AGENT_SANDBOX_PASS_ENV
                 ;;
         esac
     done < "$conf"
@@ -679,7 +679,7 @@ parse_config() {
 # launch behaviour reads identically everywhere. MSG already carries its own
 # leading "— " or "needs " so both wordings render naturally after "egress jail".
 jail_fail() {
-    echo "claude-sandbox: egress jail $1" >&2
+    echo "agent-sandbox: egress jail $1" >&2
     if [ -n "${2:-}" ]; then kill "$2" 2>/dev/null || true; fi
     exit 1
 }
@@ -704,7 +704,7 @@ route_field() {
 }
 
 # netns_holder: runs inside `unshare -rn` (a user+net namespace it owns).
-# Brings up loopback, waits for claude-shadow to attach pasta and signal
+# Brings up loopback, waits for agent-shadow to attach pasta and signal
 # readiness, locks the routing allowlist, then execs the real launch ("$@").
 #
 # Security model (ADR 0015, Design D): this process holds CAP_NET_ADMIN over its
@@ -792,17 +792,17 @@ netns_holder() {
     # terminates in pasta rather than on the LAN. Punching it is always safe;
     # fail-soft, since a failure costs resolution, not containment.
     ip route replace "${JAIL_DNS_FWD}/32" via "$gw" 2>/dev/null \
-        || echo "claude-sandbox: egress jail — could not route DNS forwarder $JAIL_DNS_FWD" >&2
+        || echo "agent-sandbox: egress jail — could not route DNS forwarder $JAIL_DNS_FWD" >&2
 
     # allow-ip devices (EPICS IOC / PMAC). Fail-soft: a missing device route is a
     # reachability loss, not a security hole (the blackhole still holds).
-    if [ -n "${CLAUDE_SANDBOX_ALLOW_IP:-}" ]; then
+    if [ -n "${AGENT_SANDBOX_ALLOW_IP:-}" ]; then
         local aip
         while IFS= read -r aip; do
             [ -n "$aip" ] || continue
             ip route replace "${aip%/*}/32" via "$gw" 2>/dev/null \
-                || echo "claude-sandbox: egress jail — could not route allow-ip $aip" >&2
-        done <<< "$CLAUDE_SANDBOX_ALLOW_IP"
+                || echo "agent-sandbox: egress jail — could not route allow-ip $aip" >&2
+        done <<< "$AGENT_SANDBOX_ALLOW_IP"
     fi
     if [ -n "${CLAUDE_JAIL_LOCAL_PORTS:-}${CLAUDE_JAIL_CALLBACK_PORTS:-}" ]; then
         local_model_inner "$@"
@@ -819,12 +819,12 @@ netns_holder() {
 # IPv4 loopback and every port is validated before any launch.
 # local-port entries as words: newline (conf), space or comma (env) separated.
 local_port_words() {
-    printf '%s' "${CLAUDE_SANDBOX_LOCAL_PORTS:-}" | tr ',\n' '  '
+    printf '%s' "${AGENT_SANDBOX_LOCAL_PORTS:-}" | tr ',\n' '  '
 }
 
 local_ports() {
     local p seen=" "
-    for p in "${CLAUDE_SANDBOX_LOCAL_MODEL_PORT:-0}" $(local_port_words); do
+    for p in "${AGENT_SANDBOX_LOCAL_MODEL_PORT:-0}" $(local_port_words); do
         [ "$p" = 0 ] && continue
         case "$seen" in *" $p "*) continue ;; esac
         seen="$seen$p "
@@ -839,14 +839,14 @@ local_model_enabled() {
 # Validates the raw configuration, not the deduplicated set, so a bad entry is
 # named by its key. Only local-model-port may be 0.
 validate_local_model_port() {
-    local port="${CLAUDE_SANDBOX_LOCAL_MODEL_PORT:-0}" ok=0
+    local port="${AGENT_SANDBOX_LOCAL_MODEL_PORT:-0}" ok=0
     if [ "$port" != 0 ] && ! valid_tcp_port "$port"; then
-        echo "claude-sandbox: local-model-port must be 1–65535 (or 0 to disable)." >&2
+        echo "agent-sandbox: local-model-port must be 1–65535 (or 0 to disable)." >&2
         ok=1
     fi
     for port in $(local_port_words); do
         if ! valid_tcp_port "$port"; then
-            echo "claude-sandbox: local-port entries must be 1–65535, got '$port'." >&2
+            echo "agent-sandbox: local-port entries must be 1–65535, got '$port'." >&2
             ok=1
         fi
     done
@@ -863,7 +863,7 @@ valid_tcp_port() {
 # Claude Pro/Max login on 53692; Codex CLI and Pi's Codex login on 1455).
 # Same word forms as local-port; deduplicated; one line per port.
 callback_port_words() {
-    printf '%s' "${CLAUDE_SANDBOX_CALLBACK_PORTS:-}" | tr ',\n' '  '
+    printf '%s' "${AGENT_SANDBOX_CALLBACK_PORTS:-}" | tr ',\n' '  '
 }
 
 callback_ports() {
@@ -886,10 +886,10 @@ validate_callback_ports() {
     local port ok=0
     for port in $(callback_port_words); do
         if ! valid_tcp_port "$port"; then
-            echo "claude-sandbox: callback-port entries must be 1–65535, got '$port'." >&2
+            echo "agent-sandbox: callback-port entries must be 1–65535, got '$port'." >&2
             ok=1
         elif local_ports | grep -qx "$port"; then
-            echo "claude-sandbox: port $port is listed as both callback-port and local-port/local-model-port." >&2
+            echo "agent-sandbox: port $port is listed as both callback-port and local-port/local-model-port." >&2
             ok=1
         fi
     done
@@ -946,7 +946,7 @@ callback_outer() {
     local port started=""
     for port in $(callback_ports); do
         if port_in_use "$port"; then
-            echo "claude-sandbox: callback-port $port is already in use on this host; browser logins on that port will not reach this session." >&2
+            echo "agent-sandbox: callback-port $port is already in use on this host; browser logins on that port will not reach this session." >&2
             continue
         fi
         setsid socat "TCP4-LISTEN:$port,bind=127.0.0.1,reuseaddr,fork" \
@@ -955,7 +955,7 @@ callback_outer() {
         if wait_for port_in_use "$port"; then
             started="$started$port "
         else
-            echo "claude-sandbox: callback-port $port relay failed to start; browser logins on that port will not reach this session." >&2
+            echo "agent-sandbox: callback-port $port relay failed to start; browser logins on that port will not reach this session." >&2
         fi
     done
     CLAUDE_JAIL_CALLBACK_PORTS="$started"
@@ -1000,11 +1000,11 @@ local_model_listening() {
 }
 
 # egress_jail_enabled: ADR 0015 — the jail is ON by default. Only an explicit
-# CLAUDE_SANDBOX_EGRESS_JAIL=0 (env var, or `egress-jail = 0` in the /etc conf)
+# AGENT_SANDBOX_EGRESS_JAIL=0 (env var, or `egress-jail = 0` in the /etc conf)
 # turns it off; any other value (unset, 1, …) means on. Kept a one-line
 # predicate so the launch gate reads clearly and the default is unit-testable.
 egress_jail_enabled() {
-    [ "${CLAUDE_SANDBOX_EGRESS_JAIL:-1}" != "0" ]
+    [ "${AGENT_SANDBOX_EGRESS_JAIL:-1}" != "0" ]
 }
 
 # jail_stage_dns: point Claude's DNS at the pasta forwarder (ADR 0015, issues
@@ -1029,18 +1029,18 @@ egress_jail_enabled() {
 jail_stage_dns() {
     local f
     if ! f="$(mktemp "${TMPDIR:-/tmp}/claude-jail-resolv.XXXXXX" 2>/dev/null)"; then
-        echo "claude-sandbox: egress jail — could not stage a DNS override (mktemp failed); name resolution may fail." >&2
+        echo "agent-sandbox: egress jail — could not stage a DNS override (mktemp failed); name resolution may fail." >&2
         return 0
     fi
     printf 'nameserver %s\n' "$JAIL_DNS_FWD" > "$f"
     awk '/^[[:space:]]*(search|domain|options)[[:space:]]/' /etc/resolv.conf >> "$f" 2>/dev/null
-    export CLAUDE_SANDBOX_JAIL_RESOLV="$f"
+    export AGENT_SANDBOX_JAIL_RESOLV="$f"
 
     # pasta forwards to the host's own resolvers; with none listed there is
     # nothing to forward to. Warn rather than fail: pasta attach is the
     # fail-closed gate, and a host with no resolver has bigger problems.
     if ! grep -qE '^[[:space:]]*nameserver' /etc/resolv.conf 2>/dev/null; then
-        echo "claude-sandbox: egress jail — /etc/resolv.conf lists no resolvers; forwarding Claude DNS to the host's resolvers via pasta. If resolution still fails the host has none to forward to." >&2
+        echo "agent-sandbox: egress jail — /etc/resolv.conf lists no resolvers; forwarding Claude DNS to the host's resolvers via pasta. If resolution still fails the host has none to forward to." >&2
     fi
     return 0
 }
@@ -1053,7 +1053,7 @@ jail_stage_dns() {
 # is on by default, so if its prerequisites are missing Claude does NOT launch
 # (a silent unjailed fallback would quietly drop the default security control).
 # Each error names the fix. The messages deliberately do NOT name the
-# CLAUDE_SANDBOX_EGRESS_JAIL=0 escape hatch (it still works, for operators
+# AGENT_SANDBOX_EGRESS_JAIL=0 escape hatch (it still works, for operators
 # who know the risks) — advertising a sandbox-weakening switch in an error
 # everyone hits would invite exactly the quiet opt-out fail-closed exists
 # to prevent.
@@ -1067,7 +1067,7 @@ netns_launch() {
     # writable workspace for the socket or namespace readiness handshake.
     CLAUDE_JAIL_DIR="$(mktemp -d /tmp/claude-jail.XXXXXX)"
     local model_relay="" holder=""
-    trap 'stop_relay $model_relay; if [ -n "$holder" ]; then kill "$holder" 2>/dev/null || true; wait "$holder" 2>/dev/null || true; fi; rm -rf "$CLAUDE_JAIL_DIR"; rm -f "${CLAUDE_SANDBOX_JAIL_RESOLV:-}"' EXIT
+    trap 'stop_relay $model_relay; if [ -n "$holder" ]; then kill "$holder" 2>/dev/null || true; wait "$holder" 2>/dev/null || true; fi; rm -rf "$CLAUDE_JAIL_DIR"; rm -f "${AGENT_SANDBOX_JAIL_RESOLV:-}"' EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM HUP
     CLAUDE_JAIL_READY="$CLAUDE_JAIL_DIR/ready"
@@ -1151,12 +1151,12 @@ check_config_persistence() {
     mountpoint -q "$cfg_dir" 2>/dev/null && return 0
     printf '\n\033[33mWARNING\033[0m: ~/%s is not host-mounted.\n' "${AGENT_HOME_DIRS[0]}" >&2
     printf '%s memory, settings, and login state will be lost on devcontainer rebuild.\n' "$AGENT_LABEL" >&2
-    printf 'See https://diamondlightsource.github.io/claude-sandbox/how-to/persist-login-and-memory.html\n\n' >&2
+    printf 'See https://diamondlightsource.github.io/agent-sandbox/how-to/persist-login-and-memory.html\n\n' >&2
     read -rsp "Press any key to continue..." -n 1 _key </dev/tty
     printf '\n\n' >&2
 }
 
-# render_gitconfig: (re)write $CLAUDE_SANDBOX_GITCONFIG_PATH from the host's
+# render_gitconfig: (re)write $AGENT_SANDBOX_GITCONFIG_PATH from the host's
 # current git identity. Called on every launch because VS Code's
 # dev.containers.copyGitConfig fires AFTER postCreate, so an install-time render
 # can have an empty user.name; by the time the user types `claude`, copyGitConfig
@@ -1171,7 +1171,7 @@ render_gitconfig() {
     name = $git_name
     email = $git_email
 EOF
-        if [ "${CLAUDE_SANDBOX_NO_FORGE:-}" != "1" ]; then
+        if [ "${AGENT_SANDBOX_NO_FORGE:-}" != "1" ]; then
             cat <<'EOF'
 [credential "https://github.com"]
     helper = !gh auth git-credential
@@ -1191,7 +1191,7 @@ EOF
 [safe]
     directory = *
 EOF
-    } > "$CLAUDE_SANDBOX_GITCONFIG_PATH"
+    } > "$AGENT_SANDBOX_GITCONFIG_PATH"
 }
 
 # Guard: tests source this file with CLAUDE_SHADOW_SOURCE_ONLY=1 so
@@ -1205,12 +1205,12 @@ fi
 # any odd exec still work — but silently treating a renamed symlink as Claude
 # means injecting --no-chrome into something that is not Claude, which surfaces
 # as an unexplained abort from the vendor binary. Warn on the launch path only,
-# where a real user is watching; CLAUDE_SANDBOX_AGENT is the supported way to
+# where a real user is watching; AGENT_SANDBOX_AGENT is the supported way to
 # reach a profile through a name we do not recognise.
-if [ -z "${CLAUDE_SANDBOX_AGENT:-}" ]; then
+if [ -z "${AGENT_SANDBOX_AGENT:-}" ]; then
     case "${0##*/}" in
         claude|codex|pi) ;;
-        *) echo "claude-sandbox: invoked as '${0##*/}', which names no known agent — assuming $AGENT_LABEL. Set CLAUDE_SANDBOX_AGENT to choose explicitly." >&2 ;;
+        *) echo "agent-sandbox: invoked as '${0##*/}', which names no known agent — assuming $AGENT_LABEL. Set AGENT_SANDBOX_AGENT to choose explicitly." >&2 ;;
     esac
 fi
 
@@ -1222,8 +1222,8 @@ fi
 # shadow must own the name on $PATH before the vendor's installer can
 # claim it (Invariant 1), so it has to exist first and explain itself.
 if [ ! -x "$AGENT_REAL" ]; then
-    echo "claude-sandbox: real $AGENT_LABEL binary missing at $AGENT_REAL." >&2
-    echo "  Re-run \`./install\` from a fresh clone of claude-sandbox" >&2
+    echo "agent-sandbox: real $AGENT_LABEL binary missing at $AGENT_REAL." >&2
+    echo "  Re-run \`./install\` from a fresh clone of agent-sandbox" >&2
     echo "  (it fetches and relocates every supported agent it can reach)." >&2
     exit 1
 fi
@@ -1234,7 +1234,7 @@ fi
 # user nothing to go on, so turn it into a one-line error. Cheap: one cmp
 # against a file already in the page cache, only on the launch path.
 if cmp -s "$AGENT_REAL" "$0"; then
-    echo "claude-sandbox: $AGENT_REAL is a copy of this shadow, not the real $AGENT_LABEL binary." >&2
+    echo "agent-sandbox: $AGENT_REAL is a copy of this shadow, not the real $AGENT_LABEL binary." >&2
     echo "  Launching it would loop forever. Re-run \`./install\` to relocate a real one;" >&2
     echo "  if the download is failing, the sandbox says so at the end of install." >&2
     exit 1
@@ -1243,9 +1243,9 @@ fi
 check_config_persistence
 
 # Pre-create forge credential dirs so the argv builder's --bind succeeds
-# on first run. Skipped when CLAUDE_SANDBOX_NO_FORGE=1 since those binds
+# on first run. Skipped when AGENT_SANDBOX_NO_FORGE=1 since those binds
 # are omitted anyway.
-if [ "${CLAUDE_SANDBOX_NO_FORGE:-}" != "1" ]; then
+if [ "${AGENT_SANDBOX_NO_FORGE:-}" != "1" ]; then
     mkdir -p "${HOME:-/root}/.config/gh" "${HOME:-/root}/.config/glab-cli"
 fi
 
@@ -1265,7 +1265,7 @@ render_gitconfig
 
 parse_config "$CONFIG_PATH"
 # Stage the jail's DNS override (issue #60) before the argv is built — on a
-# stub-resolver host this exports CLAUDE_SANDBOX_JAIL_RESOLV so bwrap_argv_build
+# stub-resolver host this exports AGENT_SANDBOX_JAIL_RESOLV so bwrap_argv_build
 # binds a forwarder-pointed resolv.conf. No-op when the jail is off or routable
 # resolvers exist (keeps the office path byte-for-byte unchanged).
 if egress_jail_enabled; then
@@ -1284,7 +1284,7 @@ if egress_jail_enabled; then
     # ADR 0015 (on by default): run the sandbox inside a pasta-bridged netns
     # with a routing allowlist. netns_launch cannot `exec` — it must stay
     # foreground to drive the holder/pasta handshake — so it exits with the
-    # sandbox's status. Disable per host with CLAUDE_SANDBOX_EGRESS_JAIL=0.
+    # sandbox's status. Disable per host with AGENT_SANDBOX_EGRESS_JAIL=0.
     netns_launch script -q -E never -c "$SANDBOX_CMD" /dev/null
 else
     exec script -q -E never -c "$SANDBOX_CMD" /dev/null

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SessionStart hook (user-scope, GLOBAL). Verifies the claude-sandbox
+# SessionStart hook (user-scope, GLOBAL). Verifies the agent-sandbox
 # bwrap shadow is actually in effect and warns LOUDLY when it is not.
 #
 # Why user-scope and not a project .claude/ hook: this guard must fire
@@ -53,14 +53,14 @@ emit() {
     fi
 }
 
-REINSTALL='Re-run claude-sandbox/install (a vendor auto-updater can re-create ~/.local/bin/<agent> and silently bypass the shadow), then relaunch the agent.'
+REINSTALL='Re-run agent-sandbox/install (a vendor auto-updater can re-create ~/.local/bin/<agent> and silently bypass the shadow), then relaunch the agent.'
 
 # The single load-bearing assertion: IS_SANDBOX=1 is set only by the
 # bwrap launcher. Unset == we are NOT inside the shadow.
 if [ "${IS_SANDBOX:-}" != "1" ]; then
     emit \
-        "⚠️  claude-sandbox: ${AGENT_LABEL} is running OUTSIDE the bwrap shadow — host credentials, env vars and dotfiles are NOT isolated. ${REINSTALL}" \
-        "SECURITY WARNING: IS_SANDBOX is not set, so this session is NOT inside the claude-sandbox bwrap jail. Host credentials are reachable. ${REINSTALL}"
+        "⚠️  agent-sandbox: ${AGENT_LABEL} is running OUTSIDE the bwrap shadow — host credentials, env vars and dotfiles are NOT isolated. ${REINSTALL}" \
+        "SECURITY WARNING: IS_SANDBOX is not set, so this session is NOT inside the agent-sandbox bwrap jail. Host credentials are reachable. ${REINSTALL}"
     exit 0
 fi
 
@@ -84,10 +84,10 @@ if [ -d /run/secrets ] && [ -n "$(ls -A /run/secrets 2>/dev/null)" ]; then
 fi
 
 if [ "${#problems[@]}" -gt 0 ]; then
-    # `claude-sandbox verify`, not /verify-sandbox: this hook is global
+    # `agent-sandbox verify`, not /verify-sandbox: this hook is global
     # (managed settings), so it fires in workspaces that are not a
-    # claude-sandbox clone, where the project command does not exist.
-    msg="⚠️  claude-sandbox: inside the shadow but integrity checks FAILED: $(IFS='; '; printf '%s' "${problems[*]}"). Run \`claude-sandbox verify\` from a terminal outside this session, then re-run claude-sandbox/install."
+    # agent-sandbox clone, where the project command does not exist.
+    msg="⚠️  agent-sandbox: inside the shadow but integrity checks FAILED: $(IFS='; '; printf '%s' "${problems[*]}"). Run \`agent-sandbox verify\` from a terminal outside this session, then re-run agent-sandbox/install."
     emit "$msg" "$msg"
     exit 0
 fi

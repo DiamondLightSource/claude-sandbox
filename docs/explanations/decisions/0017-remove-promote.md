@@ -13,7 +13,7 @@ Supersedes {ref}`adr-promote-by-value` (ADR 10).
 ## Context
 
 `just promote` ({ref}`adr-promote-by-value`, ADR 10) copied the
-security-critical machinery — `install.sh`, `claude-shadow`, the guard
+security-critical machinery — `install.sh`, `agent-shadow`, the guard
 scripts, the verify battery — **by value** into target workspaces, so a
 teammate cloning the target needed nothing but the devcontainer. ADR 10
 valued two properties: self-sufficiency and a frozen audit surface

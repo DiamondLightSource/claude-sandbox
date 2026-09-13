@@ -16,13 +16,13 @@ In your project's `.devcontainer/postCreate.sh` (create it if absent):
 
 ```bash
 #!/usr/bin/env bash
-# Bring up claude-sandbox at a pinned revision. Bumping the pin is a
+# Bring up agent-sandbox at a pinned revision. Bumping the pin is a
 # deliberate, reviewable act — like any dependency upgrade.
 set -euo pipefail
 
-CSBX_REPO="https://github.com/DiamondLightSource/claude-sandbox.git"
+CSBX_REPO="https://github.com/DiamondLightSource/agent-sandbox.git"
 CSBX_PIN="3.0.0"           # a release tag, or a full commit SHA
-CSBX_DIR="$HOME/claude-sandbox"
+CSBX_DIR="$HOME/agent-sandbox"
 
 if [ ! -d "$CSBX_DIR" ]; then
     git clone --filter=blob:none "$CSBX_REPO" "$CSBX_DIR"
@@ -43,7 +43,7 @@ explicit and keeps the pin the only thing that decides your version.
 
 The clone lives in the container filesystem, so a rebuild re-creates it at
 the pinned revision; the installer is idempotent, so re-runs are cheap and
-never re-download Claude. Every teammate also gets the `claude-sandbox`
+never re-download Claude. Every teammate also gets the `agent-sandbox`
 helper CLI on PATH (`gh-auth`, `glab-auth`, `verify`, `version`).
 
 ## 2. Wire it into devcontainer.json
@@ -63,13 +63,13 @@ refuses to launch.
 
 ## 3. (Optional) team configuration
 
-`install.sh` stamps the clone's `.devcontainer/claude-sandbox.conf` to the
-host-global `/etc/claude-sandbox.conf` (never read from the workspace —
+`install.sh` stamps the clone's `.devcontainer/agent-sandbox.conf` to the
+host-global `/etc/agent-sandbox.conf` (never read from the workspace —
 see {ref}`the config invariant <adr-untrusted-workspace>`). To ship team
 settings, write them into the clone before running the installer:
 
 ```bash
-cat > "$CSBX_DIR/.devcontainer/claude-sandbox.conf" <<'EOF'
+cat > "$CSBX_DIR/.devcontainer/agent-sandbox.conf" <<'EOF'
 # Team defaults — see reference/configuration for all keys.
 allow-ip = 192.168.1.50    # lab device reachable through the jail
 EOF

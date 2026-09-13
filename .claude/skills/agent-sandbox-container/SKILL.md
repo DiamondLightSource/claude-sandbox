@@ -1,22 +1,22 @@
 ---
-name: claude-sandbox-container
-description: Design decisions for the published container image `ghcr.io/diamondlightsource/claude-sandbox` and its host-side launcher. Covers image-build-sources-install.sh (never a parallel install path), entrypoint re-runs of build-time skips, named-container PAT scoping, ro-mounted conf, tag-vs-latest publishing, notify-only launcher versioning (refuse --self-update), and parked issues #79/#80/#81. Surface before edits to the root Dockerfile, container/entrypoint.sh, container/claude-container, or .github/workflows/container.yml. Core shadow/installer invariants live in the claude-sandbox skill.
+name: agent-sandbox-container
+description: Design decisions for the published container image `ghcr.io/diamondlightsource/agent-sandbox` and its host-side launcher. Covers image-build-sources-install.sh (never a parallel install path), entrypoint re-runs of build-time skips, named-container PAT scoping, ro-mounted conf, tag-vs-latest publishing, notify-only launcher versioning (refuse --self-update), and parked issues #79/#80/#81. Surface before edits to the root Dockerfile, container/entrypoint.sh, container/agent-container, or .github/workflows/container.yml. Core shadow/installer invariants live in the agent-sandbox skill.
 ---
 
-# claude-sandbox-container
+# agent-sandbox-container
 
 The published container image is the **third consumer** of the sandbox
 (after the dogfood devcontainer and guest clone+install — see "dogfood ≈
-guest" in the `claude-sandbox` skill, whose Invariants 2 and 4 are
+guest" in the `agent-sandbox` skill, whose Invariants 2 and 4 are
 mapped onto the image below). Split from that skill so this loads only
 on image/launcher topics.
 
 ## The image (PR #78)
 
-`ghcr.io/diamondlightsource/claude-sandbox` (built by `.github/workflows/container.yml`
-from the root Dockerfile's `claude-sandbox` stage, `FROM` the `developer`
-stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
-`container/claude-container` launcher. Principles already extended here:
+`ghcr.io/diamondlightsource/agent-sandbox` (built by `.github/workflows/container.yml`
+from the root Dockerfile's `agent-sandbox` stage, `FROM` the `developer`
+stage) gives non-devcontainer hosts sandboxed agents via rootless podman + the
+`container/agent-container` launcher. Principles already extended here:
 
 - **Dogfood ≈ guest ≈ image**: the image build *sources* `install.sh` and runs
   main()'s function sequence — never a parallel install path. Two deliberate
@@ -43,14 +43,14 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   Refuse: baking the agent back into the create command; making `--shell`
   a sandboxed session (it exists precisely to run the outside-the-jail CLI).
 - **Invariant 4 mapping**: durable user conf = host file ro-mounted at the
-  canonical `/etc/claude-sandbox.conf`; the entrypoint detects the mount
+  canonical `/etc/agent-sandbox.conf`; the entrypoint detects the mount
   (`_is_mount`) and skips re-stamping. Conf stays outside the sandbox rw set.
 - A git tag publishes `ghcr.io/...:<tag>` without touching `:latest`
   (`latest` is default-branch-only) — beta images are safe to cut anytime.
 - **Launcher versioning (notify-only, by design)**: the `VERSION=` line
-  in `container/claude-container` is the single source of truth; CI seds
+  in `container/agent-container` is the single source of truth; CI seds
   it into the Dockerfile `ARG` → OCI label
-  `io.diamondlightsource.claude-sandbox.launcher-version`, and a CI step asserts
+  `io.diamondlightsource.agent-sandbox.launcher-version`, and a CI step asserts
   label == baked script. Each run the launcher compares itself against
   the LOCAL image's label (instant, offline, no container start) and
   prints a curl pinned to `org.opencontainers.image.revision` when
@@ -68,13 +68,13 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   via managed settings — docs-verified that `extraKnownMarketplaces`
   (local path) + `enabledPlugins` is Claude Code's ONLY machine-wide
   command/skill channel (no system commands dir exists; command becomes
-  namespaced `/claude-sandbox:verify-sandbox`). **#80** Renovate-pinned
+  namespaced `/agent-sandbox:verify-sandbox`). **#80** Renovate-pinned
   Claude version (official installer takes `[stable|latest|X.Y.Z]` as
   `$1`; `downloads.claude.ai/claude-code-releases/{latest,stable}`
   return bare version strings). **#81** per-project
-  `.claude-sandbox.conf` — see the Invariant 4 carve-out in the
-  `claude-sandbox` skill.
-- **Image-only Python (2026-09-11)**: the `claude-sandbox` stage bakes a
+  `.agent-sandbox.conf` — see the Invariant 4 carve-out in the
+  `agent-sandbox` skill.
+- **Image-only Python (2026-09-11)**: the `agent-sandbox` stage bakes a
   uv-managed interpreter at `/opt/uv/python` and an active venv at
   `/cache/venv` (`UV_PROJECT_ENVIRONMENT`, `VIRTUAL_ENV`, `UV_CACHE_DIR`,
   `UV_TOOL_DIR` all under `/cache`, which the shipped conf already

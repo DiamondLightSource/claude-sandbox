@@ -12,7 +12,7 @@ We need to record the architectural decisions made on this project, so a future
 reader — human or agent — can see *why* the sandbox is shaped the way it is, not
 just *what* it does.
 
-The `claude-sandbox` skill already records operational invariants and the
+The `agent-sandbox` skill already records operational invariants and the
 regressions an agent must refuse. ADRs are the published, user-facing companion:
 one decision per record, written in the threat model's own terms.
 

@@ -29,7 +29,7 @@ codex_launch() {
                     local arg
                     for arg in "${original[@]}"; do
                         if [ "$arg" = agents ]; then
-                            printf 'claude-sandbox: unsupported agents option %q; using native Codex startup, which may fail with sandbox procfs.\n' "$1" >&2
+                            printf 'agent-sandbox: unsupported agents option %q; using native Codex startup, which may fail with sandbox procfs.\n' "$1" >&2
                             break
                         fi
                     done
@@ -78,14 +78,14 @@ codex_launch() {
     for attempt in {1..100}; do
         [ -S "$runtime/server.sock" ] && break
         if ! kill -0 "$server_pid" 2>/dev/null; then
-            echo 'claude-sandbox: Codex app-server exited during startup.' >&2
+            echo 'agent-sandbox: Codex app-server exited during startup.' >&2
             cat "$runtime/server.log" >&2
             exit 1
         fi
         sleep 0.1
     done
     if [ ! -S "$runtime/server.sock" ]; then
-        echo 'claude-sandbox: timed out waiting for Codex app-server.' >&2
+        echo 'agent-sandbox: timed out waiting for Codex app-server.' >&2
         cat "$runtime/server.log" >&2
         exit 1
     fi

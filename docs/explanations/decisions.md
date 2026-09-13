@@ -5,7 +5,7 @@ keeping track of these decisions, we record them in Architecture Decision
 Records (ADRs) listed below.
 
 These ADRs record the *why* behind the sandbox's shape, in the threat model's
-own terms. The `claude-sandbox` skill (`.claude/skills/claude-sandbox/SKILL.md`)
+own terms. The `agent-sandbox` skill (`.claude/skills/agent-sandbox/SKILL.md`)
 is the operational companion: it records the same invariants as *regressions to
 refuse* for an agent editing the code.
 

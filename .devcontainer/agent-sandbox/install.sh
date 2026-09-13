@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# claude-sandbox installer (bash-only). Idempotent: re-runs after a
+# agent-sandbox installer (bash-only). Idempotent: re-runs after a
 # devcontainer rebuild re-establish container state without disturbing
 # workspace edits.
 #
@@ -16,7 +16,7 @@
 #                                    GLOBAL integrity guard merged in.
 #                                    Tests point it at a tmpdir so the
 #                                    real ~/.claude is never touched.
-#   CLAUDE_SANDBOX_SMOKE=1            skip apt + the curl-install of every
+#   AGENT_SANDBOX_SMOKE=1            skip apt + the curl-install of every
 #                                    agent binary.
 #   WITH_CODEX=0                     skip fetching OpenAI's Codex CLI. The
 #                                    codex SHADOW and the managed guard are
@@ -32,7 +32,7 @@
 #   STATUS=1                         force-overwrite the user-scope
 #                                    statusline script from the clone's
 #                                    copy, instead of seed-only-if-absent.
-#   DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED=1
+#   DANGEROUSLY_ALLOW_AGENT_SANDBOX_UNWRAPPED=1
 #                                    stamp the ROOT-OWNED gate escape-hatch
 #                                    flag (/etc/claude-code/allow-unwrapped)
 #                                    so the UserPromptSubmit gate downgrades
@@ -45,19 +45,19 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# REPO_ROOT is the clone — two levels above .devcontainer/claude-sandbox.
+# REPO_ROOT is the clone — two levels above .devcontainer/agent-sandbox.
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PREFIX="${INSTALL_PREFIX:-/}"
 WORKSPACE="${INSTALL_WORKSPACE:-$PWD}"
 USER_HOME="${INSTALL_USER_HOME:-$HOME}"
-SMOKE="${CLAUDE_SANDBOX_SMOKE:-0}"
+SMOKE="${AGENT_SANDBOX_SMOKE:-0}"
 WITH_CODEX="${WITH_CODEX:-1}"
 WITH_PI="${WITH_PI:-1}"
 # Like Claude and Codex, fresh containers install the current release during
 # postCreate. The standalone release includes its runtime and assets.
 PI_VERSION="${PI_VERSION:-latest}"
 FORCE_STATUSLINE="${STATUS:-0}"
-ALLOW_UNWRAPPED="${DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED:-0}"
+ALLOW_UNWRAPPED="${DANGEROUSLY_ALLOW_AGENT_SANDBOX_UNWRAPPED:-0}"
 
 # Resolve a target under $PREFIX. Stripping the leading slash lets us
 # compose relative-to-prefix paths cleanly without a `//` between root
@@ -76,7 +76,7 @@ probe_or_refuse() {
         return 0
     fi
     if ! command -v apt-get >/dev/null 2>&1; then
-        echo "claude-sandbox: refusing — Debian/Ubuntu only (no apt-get on PATH)." >&2
+        echo "agent-sandbox: refusing — Debian/Ubuntu only (no apt-get on PATH)." >&2
         exit 1
     fi
 }
@@ -93,8 +93,8 @@ apt_install() {
     # host with the jail on (the default) must not fail to launch claude
     # for want of pasta. It's tiny. The matching host-side dep,
     # --device=/dev/net/tun, is a
-    # devcontainer.json runArg this installer cannot add (see claude-shadow's
-    # netns_launch error message and claude-sandbox.conf).
+    # devcontainer.json runArg this installer cannot add (see agent-shadow's
+    # netns_launch error message and agent-sandbox.conf).
     apt-get install -y -qq --no-install-recommends \
         bubblewrap jq curl ca-certificates git nodejs gh passt socat iproute2 \
         ripgrep fd-find
@@ -112,7 +112,7 @@ probe_userns_or_refuse() {
     if ! bwrap --ro-bind / / --unshare-user-try --unshare-pid -- /bin/true \
             >/dev/null 2>&1; then
         cat >&2 <<'EOF'
-claude-sandbox: refusing — kernel unprivileged user namespaces are
+agent-sandbox: refusing — kernel unprivileged user namespaces are
 forbidden. The bwrap sandbox cannot start without them.
 
 On Ubuntu 24.04:
@@ -129,14 +129,14 @@ EOF
 # PATH. The official installer drops the binary at ~/.local/bin/claude
 # AND prepends ~/.local/bin to the user's shell rc — meaning plain
 # `claude` would resolve past our shadow once a new shell starts. By
-# moving the binary to /usr/libexec/claude-sandbox/, ~/.local/bin/
+# moving the binary to /usr/libexec/agent-sandbox/, ~/.local/bin/
 # stays empty and the rc-mutation becomes harmless.
 install_claude_binary() {
     if [ "$SMOKE" = "1" ]; then
         return 0
     fi
     local real_dest
-    real_dest="$(prefixed /usr/libexec/claude-sandbox/claude)"
+    real_dest="$(prefixed /usr/libexec/agent-sandbox/claude)"
     if [ -x "$real_dest" ]; then
         # Idempotent: purge any stale copy a prior curl-install may have
         # left at ~/.local/bin/claude so the shadow remains the only
@@ -146,7 +146,7 @@ install_claude_binary() {
     fi
     curl -fsSL https://claude.ai/install.sh | bash
     if [ ! -x "$HOME/.local/bin/claude" ]; then
-        echo "claude-sandbox: official installer did not produce \$HOME/.local/bin/claude" >&2
+        echo "agent-sandbox: official installer did not produce \$HOME/.local/bin/claude" >&2
         exit 1
     fi
     mkdir -p "$(dirname "$real_dest")"
@@ -160,7 +160,7 @@ install_claude_binary() {
 # Invariant 1, identically.
 #
 # BEST-EFFORT, unlike Claude's: a host that cannot reach chatgpt.com, or a
-# vendor change to the install script, must not brick a claude-sandbox
+# vendor change to the install script, must not brick a agent-sandbox
 # install. We warn and carry on; the codex shadow is still placed, and it
 # loud-fails with a re-run-install message if someone types `codex`.
 #
@@ -191,7 +191,7 @@ install_claude_binary() {
 # codex_purge_vendor_tree [STAGE]: remove every writable copy of the codex
 # package the vendor installer leaves behind, plus the unwrapped `codex` on the
 # user's PATH (Invariant 1). Called on every exit path — including the
-# idempotent one, so a tree left by an older claude-sandbox is cleaned up too.
+# idempotent one, so a tree left by an older agent-sandbox is cleaned up too.
 codex_purge_vendor_tree() {
     local stage="${1:-}"
     # if, not `[ ... ] && rm`: this file runs under `set -e`, where a bare
@@ -235,7 +235,7 @@ install_codex_binary() {
     # script leaves us (it invokes tar itself).
     if ! curl -fsSL https://chatgpt.com/codex/install.sh \
             | CODEX_HOME="$stage" CODEX_NON_INTERACTIVE=1 TAR_OPTIONS=--no-same-owner sh; then
-        echo "claude-sandbox: WARNING — the Codex CLI installer failed; skipping codex." >&2
+        echo "agent-sandbox: WARNING — the Codex CLI installer failed; skipping codex." >&2
         echo "  The codex shadow is still installed and will refuse to launch until" >&2
         echo "  a real binary lands at $real_dest. Re-run ./install to retry." >&2
         codex_purge_vendor_tree "$stage"
@@ -268,8 +268,8 @@ install_codex_binary() {
             # */codex one it is the binary's own parent — so "$release_dir/bin/
             # codex" named a different (usually absent) file and the check
             # silently no-opped on exactly the path that needed it.
-            if cmp -s "$resolved" "$SCRIPT_DIR/claude-shadow"; then
-                echo "claude-sandbox: WARNING — $resolved is the claude-sandbox" >&2
+            if cmp -s "$resolved" "$SCRIPT_DIR/agent-shadow"; then
+                echo "agent-sandbox: WARNING — $resolved is the agent-sandbox" >&2
                 echo "  shadow itself, not a real codex binary; skipping codex relocation." >&2
                 codex_purge_vendor_tree "$stage"
                 return 0
@@ -291,7 +291,7 @@ install_codex_binary() {
         fi
     done
     if [ -z "$release_dir" ] || [ ! -d "$release_dir" ]; then
-        echo "claude-sandbox: WARNING — the Codex CLI installer ran but no release" >&2
+        echo "agent-sandbox: WARNING — the Codex CLI installer ran but no release" >&2
         echo "  directory was found; skipping codex relocation." >&2
         codex_purge_vendor_tree "$stage"
         return 0
@@ -299,8 +299,8 @@ install_codex_binary() {
     # Same identity check again for the fallback branch, which reaches
     # release_dir without ever resolving the PATH symlink.
     if [ -f "$release_dir/bin/codex" ] \
-            && cmp -s "$release_dir/bin/codex" "$SCRIPT_DIR/claude-shadow"; then
-        echo "claude-sandbox: WARNING — $release_dir/bin/codex is the claude-sandbox" >&2
+            && cmp -s "$release_dir/bin/codex" "$SCRIPT_DIR/agent-shadow"; then
+        echo "agent-sandbox: WARNING — $release_dir/bin/codex is the agent-sandbox" >&2
         echo "  shadow itself, not a real codex binary; skipping codex relocation." >&2
         codex_purge_vendor_tree "$stage"
         return 0
@@ -315,7 +315,7 @@ install_codex_binary() {
     cp -a "$release_dir" "$dist_dest"
     chmod -R go-w "$dist_dest"
     if [ ! -x "$real_dest" ]; then
-        echo "claude-sandbox: WARNING — copied $release_dir but $real_dest is not" >&2
+        echo "agent-sandbox: WARNING — copied $release_dir but $real_dest is not" >&2
         echo "  executable; codex will refuse to launch." >&2
     fi
     # Nothing unwrapped, and no writable copy of the package, may remain
@@ -331,9 +331,9 @@ install_pi_binary() (
     case "$(uname -m)" in
         x86_64) arch=x64 ;;
         aarch64|arm64) arch=arm64 ;;
-        *) echo 'claude-sandbox: WARNING — Pi standalone supports Linux x64/arm64; skipping.' >&2; return 0 ;;
+        *) echo 'agent-sandbox: WARNING — Pi standalone supports Linux x64/arm64; skipping.' >&2; return 0 ;;
     esac
-    dest="$(prefixed /usr/libexec/claude-sandbox/pi-dist)"
+    dest="$(prefixed /usr/libexec/agent-sandbox/pi-dist)"
     if [ -x "$dest/pi" ] && { [ "$PI_VERSION" = latest ] \
         || [ "$(cat "$dest/.sandbox-version" 2>/dev/null)" = "$PI_VERSION" ]; }; then
         return 0
@@ -344,13 +344,13 @@ install_pi_binary() (
         # The release-page redirect avoids GitHub's anonymous API rate limit.
         if ! release_url="$(curl -fsSLI --retry 2 -o /dev/null -w '%{url_effective}' \
             https://github.com/earendil-works/pi/releases/latest)"; then
-            echo 'claude-sandbox: WARNING — could not resolve the latest Pi release; existing installation preserved.' >&2
+            echo 'agent-sandbox: WARNING — could not resolve the latest Pi release; existing installation preserved.' >&2
             return 0
         fi
         version="${release_url#https://github.com/earendil-works/pi/releases/tag/v}"
     fi
     if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]; then
-        echo 'claude-sandbox: WARNING — invalid Pi release version; existing installation preserved.' >&2
+        echo 'agent-sandbox: WARNING — invalid Pi release version; existing installation preserved.' >&2
         return 0
     fi
     stage="$(mktemp -d)"
@@ -359,7 +359,7 @@ install_pi_binary() (
     base="https://github.com/earendil-works/pi/releases/download/v$version"
     if ! curl -fLSs --retry 2 "$base/$asset" -o "$stage/$asset" \
         || ! curl -fLSs --retry 2 "$base/SHA256SUMS" -o "$stage/SHA256SUMS"; then
-        echo 'claude-sandbox: WARNING — Pi download failed; its shadow remains installed.' >&2
+        echo 'agent-sandbox: WARNING — Pi download failed; its shadow remains installed.' >&2
         return 0
     fi
     checksum="$(awk -v asset="$asset" '$2 == asset || $2 == "*" asset {print $1}' "$stage/SHA256SUMS")"
@@ -367,7 +367,7 @@ install_pi_binary() (
         || ! (cd "$stage" && printf '%s  %s\n' "$checksum" "$asset" | sha256sum -c - >/dev/null) \
         || ! tar -xzf "$stage/$asset" --no-same-owner -C "$stage" \
         || [ ! -x "$stage/pi/pi" ]; then
-        echo 'claude-sandbox: WARNING — Pi release validation failed; existing installation preserved.' >&2
+        echo 'agent-sandbox: WARNING — Pi release validation failed; existing installation preserved.' >&2
         return 0
     fi
     # Keep all assets together. The entire tree is read-only in the sandbox.
@@ -384,7 +384,7 @@ install_pi_binary() (
 install_file() {
     local src="$1" dst="$2" mode="${3:-0755}"
     if [ ! -f "$src" ]; then
-        echo "claude-sandbox: cannot find $src" >&2
+        echo "agent-sandbox: cannot find $src" >&2
         exit 1
     fi
     mkdir -p "$(dirname "$dst")"
@@ -401,7 +401,7 @@ install_file() {
 install_file_if_absent() {
     local src="$1" dst="$2"
     if [ ! -f "$src" ]; then
-        echo "claude-sandbox: cannot find $src" >&2
+        echo "agent-sandbox: cannot find $src" >&2
         exit 1
     fi
     [ -f "$dst" ] && return 0
@@ -418,8 +418,41 @@ ensure_cred_dirs() {
     mkdir -p "$USER_HOME/.pi/agent"
 }
 
-# install_conf: place the clone's claude-sandbox.conf at the host-global
-# /etc/claude-sandbox.conf the shadow reads at launch. Re-run on every
+# migrate_legacy_names: the project was renamed claude-sandbox →
+# agent-sandbox (ADR 0022). A container installed before the rename has
+# the relocated agent binaries under /usr/libexec/claude-sandbox/, the
+# helper CLI at /usr/local/bin/claude-sandbox and the conf at
+# /etc/claude-sandbox.conf. Move the (expensive to re-download) binary
+# trees to the new libexec dir when the new one is empty, then remove
+# the rest — nothing reads the old paths any more, and a stale
+# /etc/claude-sandbox.conf would otherwise sit there looking
+# authoritative. Idempotent: a no-op once the old dir is gone.
+# The managed-settings hook entries that pointed into the old libexec
+# dir are pruned by wire_managed_settings; the codex TOML is rewritten
+# wholesale by wire_codex_managed.
+migrate_legacy_names() {
+    local old new sub
+    old="$(prefixed /usr/libexec/claude-sandbox)"
+    new="$(prefixed /usr/libexec/agent-sandbox)"
+    if [ -d "$old" ]; then
+        echo "agent-sandbox: migrating pre-rename install from $old"
+        mkdir -p "$new"
+        for sub in claude codex-dist pi-dist; do
+            if [ -e "$old/$sub" ] && [ ! -e "$new/$sub" ]; then
+                mv "$old/$sub" "$new/$sub"
+            fi
+        done
+        rm -rf "$old"
+    fi
+    rm -f "$(prefixed /usr/local/bin/claude-sandbox)"
+    if [ -f "$(prefixed /etc/claude-sandbox.conf)" ]; then
+        echo "agent-sandbox: removing pre-rename /etc/claude-sandbox.conf (the shadow now reads /etc/agent-sandbox.conf)"
+        rm -f "$(prefixed /etc/claude-sandbox.conf)"
+    fi
+}
+
+# install_conf: place the clone's agent-sandbox.conf at the host-global
+# /etc/agent-sandbox.conf the shadow reads at launch. Re-run on every
 # rebuild (via postCreate) so the /etc copy tracks the clone's conf.
 # Unlike install_file this is skip-if-absent: a clone that carries no
 # conf simply gets no global config
@@ -427,8 +460,8 @@ ensure_cred_dirs() {
 # cmp -s short-circuits so a re-run with unchanged content is a no-op.
 install_conf() {
     local src dst
-    src="$REPO_ROOT/.devcontainer/claude-sandbox.conf"
-    dst="$(prefixed /etc/claude-sandbox.conf)"
+    src="$REPO_ROOT/.devcontainer/agent-sandbox.conf"
+    dst="$(prefixed /etc/agent-sandbox.conf)"
     [ -f "$src" ] || return 0
     mkdir -p "$(dirname "$dst")"
     if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
@@ -438,16 +471,16 @@ install_conf() {
 }
 
 # stamp_version: record what this clone is at install time, for
-# `claude-sandbox version`. A tagged checkout stamps the tag (git
-# describe on a tag == the tag, which is what `claude-sandbox update`
+# `agent-sandbox version`. A tagged checkout stamps the tag (git
+# describe on a tag == the tag, which is what `agent-sandbox update`
 # installs); an unpinned main clone stamps a commit hash — honest
-# "unreleased" reporting. CLAUDE_SANDBOX_VERSION overrides for builds
+# "unreleased" reporting. AGENT_SANDBOX_VERSION overrides for builds
 # with no .git (the container image). Deterministic per clone, so the
 # byte-stable re-run property holds.
 stamp_version() {
     local ver dst
     dst="$(prefixed "$VERSION_FILE_PATH")"
-    ver="${CLAUDE_SANDBOX_VERSION:-$(git -C "$REPO_ROOT" describe --tags --always --dirty 2>/dev/null || echo unknown)}"
+    ver="${AGENT_SANDBOX_VERSION:-$(git -C "$REPO_ROOT" describe --tags --always --dirty 2>/dev/null || echo unknown)}"
     mkdir -p "$(dirname "$dst")"
     if [ -f "$dst" ] && [ "$(cat "$dst")" = "$ver" ]; then
         return 0
@@ -528,7 +561,7 @@ _share_path() {
     fi
 
     if _is_mount "$target"; then
-        echo "claude-sandbox: $target is an active mountpoint; leaving as-is (assumed already shared)." >&2
+        echo "agent-sandbox: $target is an active mountpoint; leaving as-is (assumed already shared)." >&2
         return 0
     fi
 
@@ -537,11 +570,11 @@ _share_path() {
             if [ -e "$shared" ]; then rm -rf "$shared"; fi
             mkdir -p "$(dirname "$shared")"
             mv "$target" "$shared"
-            echo "claude-sandbox: seeded shared config $shared from $target." >&2
+            echo "agent-sandbox: seeded shared config $shared from $target." >&2
         else
             local backup="$target.pre-sandbox.$(date +%Y%m%d-%H%M%S)"
             mv "$target" "$backup"
-            echo "claude-sandbox: $shared already populated; backed up $target -> $backup." >&2
+            echo "agent-sandbox: $shared already populated; backed up $target -> $backup." >&2
         fi
         ln -s "$shared" "$target"
         return 0
@@ -578,8 +611,8 @@ link_terminal_config() {
         _share_path "$HOME/.codex" "$shared/.codex" dir
         _share_path "$HOME/.pi" "$shared/.pi" dir
     else
-        echo "claude-sandbox: $shared is not writable; ~/.codex stays container-scoped (expect to sign in to codex again after a rebuild)." >&2
-        echo "claude-sandbox: ~/.pi also stays container-scoped." >&2
+        echo "agent-sandbox: $shared is not writable; ~/.codex stays container-scoped (expect to sign in to codex again after a rebuild)." >&2
+        echo "agent-sandbox: ~/.pi also stays container-scoped." >&2
     fi
 }
 
@@ -592,14 +625,14 @@ link_terminal_config() {
 #   - The hook ENTRIES live in /etc — a user editing their shared
 #     ~/.claude can't remove them; only root editing /etc (or a
 #     deliberate ./install) changes the guard.
-#   - The hook SCRIPTS live in /usr/libexec/claude-sandbox (off-PATH,
+#   - The hook SCRIPTS live in /usr/libexec/agent-sandbox (off-PATH,
 #     root-owned) — like the relocated real binary, they are ro-bound
 #     inside the sandbox (`--ro-bind / /`), so a compromised in-session
 #     Claude cannot rewrite them to `exit 0`. (Under ~/.claude they
 #     would have been rw-bound and editable.)
 # Commands are absolute /usr/libexec paths — no $HOME, resolves in any
 # cwd and in both wrapped and unwrapped launches.
-GUARD_LIBEXEC="/usr/libexec/claude-sandbox"
+GUARD_LIBEXEC="/usr/libexec/agent-sandbox"
 VERIFY_PATH="$GUARD_LIBEXEC/sandbox-verify.sh"
 GATE_PATH="$GUARD_LIBEXEC/sandbox-gate.sh"
 # The /verify-sandbox phase-1 battery lives next to the guard scripts —
@@ -608,7 +641,7 @@ GATE_PATH="$GUARD_LIBEXEC/sandbox-gate.sh"
 # a broken sandbox. It is NOT a hook (not wired into managed-settings); the
 # /verify-sandbox command runs it by absolute path for the live battery.
 BATTERY_PATH="$GUARD_LIBEXEC/verify-sandbox-battery.sh"
-# Version record for `claude-sandbox version` — data, not a script, but
+# Version record for `agent-sandbox version` — data, not a script, but
 # it lives with the guard scripts (root-owned, ro in the sandbox) so a
 # compromised session can't spoof what "version" reports.
 VERSION_FILE_PATH="$GUARD_LIBEXEC/version"
@@ -631,14 +664,14 @@ GATE_FLAG_PATH="/etc/claude-code/allow-unwrapped"
 # (codex-path/rg) and its own bwrap/zsh helpers (codex-resources/) that the
 # vendor's own validity check requires to sit together. So the whole release
 # directory is relocated, and the binary is exec'd from inside it.
-CODEX_DIST_DIR="/usr/libexec/claude-sandbox/codex-dist"
+CODEX_DIST_DIR="/usr/libexec/agent-sandbox/codex-dist"
 CODEX_REAL_PATH="$CODEX_DIST_DIR/bin/codex"
 CODEX_ETC="/etc/codex"
 CODEX_REQUIREMENTS="$CODEX_ETC/requirements.toml"
 CODEX_MANAGED_CONFIG="$CODEX_ETC/managed_config.toml"
 # First line of any file this installer owns. Its absence means the file is
 # somebody else's (a real enterprise policy), and we refuse to rewrite it.
-CODEX_MARKER="# Managed by claude-sandbox — do not edit by hand."
+CODEX_MARKER="# Managed by agent-sandbox — do not edit by hand."
 USER_SL_CMD='bash $HOME/.claude/statusline-command.sh'
 
 # install_guard_scripts: place the guard scripts off the user's PATH and
@@ -653,9 +686,9 @@ install_guard_scripts() {
     install_file "$SCRIPT_DIR/verify-sandbox-battery.sh"  "$(prefixed "$BATTERY_PATH")"
 }
 
-# wire_gate_flag: stamp (DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED=1) or remove the ROOT-OWNED gate
+# wire_gate_flag: stamp (DANGEROUSLY_ALLOW_AGENT_SANDBOX_UNWRAPPED=1) or remove the ROOT-OWNED gate
 # escape-hatch flag the UserPromptSubmit gate checks. The flag REPLACES the
-# old CLAUDE_SANDBOX_ALLOW_UNWRAPPED env hatch, which a confined Claude could
+# old AGENT_SANDBOX_ALLOW_UNWRAPPED env hatch, which a confined Claude could
 # forge by writing ~/.claude/settings.json's "env" block (deep-review H4).
 # Living under /etc — root-owned, ro inside the sandbox, NOT host-shared —
 # the flag can only be created by the operator (or a deliberate ./install),
@@ -669,7 +702,7 @@ wire_gate_flag() {
         mkdir -p "$(dirname "$flag")"
         : > "$flag"
         chmod 0644 "$flag"
-        echo "claude-sandbox: WARNING — gate escape hatch ENABLED ($flag); the UserPromptSubmit gate is warn-only, unwrapped claude is permitted. Re-run install with DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED unset to restore fail-closed." >&2
+        echo "agent-sandbox: WARNING — gate escape hatch ENABLED ($flag); the UserPromptSubmit gate is warn-only, unwrapped claude is permitted. Re-run install with DANGEROUSLY_ALLOW_AGENT_SANDBOX_UNWRAPPED unset to restore fail-closed." >&2
     else
         rm -f "$flag"
     fi
@@ -692,7 +725,7 @@ wire_managed_settings() {
 
     if [ -f "$settings" ] && ! jq -e . "$settings" >/dev/null 2>&1; then
         cat >&2 <<EOF
-claude-sandbox: WARNING — $settings is not valid JSON.
+agent-sandbox: WARNING — $settings is not valid JSON.
 Skipping the managed integrity-guard merge. Hand-add to "hooks":
   "SessionStart":    [{"hooks":[{"type":"command","command":"$VERIFY_CMD"}]}]
   "UserPromptSubmit":[{"hooks":[{"type":"command","command":"$GATE_CMD"}]}]
@@ -707,6 +740,10 @@ EOF
     # jq program: idempotent merge of the integrity guard + updater-disable into
     # the managed-settings policy. Dedup by command basename; foreign keys (a
     # real admin's org policy) are preserved. $verify/$gate are jq --arg vars.
+    # Entries left by a pre-rename install (/usr/libexec/claude-sandbox/...)
+    # are dropped FIRST: they share the basename the dedup keys on, so
+    # without this an upgraded container would keep pointing its guard at
+    # scripts migrate_legacy_names has removed — an unguarded session.
     local merge_program='
         .hooks //= {}
         | .hooks.SessionStart //= []
@@ -714,6 +751,8 @@ EOF
         | .env //= {}
         | .env.DISABLE_AUTOUPDATER = "1"
         | .autoUpdates = false
+        | (.hooks.SessionStart    |= map(select((any(.hooks[]?; (.command // "") | contains("/usr/libexec/claude-sandbox/"))) | not)))
+        | (.hooks.UserPromptSubmit |= map(select((any(.hooks[]?; (.command // "") | contains("/usr/libexec/claude-sandbox/"))) | not)))
         | (if (.hooks.SessionStart | any(.[].hooks[]?; (.command // "") | endswith("sandbox-verify.sh")))
              then . else .hooks.SessionStart += [{hooks:[{type:"command",command:$verify}]}] end)
         | (if (.hooks.UserPromptSubmit | any(.[].hooks[]?; (.command // "") | endswith("sandbox-gate.sh")))
@@ -762,10 +801,10 @@ codex_requirements_body() {
     cat <<TOML
 $CODEX_MARKER
 #
-# claude-sandbox integrity guard for the Codex CLI. These hooks assert that
+# agent-sandbox integrity guard for the Codex CLI. These hooks assert that
 # codex is running inside the bwrap shadow, and fail closed when it is not.
-# Removing them re-opens the silent-bypass hole; re-run claude-sandbox/install
-# to restore. See: https://diamondlightsource.github.io/claude-sandbox/
+# Removing them re-opens the silent-bypass hole; re-run agent-sandbox/install
+# to restore. See: https://diamondlightsource.github.io/agent-sandbox/
 
 [[hooks.SessionStart]]
 
@@ -787,7 +826,7 @@ $CODEX_MARKER
 #
 # Root-cause removal of the update-driven sandbox bypass: a Codex self-update
 # re-creates ~/.local/bin/codex, which would then resolve ahead of the shadow.
-# Updating is a deliberate \`claude-sandbox update\` / ./install instead.
+# Updating is a deliberate \`agent-sandbox update\` / ./install instead.
 check_for_update_on_startup = false
 TOML
 }
@@ -800,7 +839,7 @@ install_owned_toml() {
     mkdir -p "$(dirname "$dest")"
     if [ -f "$dest" ] && [ "$(head -n 1 "$dest")" != "$CODEX_MARKER" ]; then
         {
-            echo "claude-sandbox: WARNING — $dest exists and was not written by us."
+            echo "agent-sandbox: WARNING — $dest exists and was not written by us."
             echo "Leaving it untouched, so the $label is NOT active on this host."
             echo "To apply it, merge this in by hand:"
             echo
@@ -877,7 +916,7 @@ wire_user_statusline() {
     fi
 
     if [ -f "$settings" ] && ! jq -e . "$settings" >/dev/null 2>&1; then
-        echo "claude-sandbox: WARNING — $settings is not valid JSON; skipping statusline wiring + interim-guard prune." >&2
+        echo "agent-sandbox: WARNING — $settings is not valid JSON; skipping statusline wiring + interim-guard prune." >&2
         return 0
     fi
 
@@ -915,22 +954,23 @@ main() {
     # install resolves (and bash-hashes) to the shadow path, even if
     # the shadow itself transiently fails because bwrap or the real
     # binary haven't landed yet.
-    install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/claude)"
+    install_file "$SCRIPT_DIR/agent-shadow" "$(prefixed /usr/local/bin/claude)"
     # The SAME shadow under the other agent's name — it dispatches on argv[0].
     # Placed unconditionally, even when WITH_CODEX=0 or the download failed:
     # the shadow must own `codex` on $PATH before the vendor's installer can
     # claim it (Invariant 1). An unbacked shadow loud-fails with instructions;
     # an unshadowed vendor binary would silently run outside the jail.
-    install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/codex)"
-    install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/pi)"
-    install_file "$SCRIPT_DIR/pi-run" "$(prefixed /usr/libexec/claude-sandbox/pi-run)"
-    install_file "$SCRIPT_DIR/pi-system.md" "$(prefixed /usr/libexec/claude-sandbox/pi-system.md)" 0644
+    install_file "$SCRIPT_DIR/agent-shadow" "$(prefixed /usr/local/bin/codex)"
+    install_file "$SCRIPT_DIR/agent-shadow" "$(prefixed /usr/local/bin/pi)"
+    install_file "$SCRIPT_DIR/pi-run" "$(prefixed /usr/libexec/agent-sandbox/pi-run)"
+    install_file "$SCRIPT_DIR/pi-system.md" "$(prefixed /usr/libexec/agent-sandbox/pi-system.md)" 0644
     # The helper CLI (gh-auth, glab-auth, update, verify, version) —
     # on PATH so it works after the install clone is deleted.
-    install_file "$SCRIPT_DIR/claude-sandbox" "$(prefixed /usr/local/bin/claude-sandbox)"
+    install_file "$SCRIPT_DIR/agent-sandbox" "$(prefixed /usr/local/bin/agent-sandbox)"
     apt_install
     probe_userns_or_refuse
     link_terminal_config
+    migrate_legacy_names
     install_claude_binary
     install_codex_binary
     install_pi_binary
@@ -949,13 +989,13 @@ main() {
     wire_gate_flag
     wire_user_statusline
 
-    echo "claude-sandbox: install complete."
+    echo "agent-sandbox: install complete."
     echo "  shadow:      $(prefixed /usr/local/bin/claude), $(prefixed /usr/local/bin/codex), $(prefixed /usr/local/bin/pi)"
-    echo "  real pi:     $(prefixed /usr/libexec/claude-sandbox/pi-dist/pi) $([ -x "$(prefixed /usr/libexec/claude-sandbox/pi-dist/pi)" ] && echo 'installed (standalone, ro in sandbox)' || echo 'NOT installed — pi will refuse to launch')"
-    echo "  cli:         $(prefixed /usr/local/bin/claude-sandbox) ($(cat "$(prefixed "$VERSION_FILE_PATH")"))"
-    echo "  real claude: $(prefixed /usr/libexec/claude-sandbox/claude)"
+    echo "  real pi:     $(prefixed /usr/libexec/agent-sandbox/pi-dist/pi) $([ -x "$(prefixed /usr/libexec/agent-sandbox/pi-dist/pi)" ] && echo 'installed (standalone, ro in sandbox)' || echo 'NOT installed — pi will refuse to launch')"
+    echo "  cli:         $(prefixed /usr/local/bin/agent-sandbox) ($(cat "$(prefixed "$VERSION_FILE_PATH")"))"
+    echo "  real claude: $(prefixed /usr/libexec/agent-sandbox/claude)"
     echo "  real codex:  $(prefixed "$CODEX_REAL_PATH") $([ -x "$(prefixed "$CODEX_REAL_PATH")" ] && echo 'installed (whole package, ro in sandbox)' || echo 'NOT installed — `codex` will refuse to launch')"
-    echo "  config:      $(prefixed /etc/claude-sandbox.conf)"
+    echo "  config:      $(prefixed /etc/agent-sandbox.conf)"
     echo "  guard:       $(prefixed "$VERIFY_PATH"), $(prefixed "$GATE_PATH") (off-PATH, ro in sandbox)"
     echo "  battery:     $(prefixed "$BATTERY_PATH") (off-PATH, ro in sandbox; /verify-sandbox phase 1)"
     echo "  managed:     $(prefixed "$MANAGED_SETTINGS") (SessionStart + UserPromptSubmit + DISABLE_AUTOUPDATER)"
@@ -964,7 +1004,7 @@ main() {
     echo "  gate hatch:  $(prefixed "$GATE_FLAG_PATH") $([ "$ALLOW_UNWRAPPED" = "1" ] && echo 'PRESENT — gate warn-only (unwrapped permitted)' || echo 'absent — gate fail-closed')"
     echo "  statusline:  $USER_HOME/.claude/settings.json (preference only)"
     echo "  workspace:   $WORKSPACE"
-    echo "  run \`claude-sandbox verify\` for the live battery (or \`/verify-sandbox\` inside Claude in a claude-sandbox clone for the full audit)."
+    echo "  run \`agent-sandbox verify\` for the live battery (or \`/verify-sandbox\` inside Claude in a agent-sandbox clone for the full audit)."
 
     # Loud, impossible-to-miss callout when any managed-tier guard failed to
     # wire because a foreign policy file was already in place (warn-and-skip,
@@ -984,7 +1024,7 @@ main() {
         {
             echo
             echo "################################################################################"
-            echo "#  claude-sandbox: WARNING — SECURITY GUARD NOT FULLY ACTIVE ON THIS HOST     #"
+            echo "#  agent-sandbox: WARNING — SECURITY GUARD NOT FULLY ACTIVE ON THIS HOST     #"
             echo "################################################################################"
             for gap in "${guard_gaps[@]}"; do
                 echo "  - $gap"

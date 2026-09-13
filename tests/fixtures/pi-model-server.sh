@@ -34,7 +34,7 @@ if jq -e 'any(.messages[]; .role == "tool")' <<< "$body" >/dev/null; then
     delta='{"role":"assistant","content":"LOCAL_MODEL_OK"}'
     finish=stop
 else
-    command='bash /usr/libexec/claude-sandbox/verify-sandbox-battery.sh > /work/battery && test ! -e "$HOME/.claude" && test ! -e "$HOME/.codex" && test ! -e /tmp/outer-only && ! touch /usr/libexec/claude-sandbox/pi-dist/write-probe && printf PI_TOOL_OK > /work/tool-proof'
+    command='bash /usr/libexec/agent-sandbox/verify-sandbox-battery.sh > /work/battery && test ! -e "$HOME/.claude" && test ! -e "$HOME/.codex" && test ! -e /tmp/outer-only && ! touch /usr/libexec/agent-sandbox/pi-dist/write-probe && printf PI_TOOL_OK > /work/tool-proof'
     args="$(jq -nc --arg command "$command" '{command:$command}')"
     delta="$(jq -nc --arg args "$args" '{role:"assistant",tool_calls:[
         {index:0,id:"call_find",type:"function",function:{name:"find",arguments:"{\"pattern\":\"search-fixture.txt\",\"path\":\"/work\"}"}},

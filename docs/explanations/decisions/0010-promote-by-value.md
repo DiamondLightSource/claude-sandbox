@@ -15,7 +15,7 @@ auto-edit `devcontainer.json`.
 ## Context
 
 `just promote <target>` (issue #18, PR #20) makes any workspace a self-sufficient
-claude-sandbox host. Two natural-sounding refinements were considered and
+agent-sandbox host. Two natural-sounding refinements were considered and
 declined: (a) auto-editing the target's `devcontainer.json` to wire the
 `postCreate` line; (b) pointing the target's `postCreate.sh` at the shared
 canonical clone instead of copying the install machinery in (PR #24).
@@ -23,7 +23,7 @@ canonical clone instead of copying the install machinery in (PR #24).
 ## Decision
 
 Promote copies the install machinery **by value** into the target (curated
-`.claude/`, `.devcontainer/claude-sandbox/`, the root `justfile`), then **prints**
+`.claude/`, `.devcontainer/agent-sandbox/`, the root `justfile`), then **prints**
 a one-line `postCreateCommand` snippet for the user to paste — it does **not**
 edit `devcontainer.json`. That file is JSONC in the wild; comment-preserving
 structured edits need either ~50 lines of state-tracking awk or a node/python
