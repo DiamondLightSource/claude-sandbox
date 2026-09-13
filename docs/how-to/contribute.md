@@ -37,6 +37,8 @@ CLAUDE_SANDBOX_SMOKE=1 bash tests/bwrap_argv.sh   # shadow's bwrap argv
 CLAUDE_SANDBOX_SMOKE=1 bash tests/smoke.sh        # installer file placement
 bash tests/install_ref.sh                         # which ref `install` picks
 bash tests/egress_jail.sh                         # network egress jail
+bash tests/launcher.sh                            # container launcher verbs, against a fake engine
+uv build --wheel packaging/pypi -o dist           # the PyPI front door (CI also runs it)
 ```
 
 `CLAUDE_SANDBOX_SMOKE=1` keeps the first two off the network and out of

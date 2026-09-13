@@ -1,0 +1,34 @@
+# Publish the claude-sandbox wheel to PyPI on every release tag (ADR 23).
+# The wheel is the uvx front door: it bundles the bash launcher and
+# installer verbatim, and its version is read from the launcher's VERSION
+# line, which container.yml asserts equals the tag. Trusted publishing
+# (OIDC): no PyPI token is stored in this repository.
+name: PyPI
+
+on:
+  push:
+    tags:
+      - "*"
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Build the wheel
+        run: uv build --wheel packaging/pypi -o dist
+
+      - name: Assert the wheel version is the tag
+        if: github.ref_type == 'tag'
+        run: ls dist/claude_sandbox-${{ github.ref_name }}-py3-none-any.whl
+
+      - name: Publish to PyPI
+        if: github.ref_type == 'tag'
+        uses: pypa/gh-action-pypi-publish@release/v1

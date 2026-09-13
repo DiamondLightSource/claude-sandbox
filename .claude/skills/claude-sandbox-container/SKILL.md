@@ -63,6 +63,30 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   `io.gilesknap.…` in the DLS-org rebrand (2026-07-24); images built
   before then carry only the old key, so a new launcher reads an empty
   label and degrades to silence — expected, not a bug.
+- **PyPI front door (ADR 23, 2026-09-13)**: `uvx claude-sandbox` is the
+  launcher and `uvx claude-sandbox install` the guest-devcontainer installer.
+  The wheel (`packaging/pypi/`, hatchling, wheel-only) bundles the bash
+  VERBATIM via `force-include` and one module execs it; the version is
+  read from the launcher's `VERSION=` line, so launcher == wheel == image
+  tag (4.0.0 onward; `container.yml` and `pypi.yml` assert a tag equals
+  it). The entry point pins `CLAUDE_SANDBOX_IMAGE` to its own version and
+  sets `CLAUDE_SANDBOX_LAUNCHER=uvx`, which flips the outdated hint from
+  curl to `uvx claude-sandbox@latest`; a copied script keeps `:latest` +
+  the label check. Verbs `claude|codex|pi|shell` replaced `--agent` /
+  `--shell` (old spellings exit 2 with the new form — no aliases);
+  **host-net is the default**, `--bridge` opts out (create-time). The
+  launcher refuses inside a container (`/run/.containerenv` or
+  `/.dockerenv`; `CLAUDE_SANDBOX_NESTED=1` overrides — also the test seam,
+  `tests/launcher.sh` runs against a fake engine); the entry point refuses
+  `install` OUTSIDE one (`CLAUDE_SANDBOX_HOST_INSTALL=1` overrides).
+  `install.sh` stamps `/usr/libexec/claude-sandbox/installer` = `uvx` so
+  `claude-sandbox update` points back at uvx instead of cloning past the
+  pin. **Refuse:** logic in the Python module beyond locate + env + exec;
+  a second console script or package (reopens `--from` for `@latest`);
+  an sdist (a second copy of the tree); a devcontainer *feature* as the
+  guest path (considered, slow to start, and useless for the host
+  launcher). PyPI trusted publishing needs the `pypi` GitHub environment
+  and the project's publisher configured once, by hand.
 - **Distribution/conf decisions parked as issues** (re-read before
   re-designing any of these): **#79** ship `/verify-sandbox` as a plugin
   via managed settings — docs-verified that `extraKnownMarketplaces`

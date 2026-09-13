@@ -71,6 +71,50 @@ jobs:
       - name: Run Pi profile and configuration tests
         run: bash tests/pi.sh
 
+      # The container launcher's verbs, host-net default, pre-4.0 refusals
+      # and in-container refusal, against a fake engine (no image needed).
+      - name: Run container launcher tests
+        run: bash tests/launcher.sh
+
+  wheel:
+    # The PyPI front door (ADR 23) is the one Python packaging in the repo:
+    # build it, prove the entry point execs the bundled bash, and prove
+    # `install` refuses on a host (the runner is a VM, not a container).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Build the wheel
+        run: uv build --wheel packaging/pypi -o dist
+
+      - name: "Test: wheel version is the launcher's VERSION line"
+        run: |
+          v="$(sed -n 's/^VERSION="\(.*\)"$/\1/p' container/claude-container)"
+          ls dist/claude_sandbox-"$v"-py3-none-any.whl
+
+      - name: "Test: the entry point runs the bundled launcher"
+        run: |
+          v="$(sed -n 's/^VERSION="\(.*\)"$/\1/p' container/claude-container)"
+          test "$(uvx --from dist/*.whl claude-sandbox --version)" = "claude-sandbox $v"
+          uvx --from dist/*.whl claude-sandbox --help | grep -q "^Usage: claude-container"
+
+      - name: "Test: install refuses outside a container"
+        run: |
+          if uvx --from dist/*.whl claude-sandbox install 2>err; then
+            echo "install ran on the host"; exit 1
+          fi
+          grep -q "refusing to install outside a container" err
+
+      - name: "Test: the bundled tree is the checkout's"
+        run: |
+          mkdir -p x && (cd x && unzip -q ../dist/*.whl)
+          diff -r x/claude_sandbox/tree/.devcontainer/claude-sandbox .devcontainer/claude-sandbox
+          cmp x/claude_sandbox/tree/install install
+          cmp x/claude_sandbox/tree/container/claude-container container/claude-container
+          cmp x/claude_sandbox/tree/.devcontainer/claude-sandbox.conf .devcontainer/claude-sandbox.conf
+          cmp x/claude_sandbox/tree/.claude/statusline-command.sh .claude/statusline-command.sh
+
   egress-jail:
     # Exercises the egress-jail netns routing enforcement (ADR 0015 / issue #56),
     # which the rest of CI never touches: smoke.sh stays outside the netns and

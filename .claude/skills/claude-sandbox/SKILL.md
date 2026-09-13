@@ -196,6 +196,12 @@ before proceeding.
 
 ### Reversal 1 — Python orchestration
 
+**Not a re-tread (ADR 23, 2026-09-13):** `packaging/pypi/` is a wheel that
+ships the bash VERBATIM and execs it — packaging, not orchestration. The
+line it must not cross: no logic in the Python module, nothing at the repo
+root, no lockfile, no pytest. See the claude-sandbox-container skill.
+
+
 Went embedded bash → standalone bash → Python package + typer CLI →
 back to bash-only (`bf65407`, 2026-05-12, issue #14 / PR #15). The tool
 is one bash function building a bwrap argv; the Python package

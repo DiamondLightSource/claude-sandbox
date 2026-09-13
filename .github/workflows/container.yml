@@ -50,6 +50,11 @@ jobs:
         run: |
           v="$(sed -n 's/^VERSION="\(.*\)"$/\1/p' container/claude-container)"
           test -n "$v"
+          # One release number for launcher, wheel and image tag (ADR 23):
+          # a tag that disagrees with the script must not publish.
+          if [ "${{ github.ref_type }}" = tag ] && [ "${{ github.ref_name }}" != "$v" ]; then
+            echo "tag ${{ github.ref_name }} != launcher VERSION $v"; exit 1
+          fi
           echo "LAUNCHER_VERSION=$v" >> "$GITHUB_ENV"
 
       - uses: docker/setup-buildx-action@v3

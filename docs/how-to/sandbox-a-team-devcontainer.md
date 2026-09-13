@@ -16,12 +16,29 @@ In your project's `.devcontainer/postCreate.sh` (create it if absent):
 
 ```bash
 #!/usr/bin/env bash
+# Bring up claude-sandbox at a pinned release. Bumping the pin is a
+# deliberate, reviewable act — like any dependency upgrade.
+set -euo pipefail
+uvx claude-sandbox==4.0.0 install
+```
+
+`uvx` fetches the `claude-sandbox` wheel from PyPI. The wheel ships this
+repository's installer unchanged and execs it; the pinned version is the
+release tag. `install` refuses to run outside a container, so the line
+cannot reshape a host if pasted in the wrong terminal.
+
+### Without uv in the image
+
+Clone the repository at the pin and run the same installer:
+
+```bash
+#!/usr/bin/env bash
 # Bring up claude-sandbox at a pinned revision. Bumping the pin is a
 # deliberate, reviewable act — like any dependency upgrade.
 set -euo pipefail
 
 CSBX_REPO="https://github.com/DiamondLightSource/claude-sandbox.git"
-CSBX_PIN="3.0.0"           # a release tag, or a full commit SHA
+CSBX_PIN="4.0.0"           # a release tag, or a full commit SHA
 CSBX_DIR="$HOME/claude-sandbox"
 
 if [ ! -d "$CSBX_DIR" ]; then
@@ -43,8 +60,12 @@ explicit and keeps the pin the only thing that decides your version.
 
 The clone lives in the container filesystem, so a rebuild re-creates it at
 the pinned revision; the installer is idempotent, so re-runs are cheap and
-never re-download Claude. Every teammate also gets the `claude-sandbox`
-helper CLI on PATH (`gh-auth`, `glab-auth`, `verify`, `version`).
+never re-download Claude.
+
+Either way, every teammate gets the `claude-sandbox` helper CLI on PATH
+(`gh-auth`, `glab-auth`, `verify`, `version`). After a wheel install,
+`claude-sandbox update` points back at `uvx` rather than cloning past the
+pin.
 
 ## 2. Wire it into devcontainer.json
 
@@ -63,10 +84,12 @@ refuses to launch.
 
 ## 3. (Optional) team configuration
 
-`install.sh` stamps the clone's `.devcontainer/claude-sandbox.conf` to the
+`install.sh` stamps its bundled `.devcontainer/claude-sandbox.conf` to the
 host-global `/etc/claude-sandbox.conf` (never read from the workspace —
 see {ref}`the config invariant <adr-untrusted-workspace>`). To ship team
-settings, write them into the clone before running the installer:
+settings, write the conf yourself after the install (the wheel's copy is
+read-only inside the uv cache); with a clone, write them into the clone
+before running the installer:
 
 ```bash
 cat > "$CSBX_DIR/.devcontainer/claude-sandbox.conf" <<'EOF'

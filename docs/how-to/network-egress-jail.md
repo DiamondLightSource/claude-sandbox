@@ -85,7 +85,7 @@ CLAUDE_SANDBOX_LOCAL_PORTS=8082 claude
 
 The outer container must share the services' network namespace: this
 repository's devcontainer uses `--net=host`, and the published-image launcher
-has `--host-net`. Each relayed port exposes the whole service behind it, so
+creates its container with host networking unless told `--bridge`. Each relayed port exposes the whole service behind it, so
 list only what you would hand the agent outright. Every other localhost port
 stays unreachable, and the relays stop with the session.
 

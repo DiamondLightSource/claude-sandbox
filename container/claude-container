@@ -1,36 +1,47 @@
 #!/usr/bin/env bash
-# claude-container — sandboxed Claude Code from the published image, for
+# claude-container — a sandboxed coding agent (Claude Code, Codex or Pi) from the published image, for
 # hosts WITHOUT a devcontainer workflow. Requirements: rootless podman
-# (or docker) and /dev/net/tun on the host. Copy this script onto your
-# PATH, cd into a project, run `claude-container`.
+# (or docker) and /dev/net/tun on the host. cd into a project and run
+# `uvx claude-sandbox` (the wheel ships this script and pins the matching
+# image), or copy this script onto your PATH and run it by name.
 #
 # One NAMED container per project directory: created on first run, reused
 # on later runs. gh/glab logins made inside it therefore live for the
 # container's lifetime — the same container-scoped credential model as a
 # devcontainer (re-authenticate after --recreate), never a host-credential
 # mount. The container's own process is an idle keeper; every session is
-# an exec into it, so --agent, --shell and AGENT_ARGS apply on every run.
-# Only --host-net and --mount are fixed at create time (--recreate to
+# an exec into it, so the verb and AGENT_ARGS apply on every run.
+# Only --bridge and --mount are fixed at create time (--recreate to
 # change them). The container stops when its last session exits.
 #
-# Usage: claude-container [OPTIONS] [AGENT_ARGS...]
-#   --agent NAME    which sandboxed agent to run: claude (default), codex, pi
-#                   All use the same sandbox. Pi supports cloud and local models.
-#                   See the use-pi guide for the localhost model relay.
-#   --shell         a plain (UNSANDBOXED) bash in the container instead of an
+# Usage: claude-container [OPTIONS] [VERB] [AGENT_ARGS...]
+#
+# Verbs (the default is claude):
+#   claude | codex | pi   a sandboxed session of that agent. All use the same
+#                   sandbox. Pi supports cloud and local models; see the
+#                   use-pi guide for the localhost model relay.
+#   shell           a plain (UNSANDBOXED) bash in the container instead of an
 #                   agent — e.g. to run `claude-sandbox gh-auth` first. Start a
 #                   sandboxed session from it with claude / codex / pi.
+#   install         (uvx only) install the sandbox into the devcontainer this
+#                   runs in — see the sandbox-a-team-devcontainer guide.
+#
+# Options (before the verb):
 #   --recreate      remove and recreate the project container (e.g. after
 #                   a `podman pull`); forge auth must be re-done after
-#   --host-net      create with --network=host (EPICS CA broadcast, X11)
+#   --bridge        create on the engine's bridge network instead of the
+#                   default --network=host. Host networking is what lets Pi
+#                   reach a local model server and non-agent shells see EPICS
+#                   CA broadcast and X11; the agents' egress jail is the same
+#                   either way (it only ever restricts).
 #   --mount PATH    bind PATH read-write into the container AND the
 #                   sandbox (repeatable; becomes an allow-write entry)
 #   --version       print launcher version and exit
 #   -h | --help     this text
 #
 # Environment (all optional):
-#   CLAUDE_SANDBOX_IMAGE          image ref
-#                                 (default ghcr.io/diamondlightsource/claude-sandbox:latest)
+#   CLAUDE_SANDBOX_IMAGE          image ref (default ghcr.io/diamondlightsource/claude-sandbox:latest;
+#                                 `uvx claude-sandbox` pins the wheel's own version)
 #   CLAUDE_SANDBOX_ENGINE         podman | docker (default podman)
 #   CLAUDE_SANDBOX_SHARED_CONFIG  host dir mounted at /user-terminal-config to
 #                                 persist Claude login/memory across containers
@@ -42,9 +53,14 @@
 #                                 at create time (allow-ip, egress-jail, ...)
 set -euo pipefail
 
-# Bump when this script meaningfully changes. CI bakes the version into
-# the image as a label, so warn_if_outdated can compare script vs image.
-VERSION="0.4.1"
+# The project's release version — ONE number for the launcher, the wheel and
+# the image tag. CI asserts a release tag equals this line, bakes it into the
+# image as a label, and the PyPI build reads the wheel version from it.
+VERSION="4.0.0"
+# How to spell this launcher in hints: the uvx front door sets
+# CLAUDE_SANDBOX_LAUNCHER; a copied script is run by its own name.
+SELF="claude-container"
+[ "${CLAUDE_SANDBOX_LAUNCHER:-}" = uvx ] && SELF="uvx claude-sandbox"
 
 IMAGE="${CLAUDE_SANDBOX_IMAGE:-ghcr.io/diamondlightsource/claude-sandbox:latest}"
 ENGINE="${CLAUDE_SANDBOX_ENGINE:-podman}"
@@ -73,10 +89,14 @@ warn_if_outdated() {
             -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' \
             "$IMAGE" 2>/dev/null)" || rev=""
         echo "claude-container: this launcher is v$VERSION; the image was built with v$img_ver. Update:" >&2
-        echo "    curl -fsSLO https://raw.githubusercontent.com/DiamondLightSource/claude-sandbox/${rev:-main}/container/claude-container" >&2
+        if [ "${CLAUDE_SANDBOX_LAUNCHER:-}" = uvx ]; then
+            echo "    uvx claude-sandbox@latest   (or pin: uvx claude-sandbox==$img_ver)" >&2
+        else
+            echo "    curl -fsSLO https://raw.githubusercontent.com/DiamondLightSource/claude-sandbox/${rev:-main}/container/claude-container" >&2
+        fi
     else
         echo "claude-container: this launcher (v$VERSION) is newer than the local image (v$img_ver);" >&2
-        echo "    consider: $ENGINE pull $IMAGE  then  claude-container --recreate" >&2
+        echo "    consider: $ENGINE pull $IMAGE  then  $SELF --recreate" >&2
     fi
 }
 
@@ -86,7 +106,7 @@ warn_if_outdated() {
 KEEPER_CMD='trap "exit 0" TERM INT; while :; do sleep 60 & wait $!; done'
 
 recreate=0
-host_net=0
+host_net=1
 agent=claude
 shell=0
 create_opts=()     # create-time flags the user passed, for the reuse warning
@@ -94,18 +114,13 @@ mounts=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --recreate) recreate=1; shift ;;
-        --host-net) host_net=1; create_opts+=( --host-net ); shift ;;
-        --shell) shell=1; shift ;;
-        --agent)
-            # Which sandboxed agent to run in the image. All are wrapped by
-            # the same shadow inside; this only chooses the command.
-            case "${2:-}" in
-                claude|codex|pi) agent="$2"; shift 2 ;;
-                *)
-                    echo "claude-container: --agent needs claude, codex, or pi" >&2
-                    exit 1
-                    ;;
-            esac
+        --bridge) host_net=0; create_opts+=( --bridge ); shift ;;
+        --host-net|--shell|--agent)
+            # Pre-4.0 spellings. Not aliased: an unknown option would fall
+            # through to the agent's argv and fail there, obscurely.
+            echo "claude-container: $1 was replaced by verbs in 4.0: $SELF [OPTIONS] [claude|codex|pi|shell] [AGENT_ARGS...]" >&2
+            echo "  host networking is now the default; --bridge opts out" >&2
+            exit 2
             ;;
         --mount)
             if [ $# -lt 2 ]; then
@@ -116,13 +131,36 @@ while [ $# -gt 0 ]; do
             create_opts+=( "--mount $2" )
             shift 2
             ;;
-        --version) echo "claude-container $VERSION"; exit 0 ;;
+        --version) echo "claude-sandbox $VERSION"; exit 0 ;;
         -h|--help) usage; exit 0 ;;
         --) shift; break ;;
         *) break ;;
     esac
 done
-# Remaining args are the agent's (applied on every run).
+# An optional verb, then the agent's own args (applied on every run). All
+# are wrapped by the same shadow inside; the verb only chooses the command.
+case "${1:-}" in
+    claude|codex|pi) agent="$1"; shift ;;
+    shell) shell=1; shift ;;
+    install)
+        echo "claude-container: install is a uvx verb: run \`uvx claude-sandbox install\` INSIDE the devcontainer" >&2
+        exit 2
+        ;;
+esac
+
+# Inside a container there is nothing for this launcher to do: an installed
+# sandbox is run by its own command names, and a bare container wants the
+# installer. (Podman writes /run/.containerenv; docker writes /.dockerenv.)
+# CLAUDE_SANDBOX_NESTED=1 launches anyway (an engine inside a container is
+# a real setup; it is also the test seam, since CI runs in a container).
+if { [ -e /run/.containerenv ] || [ -e /.dockerenv ]; } && [ "${CLAUDE_SANDBOX_NESTED:-0}" != 1 ]; then
+    if [ -x /usr/libexec/claude-sandbox/agent-shadow ] || [ -x /usr/local/bin/claude ]; then
+        echo "claude-container: you are already inside an claude-sandbox container — run claude, codex or pi directly" >&2
+    else
+        echo "claude-container: this is a container without the sandbox — install it with: uvx claude-sandbox install" >&2
+    fi
+    exit 1
+fi
 
 if ! command -v "$ENGINE" >/dev/null 2>&1; then
     echo "claude-container: $ENGINE not found (set CLAUDE_SANDBOX_ENGINE=docker?)" >&2
@@ -209,7 +247,7 @@ create_container() {
     args+=( "$IMAGE" bash -c "$KEEPER_CMD" )
     "$ENGINE" "${args[@]}" >/dev/null
     echo "claude-container: created container $NAME from $IMAGE" >&2
-    echo "claude-container: for forge push access: claude-container --shell, then claude-sandbox gh-auth" >&2
+    echo "claude-container: for forge push access: $SELF shell, then claude-sandbox gh-auth" >&2
 }
 
 if [ "$recreate" = 1 ] && container_exists; then
@@ -221,7 +259,7 @@ if container_exists; then
         # Created by launcher <= 0.3, which baked the agent as PID 1; starting
         # it would run that agent detached, alongside our session.
         echo "claude-container: $NAME was created by an older launcher and cannot be reused;" >&2
-        echo "  run: claude-container --recreate (forge logins must be re-done)" >&2
+        echo "  run: $SELF --recreate (forge logins must be re-done)" >&2
         exit 1
     fi
     created="$("$ENGINE" container inspect -f '{{.Created}}' "$NAME" 2>/dev/null | cut -c1-19)"
@@ -233,7 +271,7 @@ if container_exists; then
     ctr_img="$("$ENGINE" container inspect -f '{{.Image}}' "$NAME" 2>/dev/null)" || ctr_img=""
     if [ -n "$local_img" ] && [ -n "$ctr_img" ] && [ "$local_img" != "$ctr_img" ]; then
         echo "  this container was created from an OLDER image than the one now pulled for $IMAGE;" >&2
-        echo "  it keeps running the old one until you: claude-container --recreate" >&2
+        echo "  it keeps running the old one until you: $SELF --recreate" >&2
     fi
     if [ ${#create_opts[@]} -gt 0 ]; then
         # Everything else applies per run; these two are baked into the

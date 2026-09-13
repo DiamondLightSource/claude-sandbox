@@ -100,7 +100,8 @@ non-functional sandbox. Fix the reported problem and re-run.
 > jail](../how-to/network-egress-jail.md).
 
 To restore the sandbox automatically on every rebuild, wire the same
-clone-and-install one-liner into your devcontainer's `postCreate.sh`
+clone-and-install one-liner — or `uvx claude-sandbox install`, when the
+image has `uv` — into your devcontainer's `postCreate.sh`
 (pin a tag there if you want a reviewable rollout — see [Sandbox a team
 devcontainer](../how-to/sandbox-a-team-devcontainer.md)).
 

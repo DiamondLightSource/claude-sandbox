@@ -25,10 +25,10 @@ a normal container terminal outside Pi, then restart Pi.
 From a normal devcontainer terminal, run `pi`. With the published image:
 
 ```bash
-claude-container --agent pi
+uvx claude-sandbox pi
 ```
 
-`--agent` applies on every run, so an existing container switches agent
+The verb applies on every run, so an existing container switches agent
 without `--recreate` (which is only needed to pick up a newer image or
 change create-time mounts, and costs the container-scoped forge logins).
 
@@ -80,8 +80,9 @@ Start a model in lllm2 on the host. Its model API defaults to
 
 The **outer container must share the model server's network namespace** for
 that loopback address to refer to the same server. This repository's
-devcontainer already uses `--net=host`. With the published-image launcher use
-`--host-net`; an ordinary bridge container's `127.0.0.1` refers to itself.
+devcontainer already uses `--net=host`, and the published-image launcher
+creates its container with host networking unless you pass `--bridge`; an
+ordinary bridge container's `127.0.0.1` refers to itself.
 The inner bwrap network jail remains enabled.
 
 With lllm2 running, start Pi:
@@ -90,7 +91,7 @@ With lllm2 running, start Pi:
 pi --provider lllm2
 # Or run pi and select lllm2 in /model.
 # Published image:
-claude-container --host-net --agent pi
+uvx claude-sandbox pi
 ```
 
 The shipped `.devcontainer/claude-sandbox.conf` sets `local-model-port = 1920`.
