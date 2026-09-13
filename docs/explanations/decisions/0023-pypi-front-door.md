@@ -59,7 +59,11 @@ the Python sets two environment variables and calls `execvpe`.
   `CLAUDE_SANDBOX_NESTED=1` overrides, for an engine inside a container.
 
 **One release number.** The `VERSION=` line in the launcher is the single
-source: the wheel reads its version from it at build, CI bakes it into the
+source: the wheel reads its version from it at build, the entry point
+reads the same line from the bundled script at run time (image tags are
+not PEP 440-normalised, so a prerelease `4.0.0-beta.1` stays literal there
+while the wheel is `4.0.0b1`; the hyphen keeps the install shim's
+newest-stable filter from choosing a beta), CI bakes it into the
 image label as before, and a release tag that disagrees with it does not
 publish. The entry point pins the image to its own version
 (`CLAUDE_SANDBOX_IMAGE` still overrides), so `uvx claude-sandbox==4.0.0`

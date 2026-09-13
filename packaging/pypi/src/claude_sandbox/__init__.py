@@ -7,11 +7,27 @@ what runs, and execs bash. Read the bash: it is what actually runs.
 """
 
 import os
+import re
 import sys
-from importlib.metadata import version
+
 from importlib.resources import files
 
 IMAGE = "ghcr.io/diamondlightsource/claude-sandbox"
+
+
+def _launcher_version(launcher: str) -> str:
+    """The launcher's VERSION= line, verbatim.
+
+    This is the image tag. The wheel's own metadata version is derived from
+    the same line but PEP 440-normalised (``4.0.0-beta.1`` becomes
+    ``4.0.0b1``), and image tags are not normalised, so the literal wins.
+    """
+    with open(launcher, encoding="utf-8") as fh:
+        for line in fh:
+            m = re.match(r'^VERSION="([^"]+)"$', line)
+            if m:
+                return m.group(1)
+    raise SystemExit("claude-sandbox: bundled launcher has no VERSION= line")
 
 
 def _in_container() -> bool:
@@ -30,7 +46,8 @@ def _in_container() -> bool:
 def main() -> None:
     """Exec the launcher, or the installer when the first word is ``install``."""
     tree = str(files(__name__).joinpath("tree"))
-    ver = version("claude-sandbox")
+    launcher = os.path.join(tree, "container", "claude-container")
+    ver = _launcher_version(launcher)
     argv = sys.argv[1:]
     env = dict(os.environ)
     if argv and argv[0] == "install":
@@ -52,4 +69,4 @@ def main() -> None:
     # The wheel pins the image: launcher and image are the same release.
     env.setdefault("CLAUDE_SANDBOX_IMAGE", f"{IMAGE}:{ver}")
     env["CLAUDE_SANDBOX_LAUNCHER"] = "uvx"
-    os.execvpe("bash", ["bash", os.path.join(tree, "container", "claude-container"), *argv], env)
+    os.execvpe("bash", ["bash", launcher, *argv], env)

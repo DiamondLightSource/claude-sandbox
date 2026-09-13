@@ -25,9 +25,16 @@ jobs:
       - name: Build the wheel
         run: uv build --wheel packaging/pypi -o dist
 
-      - name: Assert the wheel version is the tag
+      # One release number (ADR 23). Compared against the VERSION= line, not
+      # the wheel filename: PyPI normalises a prerelease tag such as
+      # 4.0.0-beta.1 to 4.0.0b1, and the hyphen is what keeps the install
+      # shim's newest-stable filter from picking a beta.
+      - name: Assert the tag is the launcher's VERSION line
         if: github.ref_type == 'tag'
-        run: ls dist/claude_sandbox-${{ github.ref_name }}-py3-none-any.whl
+        run: |
+          v="$(sed -n 's/^VERSION="\(.*\)"$/\1/p' container/claude-container)"
+          test "$v" = "${{ github.ref_name }}"
+          ls dist/claude_sandbox-*.whl
 
       - name: Publish to PyPI
         if: github.ref_type == 'tag'
