@@ -1,8 +1,8 @@
-    # Link only what the image actually ships (the epics-containers base has
-    # no pvAccessCPP tools; pvAccess comes from pvxs as pvx*). A dangling
-    # link would be a 127 at runtime, so existence is checked first.
+    # CA tools from base, pvAccess tools from pvxs (pvx*; the epics-containers
+    # base builds no pvAccessCPP tools). Existence-checked: a dangling link
+    # would be a 127 at runtime.
     && for d in /opt/epics/epics-base/bin/linux-x86_64 /opt/epics/support/pvxs/bin/linux-x86_64; do \
-        for t in caget caput camonitor cainfo caRepeater pvget pvput pvmonitor pvinfo pvlist \
+        for t in caget caput camonitor cainfo caRepeater \
                  pvxget pvxput pvxmonitor pvxinfo pvxlist pvxcall; do \
             [ -x "$d/$t" ] && ln -s "$d/$t" "/usr/local/bin/$t"; done; done; \
     ls -l /usr/local/bin/ | grep opt/epics \

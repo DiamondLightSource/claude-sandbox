@@ -160,7 +160,7 @@ another volume name, or empty for none. The mounted project's `.venv` is not
 used by the image's default uv configuration.
 
 EPICS Channel Access and pvAccess client tools (`caget`, `camonitor`,
-`pvget`, ...) are on the PATH, copied from the epics-containers runtime
+`pvxget`, ...) are on the PATH, copied from the epics-containers runtime
 image. From a `shell` session on a beamline-networked host they reach IOCs
 directly, since the container shares the host network. Inside an agent
 session the egress jail applies: see
