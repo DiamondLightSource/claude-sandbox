@@ -56,12 +56,13 @@ Project files and shared agent settings survive.
 
 Reconnecting to an existing project container keeps the image it was
 created from, whatever has been pulled since. When testing a new image, or
-to reclaim space from projects you no longer use, remove every container
-the launcher created on this host in one go:
+to reclaim space from projects you no longer use, remove the containers the
+launcher created on this host in one go:
 
 ```bash
-claude-sandbox clean            # all project containers, running ones included
-claude-sandbox clean --images   # also drop claude-sandbox image tags no container uses
+claude-sandbox clean                    # stopped project containers; running ones are listed and kept
+claude-sandbox clean --force            # running ones too, ending their sessions
+claude-sandbox clean --force --images   # also drop claude-sandbox image tags no container uses
 ```
 
 The next launch in any project then creates a fresh container from the

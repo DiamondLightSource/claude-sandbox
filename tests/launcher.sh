@@ -21,7 +21,7 @@ cat > "$TMP/bin/podman" <<'FAKE'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$LOG"
 case "$*" in
-    "container inspect -f {{.State.Running}} "*) [ -e "$MARK" ] && echo true ;;
+    "container inspect -f {{.State.Running}} "*) case "$*" in *running*) echo true ;; *) [ -e "$MARK" ] && echo true ;; esac ;;
     "container inspect -f {{join .Config.Cmd \" \"}} "*) echo 'bash -c trap "exit 0" TERM INT; while :; do sleep 60 & wait $!; done' ;;
     "container inspect -f {{.Created}} "*) echo 2026-09-13T00:00:00 ;;
     "container inspect -f {{.Image}} "*) echo img1 ;;
@@ -107,16 +107,21 @@ run FAKE_IMG_VER=0.1.0 CLAUDE_SANDBOX_LAUNCHER=uvx --
 case "$ERR" in *"uvx claude-sandbox --recreate"*) pass ;; *) fail "newer-launcher hint under uvx: $ERR" ;; esac
 
 
-# --- clean removes every keeper container, running or not; nothing else -----
-printf '%s\n' claude-sandbox-a-1 claude-sandbox-b-2 > "$TMP/ps"
+# --- clean removes stopped keeper containers; running ones only with --force -
+printf '%s\n' claude-sandbox-a-1 claude-sandbox-b-2 claude-sandbox-running-3 > "$TMP/ps"
 run -- clean
 [ "$RC" = 0 ] && pass || fail "clean rc=$RC: $ERR"
-grep -qx 'rm -f claude-sandbox-a-1' "$LOG" && grep -qx 'rm -f claude-sandbox-b-2' "$LOG" && pass || fail "clean did not remove both: $(cat "$LOG")"
+grep -qx 'rm -f claude-sandbox-a-1' "$LOG" && grep -qx 'rm -f claude-sandbox-b-2' "$LOG" && pass || fail "clean did not remove both stopped: $(cat "$LOG")"
+grep -q 'rm -f claude-sandbox-running-3' "$LOG" && fail "clean removed a running container without --force" || pass
+case "$ERR" in *"kept claude-sandbox-running-3 (running; --force"*) pass ;; *) fail "running container not reported: $ERR" ;; esac
 [ -z "$(exec_line)" ] && [ -z "$(create_line)" ] && pass || fail "clean started a session"
-case "$ERR" in *"2 container(s) removed"*) pass ;; *) fail "clean summary: $ERR" ;; esac
+case "$ERR" in *"2 container(s) removed, 1 running kept"*) pass ;; *) fail "clean summary: $ERR" ;; esac
+run -- clean --force
+grep -qx 'rm -f claude-sandbox-running-3' "$LOG" && pass || fail "--force did not remove the running container: $(cat "$LOG")"
+case "$ERR" in *"3 container(s) removed, 0 running kept"*) pass ;; *) fail "--force summary: $ERR" ;; esac
 grep -q '^rmi ' "$LOG" && fail "clean touched images without --images" || pass
 printf '%s\n' ghcr.io/diamondlightsource/claude-sandbox:4.0.0 in-use:1 > "$TMP/images"
-run -- clean --images
+run -- clean --force --images
 grep -qx 'rmi ghcr.io/diamondlightsource/claude-sandbox:4.0.0' "$LOG" && pass || fail "--images did not rmi: $(cat "$LOG")"
 case "$ERR" in *"removed image ghcr.io/diamondlightsource/claude-sandbox:4.0.0"*) pass ;; *) fail "image summary: $ERR" ;; esac
 case "$ERR" in *"removed image in-use"*) fail "in-use image reported removed" ;; *) pass ;; esac
