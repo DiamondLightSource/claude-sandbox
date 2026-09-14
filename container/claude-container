@@ -27,6 +27,12 @@
 #                   run that helper of the in-container `claude-sandbox` CLI
 #                   (same as typing it in a shell session), e.g.
 #                   `uvx claude-sandbox gh-auth` or `uvx claude-sandbox verify`.
+#   clean [--images] remove ALL project containers this launcher created on
+#                   this host (running ones too; forge logins in them are
+#                   lost). With --images, also remove claude-sandbox image
+#                   tags no container uses any more. Use it before testing a
+#                   newly pulled image, so no launch silently reconnects to a
+#                   container built from the old one.
 #   install         (uvx only) install the sandbox into the devcontainer this
 #                   runs in — see the sandbox-a-team-devcontainer guide.
 #
@@ -116,6 +122,8 @@ host_net=1
 agent=claude
 shell=0
 inner=0
+clean=0
+clean_images=0
 create_opts=()     # create-time flags the user passed, for the reuse warning
 mounts=()
 while [ $# -gt 0 ]; do
@@ -155,6 +163,14 @@ case "${1:-}" in
         # host `uvx claude-sandbox version` launched claude with "version" as
         # its argument. The verb stays in $@ as the inner CLI's argv.
         inner=1 ;;
+    clean)
+        clean=1; shift
+        case "${1:-}" in
+            --images) clean_images=1; shift ;;
+            "") ;;
+            *) echo "claude-container: clean takes only --images" >&2; exit 2 ;;
+        esac
+        ;;
     install)
         echo "claude-container: install is a uvx verb: run \`uvx claude-sandbox install\` INSIDE the devcontainer" >&2
         exit 2
@@ -182,6 +198,38 @@ fi
 
 # Silently a no-op until the image has been pulled / carries the labels.
 warn_if_outdated
+
+# clean: remove every project container this launcher created on this host,
+# running or not, so stale ones stop piling up in the engine's store and a
+# later launch is unambiguously a fresh container from the image now pulled
+# (reconnecting to an existing container keeps its OLD image). Matched by
+# the name prefix AND the keeper command, never by name alone, so an
+# unrelated container that happens to start with claude-sandbox- is left.
+# Like --recreate, this drops container-local packages and forge logins;
+# project files and the shared agent config on the host survive.
+# --images also removes claude-sandbox image tags no container uses.
+clean_containers() {
+    local n removed=0
+    while IFS= read -r n; do
+        [ -n "$n" ] || continue
+        "$ENGINE" container inspect -f '{{join .Config.Cmd " "}}' "$n" 2>/dev/null \
+            | grep -qF 'sleep 60 & wait' || continue
+        "$ENGINE" rm -f "$n" >/dev/null && { echo "claude-container: removed $n" >&2; removed=$((removed + 1)); }
+    done < <("$ENGINE" ps -a --filter name='^claude-sandbox-' --format '{{.Names}}' 2>/dev/null)
+    echo "claude-container: $removed container(s) removed" >&2
+    [ "$clean_images" = 1 ] || return 0
+    local img
+    while IFS= read -r img; do
+        [ -n "$img" ] || continue
+        # rmi refuses an image a remaining container still uses; that is the
+        # right outcome, so its complaint is dropped.
+        "$ENGINE" rmi "$img" >/dev/null 2>&1 && echo "claude-container: removed image $img" >&2
+    done < <("$ENGINE" images --filter reference='*/diamondlightsource/claude-sandbox' --format '{{.Repository}}:{{.Tag}}' 2>/dev/null)
+}
+if [ "$clean" = 1 ]; then
+    clean_containers
+    exit 0
+fi
 
 # Stable per-project container name: a readable basename slug plus a hash
 # of the full path, so same-named projects under different parents don't

@@ -54,6 +54,20 @@ Run recreation in each project you want to update, after exiting active
 sessions. It removes container-local packages, caches and forge logins.
 Project files and shared agent settings survive.
 
+Reconnecting to an existing project container keeps the image it was
+created from, whatever has been pulled since. When testing a new image, or
+to reclaim space from projects you no longer use, remove every container
+the launcher created on this host in one go:
+
+```bash
+claude-sandbox clean            # all project containers, running ones included
+claude-sandbox clean --images   # also drop claude-sandbox image tags no container uses
+```
+
+The next launch in any project then creates a fresh container from the
+current image. As with recreation, forge logins inside those containers are
+lost; project files and shared agent settings on the host survive.
+
 For a fixed release, use `uv tool install claude-sandbox==4.0.0`.
 For an occasional run without a persistent tool install, use
 `uvx claude-sandbox`. See [Upgrade](upgrade.md) for the other install routes.

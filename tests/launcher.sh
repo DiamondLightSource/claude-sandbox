@@ -32,6 +32,9 @@ case "$*" in
     "image inspect -f {{index .Config.Labels \"org.opencontainers.image.revision\"}} "*) echo abc123 ;;
     "image inspect -f {{.Id}} "*) echo img1 ;;
     "create "*) touch "$MARK" ;;
+    "ps -a --filter name=^claude-sandbox- --format {{.Names}}") cat "$PS" 2>/dev/null ;;
+    "images --filter reference=*/diamondlightsource/claude-sandbox --format {{.Repository}}:{{.Tag}}") cat "$IMAGES" 2>/dev/null ;;
+    "rmi "*) [ "${2:-}" != "in-use:1" ] ;;
     *) : ;;
 esac
 FAKE
@@ -43,7 +46,7 @@ run() {
     while [ "$1" != "--" ]; do envs+=( "$1" ); shift; done; shift
     : > "$LOG"; rm -f "$TMP/mark"
     ( cd "$TMP/project" && env -i PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP" \
-        LOG="$LOG" MARK="$TMP/mark" CLAUDE_SANDBOX_NESTED=1 "${envs[@]}" \
+        LOG="$LOG" MARK="$TMP/mark" PS="$TMP/ps" IMAGES="$TMP/images" CLAUDE_SANDBOX_NESTED=1 "${envs[@]}" \
         bash "$LAUNCHER" "$@" 2>"$TMP/err" ); RC=$?
     ERR="$(cat "$TMP/err")"
 }
@@ -103,5 +106,21 @@ case "$ERR" in *"curl"*) fail "uvx hint still mentions curl" ;; *) pass ;; esac
 run FAKE_IMG_VER=0.1.0 CLAUDE_SANDBOX_LAUNCHER=uvx --
 case "$ERR" in *"uvx claude-sandbox --recreate"*) pass ;; *) fail "newer-launcher hint under uvx: $ERR" ;; esac
 
+
+# --- clean removes every keeper container, running or not; nothing else -----
+printf '%s\n' claude-sandbox-a-1 claude-sandbox-b-2 > "$TMP/ps"
+run -- clean
+[ "$RC" = 0 ] && pass || fail "clean rc=$RC: $ERR"
+grep -qx 'rm -f claude-sandbox-a-1' "$LOG" && grep -qx 'rm -f claude-sandbox-b-2' "$LOG" && pass || fail "clean did not remove both: $(cat "$LOG")"
+[ -z "$(exec_line)" ] && [ -z "$(create_line)" ] && pass || fail "clean started a session"
+case "$ERR" in *"2 container(s) removed"*) pass ;; *) fail "clean summary: $ERR" ;; esac
+grep -q '^rmi ' "$LOG" && fail "clean touched images without --images" || pass
+printf '%s\n' ghcr.io/diamondlightsource/claude-sandbox:4.0.0 in-use:1 > "$TMP/images"
+run -- clean --images
+grep -qx 'rmi ghcr.io/diamondlightsource/claude-sandbox:4.0.0' "$LOG" && pass || fail "--images did not rmi: $(cat "$LOG")"
+case "$ERR" in *"removed image ghcr.io/diamondlightsource/claude-sandbox:4.0.0"*) pass ;; *) fail "image summary: $ERR" ;; esac
+case "$ERR" in *"removed image in-use"*) fail "in-use image reported removed" ;; *) pass ;; esac
+run -- clean --bogus; [ "$RC" = 2 ] && [ -z "$(grep '^rm ' "$LOG")" ] && pass || fail "clean --bogus accepted (rc=$RC)"
+rm -f "$TMP/ps" "$TMP/images"
 echo "launcher: $PASSED passed, $FAILED failed"
 [ "$FAILED" -eq 0 ]
