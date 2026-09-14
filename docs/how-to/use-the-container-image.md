@@ -136,6 +136,10 @@ claude-sandbox --mount ~/src/shared-lib       # read-only
 claude-sandbox --mount-rw ~/src/other-repo    # writable in the container and the sandbox
 ```
 
+Use `--mount-rw` for a sibling checkout the agent must edit. The
+`workspace-root` config key only widens the sandbox bind within what the
+container mounted, so on its own it cannot make a read-only sibling writable.
+
 Mounts, network mode and forwarded `CLAUDE_SANDBOX_*` variables are fixed
 when a container is created. For an existing container, include
 `--recreate` when changing them. For example:

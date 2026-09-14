@@ -1,0 +1,47 @@
+#!/bin/sh
+# Start VS Code on a virtual display inside the agent sandbox, with the
+# DevTools port that vscode-ui.mjs in this directory drives. Pass this wrapper to
+# any tool that takes a `code` binary path, or run it with VS Code arguments.
+#
+# Requirements: Xvfb and the Electron libraries installed in the container
+# (see install-vscode-driver-deps.sh in this directory)
+# and a VS Code tarball at $VSCODE_HEADLESS_BINARY (default /cache/vscode).
+#
+# The user data directory must be short: VS Code names a unix socket inside
+# it, and socket paths are limited to 107 bytes.
+set -eu
+binary=${VSCODE_HEADLESS_BINARY:-/cache/vscode/bin/code}
+display=${VSCODE_HEADLESS_DISPLAY:-:99}
+port=${VSCODE_HEADLESS_PORT:-9222}
+data=${VSCODE_HEADLESS_DATA:-/tmp/vscode-headless}
+
+if [ ! -x "$binary" ]; then
+    echo "vscode-headless: $binary is not executable; run the install script" >&2
+    exit 1
+fi
+if ! command -v Xvfb >/dev/null 2>&1; then
+    echo "vscode-headless: Xvfb is not installed; run the install script" >&2
+    exit 1
+fi
+
+mkdir -p "$data/data" "$data/extensions"
+
+# One Xvfb per display. A second call finds the display already answering
+# and reuses it, so repeated invocations share one screen.
+if ! xdpyinfo -display "$display" >/dev/null 2>&1; then
+    Xvfb "$display" -screen 0 1400x900x24 -nolisten tcp \
+        > "$data/xvfb.log" 2>&1 &
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        xdpyinfo -display "$display" >/dev/null 2>&1 && break
+        sleep 0.5
+    done
+fi
+
+export DISPLAY="$display"
+# Electron refuses its own sandbox as root; the agent jail already confines
+# the process, so the Electron layer is not needed.
+export ELECTRON_DISABLE_SANDBOX=1
+exec "$binary" --no-sandbox --disable-gpu --disable-dev-shm-usage \
+    --user-data-dir "$data/data" --extensions-dir "$data/extensions" \
+    --remote-debugging-address=127.0.0.1 --remote-debugging-port="$port" \
+    --skip-welcome --skip-release-notes --disable-workspace-trust "$@"
