@@ -1,4 +1,13 @@
-# Two consumers, one file, one base:
+    # Link only what the image actually ships (the epics-containers base has
+    # no pvAccessCPP tools; pvAccess comes from pvxs as pvx*). A dangling
+    # link would be a 127 at runtime, so existence is checked first.
+    && for d in /opt/epics/epics-base/bin/linux-x86_64 /opt/epics/support/pvxs/bin/linux-x86_64; do \
+        for t in caget caput camonitor cainfo caRepeater pvget pvput pvmonitor pvinfo pvlist \
+                 pvxget pvxput pvxmonitor pvxinfo pvxlist pvxcall; do \
+            [ -x "$d/$t" ] && ln -s "$d/$t" "/usr/local/bin/$t"; done; done; \
+    ls -l /usr/local/bin/ | grep opt/epics \
+    # Build-time proof the copied libs resolve on this base.
+    && ! ldd /usr/local/bin/caget | grep "not found"# Two consumers, one file, one base:
 #
 #   developer      — the repo's own devcontainer (devcontainer.json builds
 #                    `target: developer`). Intentionally a bare FROM: the

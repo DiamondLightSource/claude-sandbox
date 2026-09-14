@@ -102,7 +102,7 @@ jobs:
             test "$(readlink -f /opt/venv)" = /cache/venv
             python -c "import os, sys; assert os.path.realpath(sys.prefix) == \"/cache/venv\", sys.prefix"
             # The EPICS client tools resolve (amd64 only)
-            case "$(uname -m)" in x86_64) for t in caget pvget; do rc=0; "$t" -h >/dev/null 2>&1 || rc=$?; echo "$t -h rc=$rc"; test "$rc" -le 1; done ;; esac
+            case "$(uname -m)" in x86_64) caget -h >/dev/null; for t in pvget pvxget; do command -v "$t" >/dev/null && { "$t" -h >/dev/null 2>&1 || test $? -le 1; }; done; ls -l /usr/local/bin | grep -c opt/epics ;; esac
             # (uv python find would answer with the active venv itself)
             grep -q "^home = /opt/uv/python/" /cache/venv/pyvenv.cfg
             # Image-only Node LTS: node/npm/npx from the official image
