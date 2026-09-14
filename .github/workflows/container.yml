@@ -1,4 +1,6 @@
-# Build and publish the claude-sandbox container image (the
+            case "$(uname -m)" in x86_64)
+              for t in caget pvget; do rc=0; "$t" -h >/dev/null 2>&1 || rc=$?; echo "$t -h rc=$rc"; test "$rc" -le 1; done ;;
+            esac# Build and publish the claude-sandbox container image (the
 # `claude-sandbox` stage of the root Dockerfile) to GHCR — sandboxed
 # Claude Code for hosts without a devcontainer workflow. Mirrors the
 # DiamondLightSource/ubuntu-devcontainer approach: per-arch native builds
@@ -79,7 +81,7 @@ jobs:
       - name: "Test: baked install is complete"
         run: |
           docker run --rm --entrypoint bash claude-sandbox:test -c '
-            set -euo pipefail
+            set -euxo pipefail
             test -x /usr/local/bin/claude
             test -x /usr/libexec/claude-sandbox/claude
             test -x /usr/local/bin/pi
