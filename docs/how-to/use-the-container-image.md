@@ -36,6 +36,11 @@ This is equivalent to your normal terminal in a devcontainer with the sandbox
 installed. There, skip `claude-sandbox shell` and the matching `exit` in these
 guides; the commands inside are the same.
 
+The helper commands of the in-container `claude-sandbox` CLI (`gh-auth`,
+`glab-auth`, `verify`, `pi-local`, `version`, `update`) can be given to the
+host launcher directly: `claude-sandbox verify` on the host runs them inside
+the project's container, so a shell is only needed for other administration.
+
 ## Versions and updates
 
 The installed package version selects the image tag. To update:
@@ -68,10 +73,8 @@ forge logins. Only your name and email are imported from the read-only host
 Git config; host credential helpers and SSH settings are not copied.
 
 ```bash
-claude-sandbox shell        # Skip if already in your devcontainer terminal
-claude-sandbox gh-auth
+claude-sandbox gh-auth      # Same command on the host or in a devcontainer terminal
 # Or: claude-sandbox glab-auth
-exit                       # Only if you opened the shell above
 ```
 
 Use [project-scoped tokens](authenticate-with-forges.md), and authenticate again
