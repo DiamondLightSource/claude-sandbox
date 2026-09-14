@@ -170,15 +170,26 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   (loses propagation); mounting the parent when it holds `$HOME`; making
   `--mount` rw again "for convenience"; forwarding DISPLAY into the
   shadow's pass-through list.
-- **uv cache volume (PR #43)**: `-v claude-sandbox-uv-cache:/cache/uv`
-  plus `UV_LINK_MODE=copy` (cache and venv on different filesystems; the
-  shadow forwards `UV_LINK_MODE`, scenario 8c). ONLY the download cache:
-  `/cache/venv` stays in the container's layer so it is per project.
-  Refuse: a volume over all of `/cache` (one venv for every project, and
-  the baked venv is hidden by a pre-existing volume); reusing the DLS
-  devcontainer volume `devcontainer-shared-cache` (its uv cache is a
-  subdir, and volume subpaths are not portable across podman/docker).
-  `clean` never removes volumes.
+- **/cache volume + per-project venv (PR #43, 2026-09-14)**: the launcher
+  mounts ONE named volume `claude-sandbox-cache` at `/cache` and sets
+  `UV_PROJECT_ENVIRONMENT`/`VIRTUAL_ENV=/cache/venv-for<project path>`,
+  `PRE_COMMIT_HOME`, `UV_PYTHON_CACHE_DIR` at create — the DLS
+  python-copier devcontainer layout (`/workspaces/podbench/.devcontainer`).
+  THE LESSON (user, after my first cut put only `/cache/uv` on a volume):
+  venv and uv cache on the SAME filesystem is the point — uv hardlinks
+  wheels into the venv, so installs cost no disk and little time; split
+  them and you need `UV_LINK_MODE=copy` and pay a copy per install. And
+  persistence of packages was never the goal: that template runs
+  `uv venv --clear && uv sync` on every create, the cache makes it fast.
+  Image side: PATH carries `/opt/venv/bin`, a CONTAINER-LOCAL symlink the
+  entrypoint points at `$VIRTUAL_ENV` (a symlink on the shared volume
+  would be shared by every project), created fresh once per container
+  (`/var/lib/claude-sandbox/venv-created` marker; restarts keep it).
+  `clean --venvs` prunes `venv-for<path>` dirs whose container name
+  (recomputed from the path) no longer exists, via throwaway `run`s on
+  the volume. Refuse: a volume on `/cache/uv` alone; `UV_LINK_MODE=copy`;
+  a shared symlink inside the volume; `uv sync` in the entrypoint (runs
+  before the session with no feedback — the agent or user syncs).
 - **EPICS client tools in the image (PR #43)**: `COPY --from` the
   `ghcr.io/epics-containers/epics-base-runtime:<tag>` stage (ubuntu:noble,
   same glibc) into `/opt/epics`, libs via `/etc/ld.so.conf.d` (NOT
