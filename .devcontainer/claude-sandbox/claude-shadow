@@ -622,6 +622,12 @@ parse_config() {
                 : "${CLAUDE_SANDBOX_EGRESS_JAIL:=${value:-1}}"
                 export CLAUDE_SANDBOX_EGRESS_JAIL
                 ;;
+            keep-xtmodkeys)
+                # Keep xterm modifyOtherKeys sequences in the agent's output
+                # (see pty_launch). Env CLAUDE_SANDBOX_KEEP_XTMODKEYS wins.
+                : "${CLAUDE_SANDBOX_KEEP_XTMODKEYS:=${value:-1}}"
+                export CLAUDE_SANDBOX_KEEP_XTMODKEYS
+                ;;
             local-model-port)
                 # The port Pi discovers a model on; always part of the relay set
                 # (ADR 0020). 0 drops it and Pi's discovery. Env wins over conf.
@@ -807,7 +813,10 @@ netns_holder() {
     if [ -n "${CLAUDE_JAIL_LOCAL_PORTS:-}${CLAUDE_JAIL_CALLBACK_PORTS:-}" ]; then
         local_model_inner "$@"
     else
-        exec "$@"
+        # "$@" may name an exported shell function (pty_launch), which exec
+        # cannot run; calling it and exiting with its status is equivalent.
+        "$@"
+        exit "$?"
     fi
 }
 
@@ -1088,7 +1097,8 @@ netns_launch() {
     # The holder runs in a fresh `bash -c`, so every function it calls must be
     # exported too — not just netns_holder, but the helpers it reaches:
     # jail_fail, wait_for, route_field.
-    export -f netns_holder jail_fail wait_for route_field local_model_inner local_model_listening stop_relay
+    export -f netns_holder jail_fail wait_for route_field local_model_inner local_model_listening stop_relay \
+        pty_launch xtmodkeys_filter xtmodkeys_kept
     export JAIL_DNS_FWD
     # Explicit <&0 keeps the holder's stdin on the terminal: bash redirects a
     # background job's stdin to /dev/null otherwise, which would break Claude's
@@ -1194,6 +1204,54 @@ EOF
     } > "$CLAUDE_SANDBOX_GITCONFIG_PATH"
 }
 
+# xtmodkeys_filter: strip xterm XTMODKEYS sequences (CSI > Ps ; Ps m, e.g.
+# the modifyOtherKeys enable ESC[>4;2m every agent emits at startup) from a
+# byte stream. Terminals that do not implement the sequence should drop it,
+# but the ones on RHEL 8/9 desktops draw it next to the prompt as visible
+# junk. Streaming and chunk-safe: a sequence split across two reads is held
+# back until it resolves; every other byte passes through unbuffered, so the
+# TUI is not delayed. Node is a hard dependency of the sandbox already.
+xtmodkeys_filter() {
+    node -e '
+const RE = /\x1b\[>[0-9;]*m/g;
+let hold = "";
+process.stdin.setEncoding("latin1");
+process.stdin.on("data", chunk => {
+  let s = hold + chunk;
+  const m = /\x1b(\[(>[0-9;]*)?)?$/.exec(s);
+  hold = m ? m[0] : "";
+  if (hold) s = s.slice(0, -hold.length);
+  process.stdout.write(Buffer.from(s.replace(RE, ""), "latin1"));
+});
+process.stdin.on("end", () => { if (hold) process.stdout.write(Buffer.from(hold, "latin1")); });
+'
+}
+
+# xtmodkeys_kept: the opt-out. CLAUDE_SANDBOX_KEEP_XTMODKEYS=1 (env, or
+# `keep-xtmodkeys` in the /etc conf) passes the sequences through for users
+# on terminals that honour modifyOtherKeys and want the extra key chords
+# (Shift+Enter newline, Ctrl+Shift+letter) back. Also kept when node is
+# missing, since the filter cannot run.
+xtmodkeys_kept() {
+    [ "${CLAUDE_SANDBOX_KEEP_XTMODKEYS:-0}" = "1" ] || ! command -v node >/dev/null 2>&1
+}
+
+# pty_launch: run the sandbox command inside a fresh script(1) pty, with the
+# agent's output passed through xtmodkeys_filter unless opted out. Stdin
+# stays the real terminal, so raw mode, SIGWINCH and job control behave as
+# before; only stdout becomes a pipe. script -e returns the agent's exit
+# status (without it script always exits 0, which silently broke the
+# non-zero exit `claude-sandbox verify` promises CI), and PIPESTATUS[0]
+# carries it past the filter. Called directly and, under the egress jail, from
+# the exported netns_holder — so it and xtmodkeys_filter are exported.
+pty_launch() {
+    if xtmodkeys_kept; then
+        exec script -q -e -E never -c "$1" /dev/null
+    fi
+    script -q -e -E never -c "$1" /dev/null | xtmodkeys_filter
+    exit "${PIPESTATUS[0]}"
+}
+
 # Guard: tests source this file with CLAUDE_SHADOW_SOURCE_ONLY=1 so
 # only the function definitions are pulled into scope.
 if [ "$CLAUDE_SHADOW_SOURCE_ONLY" = "1" ]; then
@@ -1274,8 +1332,8 @@ fi
 WORKSPACE_ROOT="$(resolve_workspace_root "$PWD")"
 mapfile -t ARGV < <(bwrap_argv_build "$WORKSPACE_ROOT" "$AGENT_REAL" "$@")
 
-# Wrap bwrap in script(1) so the sandbox runs inside a freshly-allocated
-# pseudo-terminal. SIGWINCH propagates, job control works, and TIOCSTI
+# Wrap bwrap in script(1) (via pty_launch) so the sandbox runs inside a
+# freshly-allocated pseudo-terminal. SIGWINCH propagates, job control works, and TIOCSTI
 # is defanged (an ioctl inside the sandbox lands in script's pty, which
 # script reads and writes back as bytes — not keystrokes — to the host
 # terminal). Build the script(1) command once for both launch paths.
@@ -1285,7 +1343,7 @@ if egress_jail_enabled; then
     # with a routing allowlist. netns_launch cannot `exec` — it must stay
     # foreground to drive the holder/pasta handshake — so it exits with the
     # sandbox's status. Disable per host with CLAUDE_SANDBOX_EGRESS_JAIL=0.
-    netns_launch script -q -E never -c "$SANDBOX_CMD" /dev/null
+    netns_launch pty_launch "$SANDBOX_CMD"
 else
-    exec script -q -E never -c "$SANDBOX_CMD" /dev/null
+    pty_launch "$SANDBOX_CMD"
 fi
