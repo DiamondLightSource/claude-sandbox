@@ -33,7 +33,8 @@ such as forge login and installing system packages. It runs the shell
 you launched from (zsh in a zsh terminal, even where the login `$SHELL` is
 bash; override with `CLAUDE_SANDBOX_SHELL=zsh`; bash if the image lacks it) and sources your `~/.config/terminal-config` rc file, as a
 devcontainer terminal does. X11 applications reach your display when
-`DISPLAY` was set at creation.
+`DISPLAY` was set at creation. Its prompt carries a yellow `[container]`
+mark after the hostname, so it is not mistaken for a devcontainer terminal.
 From there, `claude`, `codex` and `pi` still start sandboxed agents.
 
 This is equivalent to your normal terminal in a devcontainer with the sandbox

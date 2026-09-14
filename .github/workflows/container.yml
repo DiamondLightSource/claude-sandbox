@@ -108,6 +108,9 @@ jobs:
             npm --version >/dev/null
             npx --version >/dev/null
             test "$(npm config get ignore-scripts)" = true
+            # The [container] prompt mark is appended after the shared-rc source lines
+            tail -n 1 /root/.zshrc | grep -q container
+            tail -n 1 /root/.bashrc | grep -q container
           '
 
       - name: "Test: launcher-version label is what CI extracted"

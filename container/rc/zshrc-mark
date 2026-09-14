@@ -1,0 +1,11 @@
+# claude-sandbox image: mark this shell as the standalone container's, so it
+# is not mistaken for a devcontainer terminal or the host (the same shared
+# ~/.config/terminal-config rc runs in all three). Appended to /root/.zshrc
+# AFTER the base image's `source ${USER_TERMINAL_CONFIG}/zshrc`, so it wins.
+# Spliced after the hostname token when the theme has one (oh-my-zsh dst),
+# else prefixed. "container", not "sandbox": the `shell` verb is the
+# unsandboxed one, and agent sessions show no prompt at all.
+case "$PROMPT" in
+    *%m*) PROMPT="${PROMPT//\%m/%m%F{yellow\}[container]%f}" ;;
+    *)    PROMPT="%F{yellow}[container]%f $PROMPT" ;;
+esac

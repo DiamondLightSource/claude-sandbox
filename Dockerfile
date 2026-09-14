@@ -147,6 +147,14 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && printf 'ignore-scripts=true\n' > /usr/local/etc/npmrc \
     && node --version && npm --version && npx --version
 
+# Mark the standalone container's shells (see container/rc/*-mark): the
+# shared ~/.config/terminal-config rc files run in devcontainers, on the
+# host and here alike, so the "[container]" prompt mark lives in the
+# image, appended after the base's `source ${USER_TERMINAL_CONFIG}/...`.
+RUN cat /opt/claude-sandbox/container/rc/zshrc-mark >> /root/.zshrc \
+    && cat /opt/claude-sandbox/container/rc/bashrc-mark >> /root/.bashrc
+
+
 # No USER directive, deliberately (the DLS base-image pattern): the
 # supported runtime is a ROOTLESS engine, where in-container root maps
 # to the unprivileged invoking host user via user namespaces — root in

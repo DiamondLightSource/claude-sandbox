@@ -1,0 +1,8 @@
+# claude-sandbox image: mark this shell as the standalone container's (see
+# zshrc-mark). Appended to /root/.bashrc after the base image's
+# `source ${USER_TERMINAL_CONFIG}/bashrc`. Spliced after \h when the prompt
+# has it (the DLS bash default), else prefixed.
+case "$PS1" in
+    *'\h'*) PS1="${PS1//\\h/\\h\\[\\e[33m\\][container]\\[\\e[0m\\]}" ;;
+    *)      PS1="\[\e[33m\][container]\[\e[0m\] $PS1" ;;
+esac
