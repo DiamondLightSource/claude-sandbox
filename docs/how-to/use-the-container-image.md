@@ -67,6 +67,7 @@ launcher created on this host in one go:
 claude-sandbox clean                    # stopped project containers; running ones are listed and kept
 claude-sandbox clean --force            # running ones too, ending their sessions
 claude-sandbox clean --force --images   # also drop claude-sandbox image tags no container uses
+claude-sandbox clean --venvs            # also drop venvs on the cache volume whose project container is gone
 ```
 
 The next launch in any project then creates a fresh container from the
@@ -146,11 +147,16 @@ CLAUDE_SANDBOX_NO_FORGE=1 claude-sandbox --recreate
 ## Toolchains
 
 The image includes Python with an active environment at `/cache/venv`,
-uv, Node.js and npm. The environment persists for the container's
-lifetime, so it is per project. The uv download cache at `/cache/uv` is a
-named volume, `claude-sandbox-uv-cache`, shared by every project container
-and kept by `--recreate` and `clean` (set `CLAUDE_SANDBOX_UV_CACHE` to
-another name, or empty for none). The mounted project's `.venv` is not
+uv, Node.js and npm. `/cache` is a named volume, `claude-sandbox-cache`,
+shared by every project container and laid out as the DLS python-copier
+devcontainer lays out its own: the uv download cache, the pre-commit home
+and one venv per project at `/cache/venv-for<project path>`, all on one
+filesystem so uv hardlinks packages into the venv instead of copying them.
+A new container gets a fresh venv, as a devcontainer rebuild does; the
+downloads it installs from survive `--recreate` and `clean`. Venvs of
+projects whose container is gone stay on the volume until
+`claude-sandbox clean --venvs` removes them. Set `CLAUDE_SANDBOX_CACHE` to
+another volume name, or empty for none. The mounted project's `.venv` is not
 used by the image's default uv configuration.
 
 EPICS Channel Access and pvAccess client tools (`caget`, `camonitor`,

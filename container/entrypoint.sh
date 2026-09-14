@@ -44,6 +44,24 @@ if ! _is_mount /etc/claude-sandbox.conf; then
     install_conf
 fi
 
+# The project venv. VIRTUAL_ENV is the image default (/cache/venv, in the
+# container layer) or the launcher's per-project /cache/venv-for<path> on
+# the shared cache volume. A fresh container gets a fresh venv — the DLS
+# devcontainer's postCreate `uv venv --clear` — marked in the container
+# layer so a restart keeps it; /opt/venv (container-local, on the image
+# PATH) is pointed at it so shells and the jail find `python` without
+# knowing the path. Best-effort: a venv failure must not stop the sandbox.
+venv="${VIRTUAL_ENV:-/cache/venv}"
+venv_mark=/var/lib/claude-sandbox/venv-created
+if [ ! -e "$venv_mark" ] || [ ! -x "$venv/bin/python" ]; then
+    if uv venv --clear --quiet "$venv" 2>&1; then
+        mkdir -p "$(dirname "$venv_mark")" && touch "$venv_mark"
+    else
+        echo "claude-sandbox: could not create venv at $venv (uv above); continuing" >&2
+    fi
+fi
+ln -sfn "$venv" /opt/venv
+
 # The image build skipped this probe deliberately (a builder that can
 # nest namespaces proves nothing about this host — see the Dockerfile).
 # Refuse HERE, at container start, if the runtime host cannot run

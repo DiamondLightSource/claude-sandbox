@@ -26,12 +26,14 @@ case "$*" in
     "container inspect -f {{.Created}} "*) echo 2026-09-13T00:00:00 ;;
     "container inspect -f {{.Image}} "*) echo img1 ;;
     "container inspect -f {{len .ExecIDs}} "*) echo 0 ;;
+    "container inspect claude-sandbox-"*) case "$*" in *"$(cat "$PS" 2>/dev/null | head -1)"*) [ -s "$PS" ] ;; *) [ -e "$MARK" ] ;; esac ;;
     "container inspect "*) [ -e "$MARK" ] ;;
     "image inspect -f {{index .Config.Labels \"io.diamondlightsource.claude-sandbox.launcher-version\"}} "*)
         [ -n "${FAKE_IMG_VER:-}" ] && echo "$FAKE_IMG_VER" ;;
     "image inspect -f {{index .Config.Labels \"org.opencontainers.image.revision\"}} "*) echo abc123 ;;
     "image inspect -f {{.Id}} "*) echo img1 ;;
     "create "*) touch "$MARK" ;;
+    "run --rm -v "*" find /cache/venv-for "*) cat "$VENVS" 2>/dev/null ;;
     "ps -a --filter name=^claude-sandbox- --format {{.Names}}") cat "$PS" 2>/dev/null ;;
     "images --filter reference=*/diamondlightsource/claude-sandbox --format {{.Repository}}:{{.Tag}}") cat "$IMAGES" 2>/dev/null ;;
     "rmi "*) [ "${2:-}" != "in-use:1" ] ;;
@@ -46,7 +48,7 @@ run() {
     while [ "$1" != "--" ]; do envs+=( "$1" ); shift; done; shift
     : > "$LOG"; rm -f "$TMP/mark"
     ( cd "${PROJECT:-$TMP/project}" && env -i PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP" \
-        LOG="$LOG" MARK="$TMP/mark" PS="$TMP/ps" IMAGES="$TMP/images" CLAUDE_SANDBOX_NESTED=1 "${envs[@]}" \
+        LOG="$LOG" MARK="$TMP/mark" PS="$TMP/ps" IMAGES="$TMP/images" VENVS="$TMP/venvs" CLAUDE_SANDBOX_NESTED=1 "${envs[@]}" \
         bash "$LAUNCHER" "$@" 2>"$TMP/err" ); RC=$?
     ERR="$(cat "$TMP/err")"
 }
@@ -108,15 +110,17 @@ case "$(create_line)" in *"-e DISPLAY=:1"*) pass ;; *) fail "DISPLAY not passed:
 case "$(create_line)" in *"-v $TMP/.Xauthority:/root/.Xauthority:ro"*) pass ;; *) fail "Xauthority not mounted ro: $(create_line)" ;; esac
 rm -f "$TMP/.Xauthority"
 
-# --- uv download cache on a named volume; venv stays per container ---------
+# --- /cache on a named volume; per-project venv on it, as the devcontainer --
 run --
-case "$(create_line)" in *"-v claude-sandbox-uv-cache:/cache/uv -e UV_LINK_MODE=copy"*) pass ;; *) fail "uv cache volume: $(create_line)" ;; esac
-assert_not_contains "venv is not on the shared volume" "$(create_line)" "/cache "
-run CLAUDE_SANDBOX_UV_CACHE=mine --
-case "$(create_line)" in *"-v mine:/cache/uv"*) pass ;; *) fail "uv cache volume name override: $(create_line)" ;; esac
-assert_not_contains "volume name not baked as env" "$(create_line)" "-e CLAUDE_SANDBOX_UV_CACHE=mine"
-run CLAUDE_SANDBOX_UV_CACHE= --
-case "$(create_line)" in *":/cache/uv"*) fail "empty name should disable the volume: $(create_line)" ;; *) pass ;; esac
+case "$(create_line)" in *"-v claude-sandbox-cache:/cache "*) pass ;; *) fail "cache volume: $(create_line)" ;; esac
+case "$(create_line)" in *"-e UV_PROJECT_ENVIRONMENT=/cache/venv-for$TMP/project -e VIRTUAL_ENV=/cache/venv-for$TMP/project"*) pass ;; *) fail "per-project venv env: $(create_line)" ;; esac
+case "$(create_line)" in *"-e PRE_COMMIT_HOME=/cache/pre-commit"*) pass ;; *) fail "pre-commit home: $(create_line)" ;; esac
+assert_not_contains "no link-mode override on one filesystem" "$(create_line)" "UV_LINK_MODE=copy"
+run CLAUDE_SANDBOX_CACHE=mine --
+case "$(create_line)" in *"-v mine:/cache "*) pass ;; *) fail "cache volume name override: $(create_line)" ;; esac
+assert_not_contains "volume name not baked as env" "$(create_line)" "-e CLAUDE_SANDBOX_CACHE=mine"
+run CLAUDE_SANDBOX_CACHE= --
+case "$(create_line)" in *":/cache "*) fail "empty name should disable the volume: $(create_line)" ;; *) pass ;; esac
 
 # --- pre-4.0 spellings refuse rather than leak into agent argv -------------
 for old in --agent --host-net --shell; do
@@ -163,6 +167,21 @@ run -- clean --force --images
 grep -qx 'rmi ghcr.io/diamondlightsource/claude-sandbox:4.0.0' "$LOG" && pass || fail "--images did not rmi: $(cat "$LOG")"
 case "$ERR" in *"removed image ghcr.io/diamondlightsource/claude-sandbox:4.0.0"*) pass ;; *) fail "image summary: $ERR" ;; esac
 case "$ERR" in *"removed image in-use"*) fail "in-use image reported removed" ;; *) pass ;; esac
+# --- clean --venvs prunes venvs whose project container is gone ------------
+live="$TMP/ws/live"; gone="$TMP/ws/gone"
+live_name="claude-sandbox-live-$(printf '%s' "$live" | cksum | awk '{print $1}')"
+printf '%s\n' "$live_name" > "$TMP/ps"            # only the live project's container exists (and is running)
+printf '%s\n' "/cache/venv-for$live" "/cache/venv-for$gone" > "$TMP/venvs"
+run -- clean --venvs
+[ "$RC" = 0 ] && pass || fail "clean --venvs rc=$RC: $ERR"
+grep -q "rm -rf /cache/venv-for$gone" "$LOG" && pass || fail "stale venv not removed: $(cat "$LOG")"
+grep -q "rm -rf /cache/venv-for$live" "$LOG" && fail "live project's venv removed" || pass
+case "$ERR" in *"1 venv(s) removed"*) pass ;; *) fail "venvs summary: $ERR" ;; esac
+run -- clean; grep -q 'venv-for' "$LOG" && fail "clean touched venvs without --venvs" || pass
+run CLAUDE_SANDBOX_CACHE= -- clean --venvs
+case "$ERR" in *"no cache volume"*) pass ;; *) fail "clean --venvs without a volume: $ERR" ;; esac
+rm -f "$TMP/ps" "$TMP/venvs"
+
 run -- clean --bogus; [ "$RC" = 2 ] && [ -z "$(grep '^rm ' "$LOG")" ] && pass || fail "clean --bogus accepted (rc=$RC)"
 rm -f "$TMP/ps" "$TMP/images"
 echo "launcher: $PASSED passed, $FAILED failed"

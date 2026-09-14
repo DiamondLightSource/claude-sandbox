@@ -34,12 +34,14 @@
 #                   run that helper of the in-container `claude-sandbox` CLI
 #                   (same as typing it in a shell session), e.g.
 #                   `uvx claude-sandbox gh-auth` or `uvx claude-sandbox verify`.
-#   clean [--force] [--images]
+#   clean [--force] [--images] [--venvs]
 #                   remove the STOPPED project containers this launcher
 #                   created on this host (forge logins in them are lost).
 #                   Running ones are listed and kept; --force removes those
 #                   too, ending their sessions. --images also removes
 #                   claude-sandbox image tags no container uses any more.
+#                   --venvs also removes venvs on the cache volume whose
+#                   project container no longer exists.
 #                   Use it before testing a newly pulled image, so no launch
 #                   silently reconnects to a container built from the old one.
 #   install         (uvx only) install the sandbox into the devcontainer this
@@ -73,9 +75,10 @@
 #   CLAUDE_SANDBOX_SHELL          shell the `shell` verb runs, by name: zsh, bash, ...
 #                                 (default: the shell you ran this from, else
 #                                 $SHELL; bash when the image lacks it). Per run.
-#   CLAUDE_SANDBOX_UV_CACHE       named volume for the uv download cache at
-#                                 /cache/uv, shared by every project container
-#                                 (default claude-sandbox-uv-cache; empty = none)
+#   CLAUDE_SANDBOX_CACHE          named volume at /cache — uv cache, pre-commit
+#                                 home and the per-project venvs, shared by every
+#                                 project container (default claude-sandbox-cache;
+#                                 empty = none)
 #   CLAUDE_SANDBOX_*              any other sandbox variable is passed through
 #                                 at create time (allow-ip, egress-jail, ...)
 set -euo pipefail
@@ -95,6 +98,8 @@ IMAGE="${CLAUDE_SANDBOX_IMAGE:-ghcr.io/diamondlightsource/claude-sandbox:latest}
 ENGINE="${CLAUDE_SANDBOX_ENGINE:-podman}"
 SHARED="${CLAUDE_SANDBOX_SHARED_CONFIG:-$HOME/.config/terminal-config}"
 CONF="${CLAUDE_SANDBOX_CONF:-$HOME/.config/claude-sandbox.conf}"
+# Named volume at /cache (empty = none, the container layer only).
+CACHE_VOLUME="${CLAUDE_SANDBOX_CACHE-claude-sandbox-cache}"
 
 usage() {
     # The header comment above IS the manual; print it (strip the '# ').
@@ -142,6 +147,7 @@ inner=0
 clean=0
 clean_force=0
 clean_images=0
+clean_venvs=0
 create_opts=()     # create-time flags the user passed, for the reuse warning
 mounts_ro=()
 mounts_rw=()
@@ -192,7 +198,8 @@ case "${1:-}" in
             case "$1" in
                 --force)  clean_force=1 ;;
                 --images) clean_images=1 ;;
-                *) echo "claude-container: clean takes only --force and --images" >&2; exit 2 ;;
+                --venvs)  clean_venvs=1 ;;
+                *) echo "claude-container: clean takes only --force, --images and --venvs" >&2; exit 2 ;;
             esac
             shift
         done
@@ -257,8 +264,32 @@ clean_containers() {
         "$ENGINE" rmi "$img" >/dev/null 2>&1 && echo "claude-container: removed image $img" >&2
     done < <("$ENGINE" images --filter reference='*/diamondlightsource/claude-sandbox' --format '{{.Repository}}:{{.Tag}}' 2>/dev/null)
 }
+# --venvs: venvs under /cache/venv-for<path> on the cache volume whose
+# project container no longer exists. Listed and removed from a throwaway
+# container (the volume's host mountpoint is engine-specific and, under
+# docker, root-owned). The container name is recomputed from the path the
+# same way the launcher names it, so a venv is only pruned when ITS
+# container is gone — a live project keeps its venv.
+clean_venvs() {
+    [ -n "$CACHE_VOLUME" ] || { echo "claude-container: no cache volume configured (CLAUDE_SANDBOX_CACHE is empty)" >&2; return 0; }
+    local venv path slug hash removed=0
+    while IFS= read -r venv; do
+        [ -n "$venv" ] || continue
+        path="${venv#/cache/venv-for}"
+        slug="$(basename "$path" | tr -c 'a-zA-Z0-9_.-' '-')"; slug="${slug%-}"
+        hash="$(printf '%s' "$path" | cksum | awk '{print $1}')"
+        if "$ENGINE" container inspect "claude-sandbox-${slug}-${hash}" >/dev/null 2>&1; then
+            continue
+        fi
+        "$ENGINE" run --rm -v "$CACHE_VOLUME:/cache" "$IMAGE" rm -rf "$venv" >/dev/null \
+            && { echo "claude-container: removed venv for $path" >&2; removed=$((removed + 1)); }
+    done < <("$ENGINE" run --rm -v "$CACHE_VOLUME:/cache" "$IMAGE" \
+        find /cache/venv-for -name pyvenv.cfg -printf '%h\n' 2>/dev/null)
+    echo "claude-container: $removed venv(s) removed" >&2
+}
 if [ "$clean" = 1 ]; then
     clean_containers
+    [ "$clean_venvs" = 1 ] && clean_venvs
     exit 0
 fi
 
@@ -339,14 +370,18 @@ create_container() {
     fi
     # Locale for zsh, git and friends; the image generates en_US.UTF-8.
     args+=( -e "LANG=${LANG:-en_US.UTF-8}" )
-    # The uv download cache on a named volume, as the devcontainer's /cache
-    # volume: wheels fetched once serve every project container and survive
-    # --recreate. Only the cache — /cache/venv stays per container, which is
-    # what makes it per project. Cache and venv are then on different
-    # filesystems, so tell uv to copy rather than warn about hardlinks.
-    if [ -n "${CLAUDE_SANDBOX_UV_CACHE-claude-sandbox-uv-cache}" ]; then
-        args+=( -v "${CLAUDE_SANDBOX_UV_CACHE-claude-sandbox-uv-cache}:/cache/uv" -e UV_LINK_MODE=copy )
+    # /cache on a named volume, laid out as the DLS python-copier devcontainer
+    # does it: the uv download cache, pre-commit home and a PER-PROJECT venv at
+    # /cache/venv-for<project path>, all on one filesystem so uv hardlinks
+    # wheels into the venv instead of copying. The entrypoint (re)creates the
+    # venv on a fresh container — like postCreate's `uv venv --clear` — and
+    # points /opt/venv (on the image PATH) at it. Venvs of projects whose
+    # container is gone accumulate on the volume: `clean --venvs` prunes them.
+    if [ -n "$CACHE_VOLUME" ]; then
+        args+=( -v "$CACHE_VOLUME:/cache" )
     fi
+    args+=( -e "UV_PROJECT_ENVIRONMENT=/cache/venv-for$PWD" -e "VIRTUAL_ENV=/cache/venv-for$PWD"
+            -e PRE_COMMIT_HOME=/cache/pre-commit -e UV_PYTHON_CACHE_DIR=/cache/uv-python )
     # X11 for the UNSANDBOXED shell verb only: agents never see it (the
     # shadow masks ~/.Xauthority and the egress jail has no host sockets).
     # Needs --network=host (the default) for the abstract socket; the
@@ -391,7 +426,7 @@ create_container() {
         case "$v" in
             CLAUDE_SANDBOX_IMAGE|CLAUDE_SANDBOX_ENGINE) continue ;;
             CLAUDE_SANDBOX_SHARED_CONFIG|CLAUDE_SANDBOX_CONF) continue ;;
-            CLAUDE_SANDBOX_ALLOW_WRITE|CLAUDE_SANDBOX_SHELL|CLAUDE_SANDBOX_UV_CACHE) continue ;;
+            CLAUDE_SANDBOX_ALLOW_WRITE|CLAUDE_SANDBOX_SHELL|CLAUDE_SANDBOX_CACHE) continue ;;
         esac
         args+=( -e "$v=${!v}" )
     done
