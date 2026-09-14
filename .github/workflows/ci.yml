@@ -78,6 +78,9 @@ jobs:
       - name: Run container launcher tests
         run: bash tests/launcher.sh
 
+      - name: Run container Git configuration tests
+        run: bash tests/container_git.sh
+
   wheel:
     # The PyPI front door (ADR 23) is the one Python packaging in the repo:
     # build it, prove the entry point execs the bundled bash, and prove

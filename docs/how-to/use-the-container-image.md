@@ -62,6 +62,11 @@ a container. Each agent sees its own credential store.
 
 Forge logins are separate and stay in the project container:
 
+The container has a writable Git config with HTTPS rewrites for GitHub and
+Diamond GitLab, so ordinary shell commands such as `git pull` use the same
+forge logins. Only your name and email are imported from the read-only host
+Git config; host credential helpers and SSH settings are not copied.
+
 ```bash
 claude-sandbox shell        # Skip if already in your devcontainer terminal
 claude-sandbox gh-auth

@@ -13,6 +13,12 @@ set -euo pipefail
 # shellcheck disable=SC1091
 source /opt/claude-sandbox/.devcontainer/claude-sandbox/install.sh
 
+# Keep Git's normal global config writable for gh/glab authentication.
+# Import only identity from the separate read-only host mount.
+# shellcheck disable=SC1091
+source /opt/claude-sandbox/container/git-config.sh
+configure_container_git "${HOME:-/root}/.gitconfig-host" "${HOME:-/root}/.gitconfig"
+
 # Persist Claude login/memory/settings across containers when the
 # launcher mounts a shared host dir at /user-terminal-config. No-op when
 # absent — but then ~/.claude dies with the container, and the shadow's
