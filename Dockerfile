@@ -19,26 +19,7 @@
 # Global-scope ARG: `COPY --from` cannot expand a stage-scoped one, so the
 # Node source is a named stage (used by the claude-sandbox stage below).
 ARG NODE_VERSION=22
-# EPICS client tools source, amd64 only (epics-containers publishes no arm64
-# runtime). Global ARGs: an ARG after the first FROM is stage-scoped and
-# invisible to later FROM lines.
-ARG EPICS_BASE_VERSION=7.0.10ec5
-ARG TARGETARCH
 FROM node:${NODE_VERSION}-slim AS node
-
-# The runtime image is ubuntu:noble, the same glibc as our base. Pinned to
-# amd64 so an arm64 build of THIS image can still resolve the stage; the
-# per-arch selector below makes the tools an empty layer on arm64.
-FROM --platform=linux/amd64 ghcr.io/epics-containers/epics-base-runtime:${EPICS_BASE_VERSION} AS epics
-FROM scratch AS epics-tools-amd64
-COPY --from=epics /epics/epics-base/bin/linux-x86_64 /opt/epics/epics-base/bin/linux-x86_64
-COPY --from=epics /epics/epics-base/lib/linux-x86_64 /opt/epics/epics-base/lib/linux-x86_64
-COPY --from=epics /epics/support/pvxs/bin/linux-x86_64 /opt/epics/support/pvxs/bin/linux-x86_64
-COPY --from=epics /epics/support/pvxs/lib/linux-x86_64 /opt/epics/support/pvxs/lib/linux-x86_64
-# A shell-capable base only to create the empty /opt the final COPY expects.
-FROM busybox:stable AS epics-tools-arm64
-RUN mkdir -p /opt
-FROM epics-tools-${TARGETARCH} AS epics-tools
 
 FROM ghcr.io/diamondlightsource/ubuntu-devcontainer:noble AS developer
 
@@ -126,7 +107,8 @@ RUN bash -c ' \
 # `uv venv --clear`) and points /opt/venv — container-local, on PATH
 # below — at it, so two projects sharing the volume never share a venv.
 # Without the launcher (plain `podman run`) the defaults here apply: the
-# venv at /cache/venv in the container layer, wiped with the container. UV_PROJECT_ENVIRONMENT keeps
+# venv at /cache/venv in the container layer, wiped with the container.
+# UV_PROJECT_ENVIRONMENT keeps
 # `uv sync`/`uv add` out of the workspace: the host's own .venv there is
 # never touched, and the container's interpreter path never leaks into
 # it. The shadow passes VIRTUAL_ENV and the UV_* vars through --clearenv
@@ -164,34 +146,6 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     # node-gyp fail loudly with it; the agent should ask, not work around.
     && printf 'ignore-scripts=true\n' > /usr/local/etc/npmrc \
     && node --version && npm --version && npx --version
-
-# EPICS Channel Access and pvAccess client tools (caget, camonitor, pvxget,
-# ...) for the UNSANDBOXED shell verb on a host with beamline networking
-# (--network=host is the launcher default). Copied from the epics-containers
-# runtime image rather than built: base is bash-only and this is a client
-# convenience, not part of the sandbox. Libraries go through ld.so.conf so
-# no LD_LIBRARY_PATH is needed — the shadow refuses LD_* pass-through by
-# design, and the tools are visible ro inside the jail too (where CA/PVA
-# broadcast needs an allow-ip route; see the networking skill). Only the
-# client tools are linked onto PATH: softIoc and friends stay reachable by
-# full path under /opt/epics.
-COPY --from=epics-tools /opt /opt
-RUN if [ ! -d /opt/epics ]; then echo "no EPICS tools for $(uname -m)"; exit 0; fi \
-    # pvxs links libevent, which the runtime image gets from apt.
-    && apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends libevent-core-2.1-7t64 libevent-pthreads-2.1-7t64 \
-    && rm -rf /var/lib/apt/lists/* \
-    && printf '/opt/epics/epics-base/lib/linux-x86_64\n/opt/epics/support/pvxs/lib/linux-x86_64\n' > /etc/ld.so.conf.d/epics.conf \
-    && ldconfig \
-    # CA tools from base, pvAccess tools from pvxs (pvx*; the epics-containers
-    # base builds no pvAccessCPP tools). Existence-checked: a dangling link
-    # would be a 127 at runtime.
-    && for d in /opt/epics/epics-base/bin/linux-x86_64 /opt/epics/support/pvxs/bin/linux-x86_64; do \
-        for t in caget caput camonitor cainfo caRepeater \
-                 pvxget pvxput pvxmonitor pvxinfo pvxlist pvxcall; do \
-            [ -x "$d/$t" ] && ln -s "$d/$t" "/usr/local/bin/$t"; done; done; \
-    ls -l /usr/local/bin/ | grep opt/epics \
-    # Build-time proof the copied libs resolve on this base.
-    && ! ldd /usr/local/bin/caget /usr/local/bin/pvxget | grep "not found"
 
 # No USER directive, deliberately (the DLS base-image pattern): the
 # supported runtime is a ROOTLESS engine, where in-container root maps

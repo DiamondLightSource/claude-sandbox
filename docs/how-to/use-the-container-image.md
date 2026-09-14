@@ -159,14 +159,6 @@ projects whose container is gone stay on the volume until
 another volume name, or empty for none. The mounted project's `.venv` is not
 used by the image's default uv configuration.
 
-EPICS Channel Access and pvAccess client tools (`caget`, `camonitor`,
-`pvxget`, ...) are on the PATH, copied from the epics-containers runtime
-image. From a `shell` session on a beamline-networked host they reach IOCs
-directly, since the container shares the host network. Inside an agent
-session the egress jail applies: see
-[Configure the network egress jail](network-egress-jail.md) for
-`EPICS_CA_ADDR_LIST` and `allow-ip`.
-
 npm lifecycle scripts are disabled by default, but project configuration can
 override that setting. Extensions needing native libraries may need an
 explicit setup step in a container shell.

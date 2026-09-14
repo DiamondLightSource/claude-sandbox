@@ -190,15 +190,14 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   the volume. Refuse: a volume on `/cache/uv` alone; `UV_LINK_MODE=copy`;
   a shared symlink inside the volume; `uv sync` in the entrypoint (runs
   before the session with no feedback — the agent or user syncs).
-- **EPICS client tools in the image (PR #43)**: `COPY --from` the
-  `ghcr.io/epics-containers/epics-base-runtime:<tag>` stage (ubuntu:noble,
-  same glibc) into `/opt/epics`, libs via `/etc/ld.so.conf.d` (NOT
-  `LD_LIBRARY_PATH`: the shadow refuses `LD_*` and `--clearenv`s), a
-  curated list of client tools symlinked into `/usr/local/bin`. For the
-  unsandboxed shell on host-net; in the jail CA needs allow-ip. Refuse:
-  building EPICS in this Dockerfile; putting the tools in `install.sh`
-  (guests get EPICS from their own devcontainer); moving them into the
-  `developer` stage. Bump `EPICS_BASE_VERSION` ARG to update.
+- **Walked back — EPICS client tools in the image (PR #43, 2026-09-14)**:
+  built and green (caget & co. + pvxs `pvx*` copied from
+  `ghcr.io/epics-containers/epics-base-runtime:7.0.10ec5`, ld.so.conf,
+  libevent, amd64-only per-arch stage), then removed the same day: the
+  user judged CA too DLS-specific for a generic tool and not that useful
+  (agents are behind the egress jail anyway); a user who wants the
+  binaries can copy them in. Don't propose it again; the branch history
+  has the working recipe if ever needed.
 - **Testing a shadow branch in the launcher container**: `uvx
   claude-sandbox shell`, clone the branch, `./install --here`; verify
   with `cat /usr/libexec/claude-sandbox/version` (branch hash, not a
