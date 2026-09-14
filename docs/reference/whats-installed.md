@@ -1,12 +1,14 @@
 # What's installed
 
-The files `./install` places, by scope. For the configuration these
-files read, see [configuration](configuration.md).
+`uv tool install claude-sandbox` installs the host launcher. It selects a
+prebuilt image containing the files below. A custom devcontainer gets the
+same files through `uvx claude-sandbox install`.
+For the configuration they read, see [configuration](configuration.md).
 
 ## Container-scoped
 
-Re-established by re-running `./install`, typically wired into
-`postCreate.sh`.
+Preinstalled in the published image. In a custom devcontainer, re-established
+by `uvx claude-sandbox install`, typically wired into `postCreate.sh`.
 
 The apt step also installs `passt` (which provides `pasta`, the userspace
 network forwarder the {ref}`egress jail <adr-network-egress-jail>` attaches to
@@ -14,7 +16,7 @@ Claude's private netns). The jail's one container-side requirement —
 `--device=/dev/net/tun` in `devcontainer.json`'s `runArgs` — is **not**
 something the installer can add (a runArg is a container-launch setting); on a
 host missing it the jail fails closed and `claude` refuses to launch with a
-message naming the fix.
+message naming the fix. The PyPI host launcher adds the tun device automatically.
 
 | Path | Source | Purpose |
 |---|---|---|
@@ -34,19 +36,19 @@ message naming the fix.
 | `/etc/claude-code/managed-settings.json` | jq-merged by `install.sh` | The GLOBAL guard policy. Adds the two hooks (deduped by basename), sets `env.DISABLE_AUTOUPDATER=1` + `autoUpdates:false`. Highest-precedence + user-uneditable, so removing the hooks from `~/.claude/settings.json` does **not** disable the guard. Any real admin policy already in the file is preserved; `allowManagedHooksOnly` is deliberately **not** set (your own hooks still run) |
 | `/etc/codex/requirements.toml` | Written by `install.sh` | Codex's HARD managed tier — the `/etc/codex` analogue of `managed-settings.json`. Carries the same two guard hooks (`SessionStart` → verifier, `UserPromptSubmit` → gate), pointing at the same root-owned `/usr/libexec` scripts. Above Codex's project-scoped `.codex/config.toml`, which lives in the read-write workspace and is therefore attacker-writable. `allow_managed_hooks_only` deliberately **not** set. A file we did not write is left untouched with a warning |
 | `/etc/codex/managed_config.toml` | Written by `install.sh` | Codex's soft managed tier — `check_for_update_on_startup = false`, the same root-cause removal as Claude's `DISABLE_AUTOUPDATER`. The in-sandbox half (`CODEX_UPDATE_DISABLED=1`) is set by the shadow |
-| `/etc/claude-sandbox.conf` | `.devcontainer/claude-sandbox.conf` (skip-if-absent) | Host-global sandbox config read by the shadow at launch — `workspace-root`, `no-forge`, `allow-write`, plus the egress-jail keys `egress-jail` / `allow-ip` (ADR 0015). Applies to **both** agents. See [configuration](configuration.md) |
+| `/etc/claude-sandbox.conf` | Bundled `.devcontainer/claude-sandbox.conf`, or the host launcher's read-only config mount | Sandbox config for all three agents. See [configuration](configuration.md) |
 
 Disabling the auto-updater is root-cause removal: Claude Code's updater
 otherwise re-creates `~/.local/bin/claude` on a version bump, which can
 launch the real binary unwrapped and self-entrench. With the updater
-off, updates happen only via a deliberate re-install (`claude-sandbox
-update`, or re-running `install` from a fresh clone), which
-re-relocates the current binary and re-asserts the shadow. See the
+off, newer agents come from a deliberately updated image or fresh installation.
+Reinstalling the sandbox keeps existing agent binaries and reasserts their
+wrappers. See [Upgrade](../how-to/upgrade.md) and the
 [shadow-on-PATH explanation](../explanations/integrity-guard.md).
 The Codex CLI gets the same treatment through its own managed tier — the
 bypass it closes is identical.
 
-## Both agents, one sandbox
+## Three agents, one sandbox
 
 `claude`, `codex`, and `pi` are wrapped by the **same shadow file**, which resolves a
 per-agent profile from `argv[0]`. The bwrap argv, the egress jail and the
@@ -59,7 +61,8 @@ Each agent sees **only its own credentials**: a `codex` session binds
 sessions get the same workspace bind, the same forge credentials (unless
 `no-forge`), and the same egress jail.
 
-Run `WITH_CODEX=0 ./install` to skip *fetching* the Codex binary. The codex
+Run `WITH_CODEX=0 uvx claude-sandbox install` in a custom devcontainer to skip
+*fetching* the Codex binary. The codex
 shadow and guard are installed either way.
 
 ## User-scope `~/.claude`

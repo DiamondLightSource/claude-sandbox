@@ -8,6 +8,12 @@ Date: 2026-09-13
 
 Accepted
 
+Documentation update (2026-09-14): the recommended host workflow is
+`uv tool install claude-sandbox`, then `claude-sandbox`. The `uvx` launcher
+remains available for one-off use and `uvx claude-sandbox install` remains
+the devcontainer installation recipe. The decision below records the original
+distribution design.
+
 Refines {ref}`ADR 8 <adr-bash-only>` (bash-only) and {ref}`ADR 17
 <adr-remove-promote>` (reference at a pin, never copy).
 

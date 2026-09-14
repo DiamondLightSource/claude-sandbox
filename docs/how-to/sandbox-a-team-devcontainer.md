@@ -1,85 +1,76 @@
 # Sandbox a team devcontainer
 
-Make your project's devcontainer bring up the sandbox automatically for
-every teammate — without copying any sandbox code into your repo. The
-project carries a few lines of `postCreate` wiring; the security-critical
-machinery stays in this one auditable repo, at a revision you pin and bump
-deliberately.
+Use this route when the agent needs your project's existing Debian/Ubuntu
+toolchain. For a standalone agent container, use the
+[PyPI quick start](../tutorials/getting-started.md).
 
-This is the recommended rollout path for a team. For interactive use
-beside your own projects, `uvx claude-sandbox install` in
-[Getting started](../tutorials/getting-started.md) is simpler.
+The devcontainer must run as root under rootless Podman and have uv available.
 
-## 1. Add the postCreate wiring
+## Install on rebuild
 
-In your project's `.devcontainer/postCreate.sh` (create it if absent):
+Add this to `.devcontainer/postCreate.sh`:
 
 ```bash
 #!/usr/bin/env bash
-# Bring up claude-sandbox at a pinned release. Bumping the pin is a
-# deliberate, reviewable act — like any dependency upgrade.
 set -euo pipefail
 uvx claude-sandbox==4.0.0 install
 ```
 
-`uvx` fetches the `claude-sandbox` wheel from PyPI. The wheel ships this
-repository's installer unchanged and execs it; the pinned version is the
-release tag. `install` refuses to run outside a container, so the line
-cannot reshape a host if pasted in the wrong terminal.
+Pin the release so upgrades are reviewed with the project.
+`uvx` is appropriate here: it runs the packaged installer once, which
+places the agent wrappers and administrative helper on the container's PATH.
 
-No `uv` in the image? [Install without uv](install-without-uv.md) has the
-same pin as a clone-and-`install --here` block.
-
-Either way, every teammate gets the `claude-sandbox` helper CLI on PATH
-(`gh-auth`, `glab-auth`, `verify`, `version`). After a wheel install,
-`claude-sandbox update` points back at `uvx` rather than cloning past the
-pin.
-
-## 2. Wire it into devcontainer.json
+Merge these settings into `.devcontainer/devcontainer.json`:
 
 ```json
-// .devcontainer/devcontainer.json
 "postCreateCommand": "bash .devcontainer/postCreate.sh",
 "runArgs": ["--device=/dev/net/tun"]
 ```
 
-(If you already have a `postCreateCommand`, chain the line into it — this
-file is JSONC and yours; nothing here edits it for you.)
+Preserve existing commands and run arguments. Rebuild, then run `claude`,
+`codex` or `pi` in a container terminal.
+For login persistence, add the
+[terminal-config mount](../tutorials/set-up-a-devcontainer.md#persist-agent-logins).
+Without uv, use the [clone fallback](install-without-uv.md).
 
-The `--device=/dev/net/tun` runArg is required by the fail-closed
-[network egress jail](network-egress-jail.md); without it `claude`
-refuses to launch.
-
-## 3. (Optional) team configuration
-
-`install.sh` stamps its bundled `.devcontainer/claude-sandbox.conf` to the
-host-global `/etc/claude-sandbox.conf` (never read from the workspace —
-see {ref}`the config invariant <adr-untrusted-workspace>`). To ship team
-settings, write the conf yourself after the install (the wheel's copy is
-read-only inside the uv cache); with a clone, write them into the clone
-before running the installer:
-
-```bash
-cat > "$CSBX_DIR/.devcontainer/claude-sandbox.conf" <<'EOF'
-# Team defaults — see reference/configuration for all keys.
-allow-ip = 192.168.1.50    # lab device reachable through the jail
-EOF
-bash "$CSBX_DIR/install" --here
-```
-
-:::{admonition} postCreate runs unjailed
-:class: warning
-
-Everything in `postCreate.sh` runs as root at container-create time,
-outside the sandbox. Review changes to it — and to the pin — with the
-same care as a `Dockerfile` change.
+:::{note} DLS: install across your devcontainers
+`python-copier-template` devcontainers source `/user-terminal-config/bashrc`.
+For personal use, add `uvx claude-sandbox install` to its run-once section
+to install on the first shell in each container. Each container still needs
+`/dev/net/tun`. For a shared, reviewed release pin, use the project postCreate
+recipe above.
 :::
 
-## See also
+## Team configuration
 
-- [Use the container image](use-the-container-image.md) — the zero-wiring
-  alternative when your project has no devcontainer.
-- [Run without push access](run-without-push-access.md) — disable forge
-  token binds for read/edit-only sessions.
-- {ref}`adr-remove-promote` — why the sandbox is referenced at a pin
-  instead of copied into your repo (the retired `just promote`).
+Apply settings **after** the installer, which restores the shipped defaults.
+For additions, append lines in `postCreate.sh`:
+
+```bash
+cat >> /etc/claude-sandbox.conf <<'EOF'
+allow-ip = 192.168.1.50
+EOF
+```
+
+For a complete replacement, install a reviewed team config after installation:
+
+```bash
+install -m 0644 .devcontainer/claude-sandbox.conf /etc/claude-sandbox.conf
+```
+
+Retain any shipped defaults your team needs. The runtime reads the copy under
+`/etc`, which the agent cannot change. Review changes to the source config,
+postCreate script and version pin before rebuilding: postCreate runs as root
+outside the agent sandbox.
+
+## Verify and update
+
+From a container terminal:
+
+```bash
+claude-sandbox version
+claude-sandbox verify
+```
+
+To upgrade, change the PyPI version in postCreate and rebuild.
+See [Upgrade](upgrade.md) for the distinction between sandbox and agent updates.

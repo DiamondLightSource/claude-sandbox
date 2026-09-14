@@ -1,8 +1,13 @@
 # Deliberately exposed and out of scope
 
 Anything not in the lockdown list (see the [threat model](../explanations/threat-model.md))
-is reachable from inside Claude. This page reproduces the two reference
+is potentially reachable from inside Claude. This page reproduces the two reference
 tables: what the sandbox deliberately exposes, and what is out of scope.
+
+Paths below are inside the container. The PyPI launcher mounts only the
+project, shared agent state, git identity, and explicitly added paths from
+the workstation. For its read-only host config mount, see
+[Configuration](configuration.md).
 
 ## Deliberately exposed
 

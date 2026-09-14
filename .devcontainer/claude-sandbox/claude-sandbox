@@ -18,6 +18,7 @@ claude-sandbox — sandboxed-Claude helper commands
 Usage: claude-sandbox <command> [args]
 
 Commands:
+  install               Explain that the sandbox is already installed
   gh-auth               Authenticate gh with a GitHub PAT (kept out of shell history)
   glab-auth [hostname]  Authenticate glab with a GitLab PAT (default hostname: gitlab.diamond.ac.uk)
   update                Clone and install the latest claude-sandbox release
@@ -258,6 +259,10 @@ cmd_version() {
 }
 
 case "${1:-help}" in
+    install)
+        echo "claude-sandbox is already installed in this container. No installation is needed."
+        echo "Run claude, codex or pi to start a sandboxed agent session."
+        ;;
     gh-auth)              shift; cmd_gh_auth "$@" ;;
     glab-auth)            shift; cmd_glab_auth "$@" ;;
     update)               shift; cmd_update "$@" ;;

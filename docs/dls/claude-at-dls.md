@@ -1,148 +1,93 @@
 # Claude Code at DLS
 
-This page sets out the Diamond Light Source policy for running Claude
-Code: **why** it must not run directly on a workstation, **what** we run
-instead, and **how** to set that up. The setup instructions deliberately
-prescribe a single recommended route; other supported
-routes are collected in [Further reading for DLS](further-reading.md).
+## Policy
 
-## The risks, and what the sandbox mitigates
-
-Claude Code is an *agentic* tool: it runs shell commands, edits files,
-and fetches from the network on your behalf. Run directly on a
-workstation, two things compound:
-
-- **Everything you can read, it can read**: SSH keys, tokens,
-  browser/IDE state, kerberos caches, and every network the workstation
-  reaches, including beamline and office networks.
-- **It can be steered by content it merely *reads*.** A hostile file,
-  web page, or dependency README can inject instructions (prompt
-  injection). Combined with the above, that is a path from "opened an
-  issue with Claude" to credential theft, data exfiltration, or lateral
-  movement to internal hosts.
-
-[claude-sandbox](https://github.com/DiamondLightSource/claude-sandbox)
-mitigates this by wrapping every `claude` launch in a
-[bubblewrap](https://github.com/containers/bubblewrap) jail, inside a
-devcontainer:
-
-- **Filesystem**: only the project workspace is writable; the rest of
-  the container is read-only and host credentials are masked or empty.
-- **Network**: a fail-closed egress jail blackholes internal (RFC1918)
-  networks, so a compromised session cannot pivot to facility servers or
-  network devices; the internet and explicitly allowed devices stay
-  reachable.
-- **Integrity**: a guard delivered through Claude Code's
-  managed-settings layer fails loud and closed if `claude` is ever
-  launched unwrapped.
-
-The full analysis is in the
-[threat model](../explanations/threat-model.md); the
-[verification checks](../reference/verification-checks.md) are runnable
-on any install via `claude-sandbox verify`. As evidence of the checks in
-practice, see an
-[example expanded audit run](https://gist.github.com/gilesknap/a294d4ee803ec96c6f89196b4f011f0e):
-210 adversarial probes against a live sandbox.
-
-## How we use Claude at DLS
-
-1. **Never run directly on the host.** DLS-managed configuration blocks
-   Claude Code launched on a workstation outside the sandbox (a
-   managed-settings gate that user configuration cannot override) and
-   points the user at this page.
-2. **Always run inside a devcontainer, sandboxed.** All Claude Code use happens
-   in a project devcontainer with claude-sandbox installed; the setup is
-   below.
+You must use **claude-sandbox** when running Claude Code on DLS workstations.
+Running Claude Code directly on the workstation outside the sandbox is not
+permitted. We will enforce this requirement through enterprise settings.
 
 ## Install and run
 
-You do not need prior VS Code or devcontainer knowledge; each step links
-to the detail. If you would rather not use VS Code, the same route works
-from a terminal with the devcontainer CLI:
-[Without VS Code: the devcontainer CLI](further-reading.md#without-vs-code-the-devcontainer-cli).
-
-### 1. Open your project in VS Code
+On your DLS Linux workstation, outside any container:
 
 ```bash
-module load vscode
-code /path/to/my-project
+uv tool install claude-sandbox
+cd /path/to/my-project
+claude-sandbox
 ```
 
-### 2. Open it in its devcontainer
+If uv is unavailable, run `module load uv` first. You also need rootless
+Podman, `/dev/net/tun`, and unprivileged user namespaces; see
+[Getting started](../tutorials/getting-started.md) for checks.
 
-A [devcontainer](https://code.visualstudio.com/docs/devcontainers/containers)
-is a project-defined container VS Code develops inside; DLS projects
-generated from `python-copier-template` already have one. VS Code will
-offer **"Reopen in Container"** when the project has a
-`.devcontainer/devcontainer.json`. Accept it.
+The launcher pulls the prebuilt image and starts Claude inside the sandbox.
+Log in when prompted. Your project is writable, and your agent login and
+memory persist. Run `claude-sandbox` in the same directory for later sessions.
+VS Code and a project devcontainer are optional.
 
-No devcontainer yet? Create a minimal one first:
-[Set up a devcontainer for your project](../tutorials/set-up-a-devcontainer.md).
+:::{note} Already use a project devcontainer?
+That is often the preferred route: Claude can use your project's existing
+tooling. [Install the sandbox there](../how-to/sandbox-a-team-devcontainer.md)
+and run `claude` directly. In the recipes below, skip `claude-sandbox shell`
+and `exit`; run the commands between them in your normal devcontainer terminal,
+outside an agent session.
+:::
 
-### 3. Add three items to devcontainer.json
+## Why use the sandbox?
 
-In your project's `.devcontainer/devcontainer.json`:
+An agent can run commands, edit files and follow instructions hidden in content
+it reads. On a workstation, that can expose SSH keys, tokens, IDE state and
+facility networks.
 
-```json
-"runArgs": ["--device=/dev/net/tun"],
-"mounts": [
-  "source=${localEnv:HOME}/.config/terminal-config,target=/user-terminal-config,type=bind"
-],
-"initializeCommand": "mkdir -p \"$HOME/.config/terminal-config\""
-```
+The launcher runs on the host; the agent runs inside its container and
+bubblewrap jail.
 
-(If a key already exists, merge the entry into it.) The tun device
-powers the network egress jail; the mount makes your Claude login and
-memory survive rebuilds and follow you across devcontainers; the
-`initializeCommand` creates the host directory the mount needs. Details:
-[Further reading for DLS](further-reading.md).
+The sandbox masks host credentials, limits writable paths, and blocks internal
+networks except explicitly allowed IPs. Its integrity guard blocks unwrapped
+Claude launches inside the configured container. Project files, agent credentials,
+forge tokens you provide and allowed services remain accessible to the agent;
+internet access is open. See the [threat model](../explanations/threat-model.md).
 
-Then rebuild: `F1` → **"Dev Containers: Rebuild Container"**.
+## Push to GitHub or Diamond GitLab
 
-### 4. Install claude-sandbox
-
-In a terminal inside the container (`` Ctrl+` `` in VS Code), paste:
+Open a container shell, authenticate, then return to the host:
 
 ```bash
-uvx claude-sandbox install
+claude-sandbox shell        # Skip if already in your devcontainer terminal
+claude-sandbox gh-auth       # GitHub, if needed
+claude-sandbox glab-auth     # Diamond GitLab, if needed
+exit                       # Only if you opened the shell above
 ```
 
-The wheel on PyPI ships the installer and runs it; you get the newest
-**release**. (`python-copier-template` images have `uv`; for one that
-does not, see [Install without uv](../how-to/install-without-uv.md).)
+Resume with `claude-sandbox` on the host, or `claude` in your devcontainer.
 
-### 5. Run Claude
+Use a short-lived token restricted to the project.
+[Authenticate with forges](../how-to/authenticate-with-forges.md) explains
+token permissions. The default network configuration allows Diamond GitLab.
+
+## Stay current
+
+For the host launcher, run in your project directory:
 
 ```bash
-claude
+uv tool upgrade claude-sandbox
+claude-sandbox --recreate
 ```
 
-Log in when prompted (once; the login persists via the mount from
-step 3). To let Claude push to a forge, authenticate with a
-short-lived, single-repo token:
+Recreation removes container-local packages and forge logins; project files
+and shared agent settings remain. Repeat recreation for other projects when
+you want them to use the new version.
 
-```bash
-claude-sandbox gh-auth                    # GitHub
-claude-sandbox glab-auth                  # Diamond GitLab
-```
+For your own devcontainer, follow [devcontainer upgrades](../how-to/upgrade.md#installed-into-your-own-devcontainer).
 
-See [Authenticate with forges](../how-to/authenticate-with-forges.md)
-for the recommended token shape.
+## Existing devcontainers and further help
 
-### 6. Stay current
+For a project's own toolchain, you can
+[install into its devcontainer](../how-to/sandbox-a-team-devcontainer.md)
+and run `claude` there. The published image may not contain site-specific
+build tools or module environments.
 
-```bash
-claude-sandbox version           # what you have
-uvx claude-sandbox@latest install   # upgrade to the latest release
-```
-
-(`claude-sandbox update` knows the sandbox came from the wheel and says
-the same.)
-
-## Further reading
-
-[Further reading for DLS](further-reading.md) collects what this page
-deliberately leaves out: getting Claude into every devcontainer
-automatically, what the three devcontainer.json items do, and the other
-supported routes. The full documentation set starts at the
-[documentation home](../index.md).
+[Devcontainer setup](../tutorials/set-up-a-devcontainer.md) covers persistence
+and DLS terminal settings.
+[Verify the sandbox](../how-to/verify-the-sandbox.md) explains how to check
+a running installation.

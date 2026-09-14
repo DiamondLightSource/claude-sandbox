@@ -1,149 +1,99 @@
 # Getting started
 
-This tutorial gets you to a working, sandboxed Claude Code. You'll be
-working inside a
-Debian/Ubuntu [devcontainer](set-up-a-devcontainer.md) running as `root`
-(the typical rootless-Podman pattern; rootless Docker likely works but is
-untested with the egress jail).
+Install the launcher from PyPI, then run it in the project you want Claude
+Code to work on. The launcher creates the container and sandbox for you.
 
-There are two ways in. **New to devcontainers? Take the quick way** — this
-repo ships its own devcontainer, so there is nothing to build or configure
-yourself. The other way is for when you already work inside your own
-project's devcontainer (and if your project doesn't have one yet,
-[set one up first](set-up-a-devcontainer.md)).
+Already use a project devcontainer? [Installing into it](#already-use-a-devcontainer)
+is often preferable because the agent gets your project's existing tooling.
 
-## The quick way: use claude-sandbox's own devcontainer
+## 1. Install on your host
 
-Clone **this repo** and open it in VS Code:
+You need Linux, [uv](https://docs.astral.sh/uv/getting-started/installation/),
+rootless Podman, `/dev/net/tun`, and unprivileged user namespaces.
+Check that Podman runs rootless:
 
 ```bash
-git clone https://github.com/DiamondLightSource/claude-sandbox
-code claude-sandbox
+podman info --format '{{.Host.Security.Rootless}}'
 ```
 
-When VS Code offers **"Reopen in Container"**, accept it (or press `F1` and
-run **"Dev Containers: Reopen in Container"**). That's it — the sandbox
-installs itself:
+It should print `true`. Rootless Docker is untested; use Podman.
 
-- `postCreate` runs the installer for you, so the shadow `claude` and the
-  global integrity guard are in place the moment the container comes up.
-- The parent directory is mounted at `/workspaces`, so all your **peer
-  projects sit right there** at `/workspaces/<project>`.
-- Your Claude login and memory persist across rebuilds automatically.
-- Claude's network egress is jailed by default — RFC1918 internal hosts and
-  lab devices are blackholed so a compromised session can't pivot to them,
-  while the internet, DNS, and any `allow-ip` devices stay reachable. This
-  repo's devcontainer already ships the one required runArg
-  (`--device=/dev/net/tun`); see [Configure the network egress
-  jail](../how-to/network-egress-jail.md) to add `allow-ip` devices or turn
-  it off.
+In a host terminal, outside any container:
 
-So to work on any project, just:
+:::{note} DLS workstations
+If uv is not on PATH, run `module load uv` in the host terminal first.
+For DLS policy and forge access, see [Claude Code at DLS](../dls/claude-at-dls.md).
+:::
 
 ```bash
-cd /workspaces/<your-project>
-claude
+uv tool install claude-sandbox
 ```
 
-`claude` is sandboxed wherever you launch it. By default the writable root
-is the directory you launch from, so that project is editable and the
-others stay read-only — usually exactly what you want. (To widen it, see
-[Configure the workspace scope](../how-to/configure-workspace-scope.md).)
+If uv reports that its executable directory is missing from `PATH`, run
+`uv tool update-shell` and open a new terminal.
 
-This is the simplest path, especially if your own projects don't have
-devcontainers.
+## 2. Run Claude
 
-## The other way: install into your own devcontainer
+```bash
+cd ~/src/my-project
+claude-sandbox
+```
 
-Already working inside your own project's devcontainer? Install
-claude-sandbox into it.
+The first run pulls the image for your installed package version and creates
+a project container. Claude runs inside its sandbox with the project writable.
+Log in when prompted, using the code-paste flow if needed.
 
-### 1. Install
+Ask Claude to inspect the project or make a small change. Review the diff as
+you normally would: the sandbox limits access, but the agent can still edit
+or delete files in the project.
 
-In a terminal inside the container:
+## 3. Check the sandbox
+
+Exit Claude, then open a container shell:
+
+Already in a devcontainer with the sandbox installed? Skip the first and last
+lines; run the verification command in your normal container terminal.
+
+```bash
+claude-sandbox shell        # Skip if already in your devcontainer terminal
+claude-sandbox verify
+exit                       # Only if you opened the shell above
+```
+
+The shell is outside the inner sandbox; `verify` launches a sandboxed agent
+to run the checks. See [Verify the sandbox](../how-to/verify-the-sandbox.md)
+to interpret results.
+
+## Keep working
+
+Run `claude-sandbox` from the same project to start another session in its
+existing container. Agent login and memory are shared through
+`~/.config/terminal-config`; forge tokens stay in the project container.
+
+- To use another agent: `claude-sandbox codex` or `claude-sandbox pi`.
+- To enable push access: [Authenticate with forges](../how-to/authenticate-with-forges.md).
+- To update: [Upgrade claude-sandbox](../how-to/upgrade.md).
+- For mounts, configuration and toolchains: [Use the container image](../how-to/use-the-container-image.md).
+
+## Already use a devcontainer?
+
+This keeps the agent in your project's own tooling environment. Install inside
+your existing Debian/Ubuntu devcontainer as root:
 
 ```bash
 uvx claude-sandbox install
-```
-
-The wheel on PyPI ships this repository's installer unchanged and runs
-it; you get the newest **release**, and `uvx claude-sandbox==4.0.0 install`
-pins a specific one. Nothing is left behind but the sandbox itself: the
-`claude-sandbox` helper CLI lands on your PATH, and `claude-sandbox update`
-tells you how to move to a newer wheel. If the container has no `uv`, see
-[Install without uv](../how-to/install-without-uv.md) — the same
-installer, run from a clone.
-
-The installer relocates the real Claude binary off your `PATH` and drops a shadow
-`claude` in its place that wraps every invocation in `bwrap`. It also
-installs the global integrity guard and a curated gitconfig. Curious where
-everything lands? See [What's installed](../reference/whats-installed.md).
-
-If your host can't run unprivileged user namespaces, the installer
-**refuses** with a specific, actionable diagnostic rather than installing a
-non-functional sandbox. Fix the reported problem and re-run.
-
-> **Note: the egress jail needs `/dev/net/tun`.** By default Claude's
-> network egress is jailed — a per-process netns that blackholes internal
-> RFC1918 hosts and lab devices so a compromised session can't pivot to them
-> (see the [threat
-> model](../explanations/threat-model.md#the-egress-jail-and-the-native-sandbox)).
-> The jail is *fail-closed*: if the container has no `/dev/net/tun` device,
-> `claude` **refuses to launch** and tells you so. `install` apt-installs
-> `passt` (which provides `pasta`), but it **cannot** add the runArg for you
-> — that's a `devcontainer.json` edit. Add `"--device=/dev/net/tun"` to your
-> `devcontainer.json` `runArgs` and rebuild (this repo's own devcontainer
-> already does). See [Configure the network egress
-> jail](../how-to/network-egress-jail.md).
-
-To restore the sandbox automatically on every rebuild, wire the same
-line into your devcontainer's `postCreate.sh` (pin a version there if
-you want a reviewable rollout — see [Sandbox a team
-devcontainer](../how-to/sandbox-a-team-devcontainer.md)).
-
-### 2. Run Claude
-
-```bash
 claude
 ```
 
-Use Claude exactly as you normally would — the shadow on your `$PATH` wraps
-plain `claude` in the sandbox, nothing else to remember.
+Add `"--device=/dev/net/tun"` to its `runArgs` and rebuild before launching
+an agent. Inside the container, `claude`, `codex` and `pi` launch sandboxed
+agents; `claude-sandbox` is the administrative helper.
 
-## Re-run freely after a rebuild
+Throughout these guides, `claude-sandbox shell` just opens a container terminal.
+If you are already in your devcontainer terminal, skip that step and the matching
+`exit`. The commands between them are identical and run outside an agent session.
 
-The installer is idempotent. After a devcontainer rebuild, just run
-`uvx claude-sandbox install` again (or let `postCreate` do it). Once
-installed, `claude-sandbox version` reports what you have, and
-`uvx claude-sandbox@latest install` moves you to the latest release.
-
-The shadow is re-established **without re-downloading Claude**.
-
-Your statusline script is seeded once and then left alone, so edits you make
-to it survive re-runs.
-
----
-
-> **Note:** rolling the sandbox out to a whole team? Wire the install
-> into your project's `postCreate` at a pinned version — see [Sandbox a team
-> devcontainer](../how-to/sandbox-a-team-devcontainer.md).
-
-## Next steps
-
-- [Verify the sandbox](../how-to/verify-the-sandbox.md) — the sandbox ships
-  with an integrity battery and adversarial breakout probes; run them any
-  time you want proof, or wire them into CI.
-- [Persist your login and memory across rebuilds](../how-to/persist-login-and-memory.md)
-  — add a terminal-config mount if your devcontainer doesn't already have one.
-- [Configure the network egress jail](../how-to/network-egress-jail.md) —
-  the jail is on by default; add `allow-ip` lab devices or satisfy the
-  `--device=/dev/net/tun` requirement. It provides
-  *lateral* (RFC1918) isolation and composes with Claude Code's native
-  `allowedDomains` *internet-domain* isolation as complementary layers — run
-  both.
-- [How-to guides](../how-to.md) — focused recipes for authenticating with
-  forges, widening writable paths, and more.
-- [Architecture and threat model](../explanations.md) — why the sandbox is
-  built the way it is, and what it does and doesn't protect.
-- [Reference](../reference.md) — the configuration keys, the integrity
-  battery, and the moving parts, looked up dryly.
+For the full setup, including installation on rebuild and login persistence,
+see [Set up a devcontainer](set-up-a-devcontainer.md) and
+[Sandbox a team devcontainer](../how-to/sandbox-a-team-devcontainer.md).
+If uv is unavailable, see [Install without uv](../how-to/install-without-uv.md).

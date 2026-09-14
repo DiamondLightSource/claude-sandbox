@@ -1,19 +1,30 @@
 # claude-sandbox
 
-Sandboxed Claude Code, Codex and Pi. A bubblewrap jail hides host
-credentials, an egress allowlist stops lateral movement, and a managed
-integrity guard refuses to run an agent outside the jail.
+Run Claude Code, Codex or Pi in a container with a bubblewrap sandbox that
+isolates host credentials and limits access to internal networks.
 
-This wheel is a front door only. It ships the project's bash launcher and
-installer unchanged and execs them. The security-critical code is bash and
-lives at <https://github.com/DiamondLightSource/claude-sandbox>.
+On a Linux host with uv and rootless Podman:
 
 ```bash
+uv tool install claude-sandbox
 cd ~/src/my-project
-uvx claude-sandbox            # sandboxed claude in a per-project container
-uvx claude-sandbox pi         # or codex; shell for an unsandboxed bash
-uvx claude-sandbox install    # inside a devcontainer, as root: install the sandbox
+claude-sandbox
 ```
 
-The wheel version pins the container image it launches. Documentation:
-<https://diamondlightsource.github.io/claude-sandbox/>.
+Log in when prompted. Use `claude-sandbox codex` or `claude-sandbox pi`
+to choose another agent. The host needs `/dev/net/tun` and unprivileged user
+namespaces; no devcontainer setup is required.
+
+Update with `uv tool upgrade claude-sandbox`, then
+`claude-sandbox --recreate` in each project. Recreation removes
+container-local packages and forge logins, but retains project files and
+shared agent settings.
+
+Already inside a Debian/Ubuntu devcontainer? As root, run
+`uvx claude-sandbox install`, then `claude`. That container must expose
+`/dev/net/tun`.
+
+The package bundles the project's Bash launcher and installer; its version
+selects the matching container image.
+[Documentation](https://diamondlightsource.github.io/claude-sandbox/) ·
+[Source](https://github.com/DiamondLightSource/claude-sandbox)
