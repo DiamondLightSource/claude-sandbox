@@ -1,6 +1,4 @@
-            case "$(uname -m)" in x86_64)
-              for t in caget pvget; do rc=0; "$t" -h >/dev/null 2>&1 || rc=$?; echo "$t -h rc=$rc"; test "$rc" -le 1; done ;;
-            esac# Build and publish the claude-sandbox container image (the
+# Build and publish the claude-sandbox container image (the
 # `claude-sandbox` stage of the root Dockerfile) to GHCR — sandboxed
 # Claude Code for hosts without a devcontainer workflow. Mirrors the
 # DiamondLightSource/ubuntu-devcontainer approach: per-arch native builds
@@ -104,7 +102,7 @@ jobs:
             test "$(readlink -f /opt/venv)" = /cache/venv
             python -c "import os, sys; assert os.path.realpath(sys.prefix) == \"/cache/venv\", sys.prefix"
             # The EPICS client tools resolve (amd64 only)
-            case "$(uname -m)" in x86_64) caget -h >/dev/null 2>&1 || test $? = 1; pvget -h >/dev/null 2>&1 || test $? = 1 ;; esac
+            case "$(uname -m)" in x86_64) for t in caget pvget; do rc=0; "$t" -h >/dev/null 2>&1 || rc=$?; echo "$t -h rc=$rc"; test "$rc" -le 1; done ;; esac
             # (uv python find would answer with the active venv itself)
             grep -q "^home = /opt/uv/python/" /cache/venv/pyvenv.cfg
             # Image-only Node LTS: node/npm/npx from the official image
