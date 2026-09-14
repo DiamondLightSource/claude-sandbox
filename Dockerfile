@@ -22,7 +22,7 @@ ARG NODE_VERSION=22
 # EPICS client tools source, amd64 only (epics-containers publishes no arm64
 # runtime). Global ARGs: an ARG after the first FROM is stage-scoped and
 # invisible to later FROM lines.
-ARG EPICS_BASE_VERSION=23.9.2
+ARG EPICS_BASE_VERSION=7.0.10ec5
 ARG TARGETARCH
 FROM node:${NODE_VERSION}-slim AS node
 
