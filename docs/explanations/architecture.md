@@ -319,9 +319,9 @@ projects:
 
 - **This repo's own devcontainer** (dogfood) — `postCreate` runs the
   installer.
-- **A clone beside your project** (guest) — `git clone` + `./install`
-  inside any devcontainer; a team wires the same thing into their
-  project's `postCreate` at a pinned tag
+- **The PyPI wheel** (guest) — `uvx claude-sandbox install` inside any
+  devcontainer (or a clone + `./install` without `uv`); a team wires the
+  same line into their project's `postCreate` at a pinned version
   ([Sandbox a team devcontainer](../how-to/sandbox-a-team-devcontainer.md)).
 - **The published container image** — the image build sources
   `install.sh` through the same seam.

@@ -8,10 +8,10 @@ keep that page tight.
 Devcontainers that mount `/user-terminal-config` and source its `bashrc`
 (all `python-copier-template` devcontainers do) have a run-once section
 in `/user-terminal-config/bashrc` that executes on a container's first
-shell. Add the install one-liner there:
+shell. Add the install line there:
 
 ```bash
-cd /tmp && rm -rf claude-sandbox && git clone https://github.com/DiamondLightSource/claude-sandbox && claude-sandbox/install
+uvx claude-sandbox install
 ```
 
 Every devcontainer you open then installs the sandbox on first use,

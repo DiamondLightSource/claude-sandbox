@@ -39,31 +39,19 @@ rootless-podman pattern):
 uvx claude-sandbox install
 ```
 
-The wheel on PyPI ships the installer unchanged; `uvx claude-sandbox==4.0.0
-install` pins a release. Without `uv` in the container, clone and run the
-same installer:
-
-```
-cd /tmp && rm -rf claude-sandbox && git clone https://github.com/DiamondLightSource/claude-sandbox && claude-sandbox/install
-```
-
-That installs the newest **release**, not the tip of `main` — `install`
-checks the newest release tag out first and prints which one it picked
-(`--here` installs the checkout as-is; `--release REF` picks a specific
-one).
+The wheel on PyPI ships the installer unchanged and runs it; you get the
+newest **release**, and `uvx claude-sandbox==4.0.0 install` pins one. No
+`uv` in the container? The same installer runs from a clone — see
+[Install without uv][without-uv].
 
 Then run `claude` as usual — the shadow on `$PATH` wraps every invocation.
-Nothing depends on the clone after install, so a clone in `/tmp` is fine —
-it evaporates with the container. The installer is idempotent; wire the
-same one-liner into your devcontainer's `postCreate.sh` to re-establish it
-on every rebuild (or clone at a pinned tag for a reviewable rollout — see
-the [team how-to][team-howto]). Afterwards, `claude-sandbox update`
-upgrades to the latest release and `claude-sandbox version` reports what
-you have.
+The installer is idempotent; wire the same line into your devcontainer's
+`postCreate.sh` to re-establish it on every rebuild (pinned, for a
+reviewable rollout — see the [team how-to][team-howto]). Afterwards,
+`claude-sandbox version` reports what you have and `claude-sandbox update`
+says how to move to a newer release.
 
-The [getting-started tutorial][tutorial] has the full walkthrough, including the
-`/user-terminal-config` clone location for `python-copier-template`
-devcontainers.
+The [getting-started tutorial][tutorial] has the full walkthrough.
 
 ### Not a devcontainer user? Prebuilt image
 
@@ -154,6 +142,7 @@ See [`LICENSE`](./LICENSE).
 
 [tutorial]: https://diamondlightsource.github.io/claude-sandbox/tutorials/getting-started.html
 [team-howto]: https://diamondlightsource.github.io/claude-sandbox/how-to/sandbox-a-team-devcontainer.html
+[without-uv]: https://diamondlightsource.github.io/claude-sandbox/how-to/install-without-uv.html
 [howto]: https://diamondlightsource.github.io/claude-sandbox/how-to.html
 [reference]: https://diamondlightsource.github.io/claude-sandbox/reference.html
 [explain]: https://diamondlightsource.github.io/claude-sandbox/explanations.html

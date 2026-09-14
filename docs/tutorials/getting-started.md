@@ -58,24 +58,21 @@ devcontainers.
 Already working inside your own project's devcontainer? Install
 claude-sandbox into it.
 
-### 1. Clone and install
+### 1. Install
 
 In a terminal inside the container:
 
 ```bash
-cd /tmp && rm -rf claude-sandbox && git clone https://github.com/DiamondLightSource/claude-sandbox && claude-sandbox/install
+uvx claude-sandbox install
 ```
 
-This installs the **newest release**, not the tip of `main`: the clone
-lands on the default branch, and `install` then checks out the newest
-release tag before installing it — the same revision `claude-sandbox
-update` would give you. It prints which one it picked. (To install a
-specific release instead: `claude-sandbox/install --release 3.0.0`.)
-
-The clone is **disposable** — nothing depends on it after install (the
-`claude-sandbox` helper CLI lands on your PATH, and
-`claude-sandbox update` fetches its own fresh clone when you upgrade), so
-`/tmp` is exactly the right place: it evaporates with the container.
+The wheel on PyPI ships this repository's installer unchanged and runs
+it; you get the newest **release**, and `uvx claude-sandbox==4.0.0 install`
+pins a specific one. Nothing is left behind but the sandbox itself: the
+`claude-sandbox` helper CLI lands on your PATH, and `claude-sandbox update`
+tells you how to move to a newer wheel. If the container has no `uv`, see
+[Install without uv](../how-to/install-without-uv.md) — the same
+installer, run from a clone.
 
 The installer relocates the real Claude binary off your `PATH` and drops a shadow
 `claude` in its place that wraps every invocation in `bwrap`. It also
@@ -100,9 +97,8 @@ non-functional sandbox. Fix the reported problem and re-run.
 > jail](../how-to/network-egress-jail.md).
 
 To restore the sandbox automatically on every rebuild, wire the same
-clone-and-install one-liner — or `uvx claude-sandbox install`, when the
-image has `uv` — into your devcontainer's `postCreate.sh`
-(pin a tag there if you want a reviewable rollout — see [Sandbox a team
+line into your devcontainer's `postCreate.sh` (pin a version there if
+you want a reviewable rollout — see [Sandbox a team
 devcontainer](../how-to/sandbox-a-team-devcontainer.md)).
 
 ### 2. Run Claude
@@ -116,23 +112,20 @@ plain `claude` in the sandbox, nothing else to remember.
 
 ## Re-run freely after a rebuild
 
-The installer is idempotent. After a devcontainer rebuild, just run the
-clone-and-install one-liner again (or let `postCreate` do it). Once
-installed, `claude-sandbox update` upgrades you to the latest release and
-`claude-sandbox version` reports what you have.
+The installer is idempotent. After a devcontainer rebuild, just run
+`uvx claude-sandbox install` again (or let `postCreate` do it). Once
+installed, `claude-sandbox version` reports what you have, and
+`uvx claude-sandbox@latest install` moves you to the latest release.
 
 The shadow is re-established **without re-downloading Claude**.
 
 Your statusline script is seeded once and then left alone, so edits you make
-to it survive re-runs. If you'd rather a re-run pull the clone's current
-statusline, run `STATUS=1 <clone>/install --here` (`--here` because the
-clone is now checked out at the release it installed, and re-running
-without it would ask to move to a newer one).
+to it survive re-runs.
 
 ---
 
-> **Note:** rolling the sandbox out to a whole team? Wire the clone-and-install
-> into your project's `postCreate` at a pinned tag — see [Sandbox a team
+> **Note:** rolling the sandbox out to a whole team? Wire the install
+> into your project's `postCreate` at a pinned version — see [Sandbox a team
 > devcontainer](../how-to/sandbox-a-team-devcontainer.md).
 
 ## Next steps

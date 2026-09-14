@@ -104,13 +104,12 @@ Then rebuild: `F1` → **"Dev Containers: Rebuild Container"**.
 In a terminal inside the container (`` Ctrl+` `` in VS Code), paste:
 
 ```bash
-cd /tmp && rm -rf claude-sandbox && git clone https://github.com/DiamondLightSource/claude-sandbox && claude-sandbox/install
+uvx claude-sandbox install
 ```
 
-The clone is disposable: nothing depends on it after install. You get the
-newest **release** — the installer checks the newest release tag out
-before installing and prints which one — so a fresh install and
-`claude-sandbox update` (step 6) always agree on what "current" means.
+The wheel on PyPI ships the installer and runs it; you get the newest
+**release**. (`python-copier-template` images have `uv`; for one that
+does not, see [Install without uv](../how-to/install-without-uv.md).)
 
 ### 5. Run Claude
 
@@ -133,9 +132,12 @@ for the recommended token shape.
 ### 6. Stay current
 
 ```bash
-claude-sandbox version    # what you have
-claude-sandbox update     # upgrade to the latest release
+claude-sandbox version           # what you have
+uvx claude-sandbox@latest install   # upgrade to the latest release
 ```
+
+(`claude-sandbox update` knows the sandbox came from the wheel and says
+the same.)
 
 ## Further reading
 
