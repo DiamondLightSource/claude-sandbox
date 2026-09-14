@@ -19,11 +19,26 @@
 # Global-scope ARG: `COPY --from` cannot expand a stage-scoped one, so the
 # Node source is a named stage (used by the claude-sandbox stage below).
 ARG NODE_VERSION=22
-FROM node:${NODE_VERSION}-slim AS node
-# EPICS client tools source (copied into the claude-sandbox stage below).
-# The runtime image is built on ubuntu:noble, the same glibc as our base.
+# EPICS client tools source, amd64 only (epics-containers publishes no arm64
+# runtime). Global ARGs: an ARG after the first FROM is stage-scoped and
+# invisible to later FROM lines.
 ARG EPICS_BASE_VERSION=23.9.2
-FROM ghcr.io/epics-containers/epics-base-runtime:${EPICS_BASE_VERSION} AS epics
+ARG TARGETARCH
+FROM node:${NODE_VERSION}-slim AS node
+
+# The runtime image is ubuntu:noble, the same glibc as our base. Pinned to
+# amd64 so an arm64 build of THIS image can still resolve the stage; the
+# per-arch selector below makes the tools an empty layer on arm64.
+FROM --platform=linux/amd64 ghcr.io/epics-containers/epics-base-runtime:${EPICS_BASE_VERSION} AS epics
+FROM scratch AS epics-tools-amd64
+COPY --from=epics /epics/epics-base/bin/linux-x86_64 /opt/epics/epics-base/bin/linux-x86_64
+COPY --from=epics /epics/epics-base/lib/linux-x86_64 /opt/epics/epics-base/lib/linux-x86_64
+COPY --from=epics /epics/support/pvxs/bin/linux-x86_64 /opt/epics/support/pvxs/bin/linux-x86_64
+COPY --from=epics /epics/support/pvxs/lib/linux-x86_64 /opt/epics/support/pvxs/lib/linux-x86_64
+# A shell-capable base only to create the empty /opt the final COPY expects.
+FROM busybox:stable AS epics-tools-arm64
+RUN mkdir -p /opt
+FROM epics-tools-${TARGETARCH} AS epics-tools
 
 FROM ghcr.io/diamondlightsource/ubuntu-devcontainer:noble AS developer
 
@@ -153,11 +168,9 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 # broadcast needs an allow-ip route; see the networking skill). Only the
 # client tools are linked onto PATH: softIoc and friends stay reachable by
 # full path under /opt/epics.
-COPY --from=epics /epics/epics-base/bin/linux-x86_64 /opt/epics/epics-base/bin/linux-x86_64
-COPY --from=epics /epics/epics-base/lib/linux-x86_64 /opt/epics/epics-base/lib/linux-x86_64
-COPY --from=epics /epics/support/pvxs/bin/linux-x86_64 /opt/epics/support/pvxs/bin/linux-x86_64
-COPY --from=epics /epics/support/pvxs/lib/linux-x86_64 /opt/epics/support/pvxs/lib/linux-x86_64
-RUN printf '/opt/epics/epics-base/lib/linux-x86_64\n/opt/epics/support/pvxs/lib/linux-x86_64\n' > /etc/ld.so.conf.d/epics.conf \
+COPY --from=epics-tools /opt /opt
+RUN if [ ! -d /opt/epics ]; then echo "no EPICS tools for $(uname -m)"; exit 0; fi \
+    && printf '/opt/epics/epics-base/lib/linux-x86_64\n/opt/epics/support/pvxs/lib/linux-x86_64\n' > /etc/ld.so.conf.d/epics.conf \
     && ldconfig \
     && for t in caget caput camonitor cainfo caRepeater pvget pvput pvmonitor pvinfo pvlist; do \
         ln -s /opt/epics/epics-base/bin/linux-x86_64/$t /usr/local/bin/$t; done \
