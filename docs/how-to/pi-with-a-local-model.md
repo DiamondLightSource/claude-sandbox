@@ -7,14 +7,6 @@ agent does can leave the jail. One page, start to finish; the lllm2 tutorial
 [From a model to Pi](https://gilesknap.github.io/lllm2/tutorials/installation.html)
 covers the model half in more depth.
 
-```{note}
-The project is being renamed from **claude-sandbox** to **agent-sandbox**
-([PR #30](https://github.com/DiamondLightSource/claude-sandbox/pull/30)). When that lands, `claude-container`
-becomes `agent-container`, the image becomes
-`ghcr.io/diamondlightsource/agent-sandbox`, and `CLAUDE_SANDBOX_*` variables
-become `AGENT_SANDBOX_*`. Everything else on this page is unchanged.
-```
-
 ## What you need
 
 - A Linux machine with an NVIDIA GPU and driver.
