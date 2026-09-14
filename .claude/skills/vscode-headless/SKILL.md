@@ -67,6 +67,22 @@ user must read it first. Do not extend it beyond package installs.
   is a private tmpfs that nothing outside can read.
 - Stop VS Code with the DevTools call `Browser.close` through `eval` or a short
   Node script when `kill` does not reach the process.
+- On a fresh profile the chat box may hold focus, so focus or create a terminal
+  through the command palette before typing, and use output-only markers,
+  because the typed command is also visible in `snapshot`.
+
+## Driving a Remote-SSH connection
+
+A tool that opens a remote workspace, such as `podbench ide vscode`, adds two
+wrinkles the driver must handle:
+
+- Two windows appear: a short-lived bootstrap window and the workspace window.
+  Select the workspace window by title, not the first `windows` entry.
+- The workspace title gains its `[SSH: ...]` suffix a few seconds after the
+  tool reports the connection is ready. Wait for the suffix before sending
+  input, or a command runs against a local, disconnected window.
+- Give each connection its own `--user-data-dir` and port, so a stale window
+  from an earlier target cannot capture the new workspace.
 
 ## Checks that prove the setup is sound
 
