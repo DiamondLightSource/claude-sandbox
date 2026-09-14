@@ -29,8 +29,12 @@ claude-sandbox shell        # Skip if already in your devcontainer terminal
 ```
 
 `shell` is an **unsandboxed shell inside the container**, for administration
-such as forge login and installing system packages. From there, `claude`,
-`codex` and `pi` still start sandboxed agents.
+such as forge login and installing system packages. It runs the shell
+you launched from (zsh in a zsh terminal, even where the login `$SHELL` is
+bash; override with `CLAUDE_SANDBOX_SHELL=zsh`; bash if the image lacks it) and sources your `~/.config/terminal-config` rc file, as a
+devcontainer terminal does. X11 applications reach your display when
+`DISPLAY` was set at creation.
+From there, `claude`, `codex` and `pi` still start sandboxed agents.
 
 This is equivalent to your normal terminal in a devcontainer with the sandbox
 installed. There, skip `claude-sandbox shell` and the matching `exit` in these
@@ -120,10 +124,13 @@ next agent launch; recreate if your editor replaces the mounted file.
 See [Configuration](../reference/configuration.md) for all keys and
 [Configure the network egress jail](network-egress-jail.md) for network access.
 
-To expose another directory in both the container and the sandbox:
+The project directory is the only writable path. Its parent is mounted
+read-only, so sibling checkouts are readable as in a devcontainer (skipped
+when the parent is your home directory). To add more:
 
 ```bash
-claude-sandbox --mount ~/src/shared-lib
+claude-sandbox --mount ~/src/shared-lib       # read-only
+claude-sandbox --mount-rw ~/src/other-repo    # writable in the container and the sandbox
 ```
 
 Mounts, network mode and forwarded `CLAUDE_SANDBOX_*` variables are fixed

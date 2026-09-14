@@ -144,6 +144,28 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   command, never the name alone. Why it exists: reconnecting keeps the
   image a container was created from, so after a pull it is unclear
   which image a session runs; `--recreate` is one project at a time.
+- **Devcontainer-like filesystem view (2026-09-14)**: the launcher binds
+  the project's PARENT read-only at its host path (siblings readable, as
+  the devcontainer's `/workspaces` mount) and the project rw, nested
+  over it; `--mount` is now READ-ONLY and `--mount-rw` is the old rw +
+  allow-write behaviour. The parent bind is skipped when the parent is
+  `/` or contains `$HOME` (a project directly under `~` would hand
+  `~/.ssh` and every host token to the container, ro or not — the
+  launcher says so). `shell` execs the shell the launcher was run FROM
+  (`detect_shell` walks the ancestors; `$SHELL` is only the login shell —
+  bash at DLS while terminals run zsh), or `CLAUDE_SANDBOX_SHELL` (per
+  run, not create-time; bash fallback inside):
+  the DLS base image already installs zsh + oh-my-zsh and writes
+  `/root/.zshrc` to source `/user-terminal-config/zshrc`, so the
+  terminal-config richness was inherited all along — only the verb
+  hard-coded bash. Refuse: hard-coding zsh instead (user declined to force
+  it on people). `LANG` is always
+  set; `DISPLAY` + `/tmp/.X11-unix` + `~/.Xauthority` (ro) are passed
+  only when the host has a DISPLAY, and only the unsandboxed shell sees
+  them (the shadow masks `~/.Xauthority`; nothing in the agent path
+  changed). Refuse: mounting the parent when it holds `$HOME`; making
+  `--mount` rw again "for convenience"; forwarding DISPLAY into the
+  shadow's pass-through list.
 - **Testing a shadow branch in the launcher container**: `uvx
   claude-sandbox shell`, clone the branch, `./install --here`; verify
   with `cat /usr/libexec/claude-sandbox/version` (branch hash, not a

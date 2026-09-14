@@ -11,8 +11,15 @@
 # devcontainer (re-authenticate after --recreate), never a host-credential
 # mount. The container's own process is an idle keeper; every session is
 # an exec into it, so the verb and AGENT_ARGS apply on every run.
-# Only --bridge and --mount are fixed at create time (--recreate to
-# change them). The container stops when its last session exits.
+# Only --bridge, --mount and --mount-rw are fixed at create time
+# (--recreate to change them). The container stops when its last session
+# exits.
+#
+# Filesystem view, like a devcontainer's: the project dir is bound at its
+# host path read-write and is the only place agents may write; its PARENT
+# is bound read-only at its host path so sibling checkouts are readable
+# (skipped when the parent is / or contains $HOME, which would expose
+# ~/.ssh and every other host secret to the container).
 #
 # Usage: claude-container [OPTIONS] [VERB] [ARGS...]
 #
@@ -20,7 +27,7 @@
 #   claude | codex | pi   a sandboxed session of that agent. All use the same
 #                   sandbox. Pi supports cloud and local models; see the
 #                   use-pi guide for the localhost model relay.
-#   shell           a plain (UNSANDBOXED) bash in the container instead of an
+#   shell           a plain (UNSANDBOXED) shell in the container instead of an
 #                   agent — e.g. to run `claude-sandbox gh-auth` first. Start a
 #                   sandboxed session from it with claude / codex / pi.
 #   gh-auth | glab-auth | verify | pi-local | version | update
@@ -46,7 +53,9 @@
 #                   reach a local model server and non-agent shells see EPICS
 #                   CA broadcast and X11; the agents' egress jail is the same
 #                   either way (it only ever restricts).
-#   --mount PATH    bind PATH read-write into the container AND the
+#   --mount PATH    bind PATH READ-ONLY into the container (repeatable);
+#                   agents can read it, nothing in the container can write it
+#   --mount-rw PATH bind PATH read-write into the container AND the
 #                   sandbox (repeatable; becomes an allow-write entry)
 #   --version       print launcher version and exit
 #   -h | --help     this text
@@ -61,6 +70,9 @@
 #   CLAUDE_SANDBOX_CONF           host sandbox conf, mounted READ-ONLY at
 #                                 /etc/claude-sandbox.conf when the file exists
 #                                 (default ~/.config/claude-sandbox.conf)
+#   CLAUDE_SANDBOX_SHELL          shell the `shell` verb runs, by name: zsh, bash, ...
+#                                 (default: the shell you ran this from, else
+#                                 $SHELL; bash when the image lacks it). Per run.
 #   CLAUDE_SANDBOX_*              any other sandbox variable is passed through
 #                                 at create time (allow-ip, egress-jail, ...)
 set -euo pipefail
@@ -128,7 +140,8 @@ clean=0
 clean_force=0
 clean_images=0
 create_opts=()     # create-time flags the user passed, for the reuse warning
-mounts=()
+mounts_ro=()
+mounts_rw=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --recreate) recreate=1; shift ;;
@@ -140,13 +153,17 @@ while [ $# -gt 0 ]; do
             echo "  host networking is now the default; --bridge opts out" >&2
             exit 2
             ;;
-        --mount)
+        --mount|--mount-rw)
             if [ $# -lt 2 ]; then
-                echo "claude-container: --mount needs a PATH" >&2
+                echo "claude-container: $1 needs a PATH" >&2
                 exit 1
             fi
-            mounts+=( "$(realpath "$2")" )
-            create_opts+=( "--mount $2" )
+            if [ "$1" = --mount ]; then
+                mounts_ro+=( "$(realpath "$2")" )
+            else
+                mounts_rw+=( "$(realpath "$2")" )
+            fi
+            create_opts+=( "$1 $2" )
             shift 2
             ;;
         --version) echo "claude-sandbox $VERSION"; exit 0 ;;
@@ -254,6 +271,26 @@ container_exists() {
     "$ENGINE" container inspect "$NAME" >/dev/null 2>&1
 }
 
+# The shell the user is typing in, for the shell verb: walk up from our
+# parent (through uvx's wrapper processes) to the first known interactive
+# shell. $SHELL is only the LOGIN shell — at DLS that is bash while the
+# terminal runs zsh — so it is the fallback, not the answer.
+detect_shell() {
+    local pid=$PPID stat comm n
+    for n in 1 2 3 4 5 6; do
+        [ "$pid" -gt 1 ] 2>/dev/null || break
+        # /proc/PID/stat: "PID (comm) STATE PPID ..." — comm may hold spaces,
+        # so split on the closing paren. No ps: it fails under a bound /proc.
+        stat="$(cat "/proc/$pid/stat" 2>/dev/null)" || break
+        comm="${stat#*\(}"; comm="${comm%\)*}"
+        case "${comm#-}" in
+            zsh|bash|fish|ksh|tcsh|dash|sh) echo "${comm#-}"; return ;;
+        esac
+        stat="${stat##*\) }"; stat="${stat#* }"; pid="${stat%% *}"
+    done
+    basename "${SHELL:-bash}"
+}
+
 container_running() {
     [ "$("$ENGINE" container inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null)" = "true" ]
 }
@@ -271,12 +308,40 @@ create_container() {
         --device /dev/net/tun
         # SELinux hosts (RHEL): don't try to relabel NFS/home mounts.
         --security-opt label=disable
-        -v "$PWD:$PWD" -w "$PWD"
         -v "$SHARED:/user-terminal-config"
         -e "TERM=${TERM:-xterm-256color}"
     )
+    # Siblings, as a devcontainer's /workspaces mount gives them: the
+    # parent dir read-only at its host path, listed BEFORE the project so
+    # the project's rw bind nests over it. Not when the parent is / (that
+    # would shadow the image root) or holds $HOME (that would hand ~/.ssh
+    # and every host token to the container, ro or not).
+    local parent
+    parent="$(dirname "$PWD")"
+    case "$parent" in
+        /) ;;
+        *)
+            case "$HOME/" in
+                "$parent"/*) echo "claude-container: not mounting $parent read-only: it contains your home directory" >&2 ;;
+                *) args+=( -v "$parent:$parent:ro" ) ;;
+            esac
+            ;;
+    esac
+    args+=( -v "$PWD:$PWD" -w "$PWD" )
     if [ "$host_net" = 1 ]; then
         args+=( --network=host )
+    fi
+    # Locale for zsh, git and friends; the image generates en_US.UTF-8.
+    args+=( -e "LANG=${LANG:-en_US.UTF-8}" )
+    # X11 for the UNSANDBOXED shell verb only: agents never see it (the
+    # shadow masks ~/.Xauthority and the egress jail has no host sockets).
+    # Needs --network=host (the default) for the abstract socket; the
+    # filesystem socket dir is bound for the --bridge case.
+    if [ -n "${DISPLAY:-}" ]; then
+        args+=( -e "DISPLAY=$DISPLAY" )
+        [ -d /tmp/.X11-unix ] && args+=( -v /tmp/.X11-unix:/tmp/.X11-unix:ro )
+        local xauth="${XAUTHORITY:-$HOME/.Xauthority}"
+        [ -f "$xauth" ] && args+=( -v "$xauth:/root/.Xauthority:ro" )
     fi
     # Read-only git identity (name/email) for commits inside the sandbox.
     if [ -f "$HOME/.gitconfig" ]; then
@@ -288,10 +353,15 @@ create_container() {
     if [ -f "$CONF" ]; then
         args+=( -v "$CONF:/etc/claude-sandbox.conf:ro" )
     fi
-    # --mount PATH: bind into the container at the same path, and tell the
-    # sandbox to bind it rw too (allow-write, joined with ':').
+    # --mount PATH: read-only at the same path. The sandbox's --ro-bind / /
+    # shows it to agents as-is; nothing in the container can write it.
     local m allow_write=""
-    for m in "${mounts[@]+"${mounts[@]}"}"; do
+    for m in "${mounts_ro[@]+"${mounts_ro[@]}"}"; do
+        args+=( -v "$m:$m:ro" )
+    done
+    # --mount-rw PATH: read-write at the same path, and tell the sandbox to
+    # bind it rw too (allow-write, joined with ':').
+    for m in "${mounts_rw[@]+"${mounts_rw[@]}"}"; do
         args+=( -v "$m:$m" )
         allow_write="${allow_write:+$allow_write:}$m"
     done
@@ -307,7 +377,7 @@ create_container() {
         case "$v" in
             CLAUDE_SANDBOX_IMAGE|CLAUDE_SANDBOX_ENGINE) continue ;;
             CLAUDE_SANDBOX_SHARED_CONFIG|CLAUDE_SANDBOX_CONF) continue ;;
-            CLAUDE_SANDBOX_ALLOW_WRITE) continue ;;
+            CLAUDE_SANDBOX_ALLOW_WRITE|CLAUDE_SANDBOX_SHELL) continue ;;
         esac
         args+=( -e "$v=${!v}" )
     done
@@ -346,7 +416,7 @@ if container_exists; then
         echo "  it keeps running the old one until you: $SELF --recreate" >&2
     fi
     if [ ${#create_opts[@]} -gt 0 ]; then
-        # Everything else applies per run; these two are baked into the
+        # Everything else applies per run; these are baked into the
         # container and silently ignored on reuse — say so.
         echo "  create-time option(s) ignored on an existing container: ${create_opts[*]}" >&2
         echo "  use --recreate to apply them" >&2
@@ -372,7 +442,11 @@ fi
 if [ "$inner" = 1 ]; then
     set -- claude-sandbox "$@"
 elif [ "$shell" = 1 ]; then
-    set -- bash "$@"
+    # The user's own shell, as in a devcontainer terminal: the base image
+    # ships zsh and bash, each with its rc sourcing /user-terminal-config.
+    # Resolved inside, falling back to bash in an image without it.
+    want="${CLAUDE_SANDBOX_SHELL:-$(detect_shell)}"
+    set -- sh -c 'command -v "$1" >/dev/null && exec "$@"; shift; exec bash "$@"' _ "$want" "$@"
 else
     set -- "$agent" "$@"
 fi

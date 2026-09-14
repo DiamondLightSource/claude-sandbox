@@ -45,7 +45,7 @@ run() {
     local -a envs=()
     while [ "$1" != "--" ]; do envs+=( "$1" ); shift; done; shift
     : > "$LOG"; rm -f "$TMP/mark"
-    ( cd "$TMP/project" && env -i PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP" \
+    ( cd "${PROJECT:-$TMP/project}" && env -i PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP" \
         LOG="$LOG" MARK="$TMP/mark" PS="$TMP/ps" IMAGES="$TMP/images" CLAUDE_SANDBOX_NESTED=1 "${envs[@]}" \
         bash "$LAUNCHER" "$@" 2>"$TMP/err" ); RC=$?
     ERR="$(cat "$TMP/err")"
@@ -62,7 +62,12 @@ ver="$(sed -n 's/^VERSION="\(.*\)"$/\1/p' "$LAUNCHER")"
 run --; assert_contains "default verb is claude" "$(exec_line)" "exec -it claude-sandbox-project-$(printf '%s' "$TMP/project" | cksum | awk '{print $1}') claude"
 run -- pi -p hi;   case "$(exec_line)" in *" pi -p hi") pass ;; *) fail "pi verb: $(exec_line)" ;; esac
 run -- codex;      case "$(exec_line)" in *" codex") pass ;; *) fail "codex verb: $(exec_line)" ;; esac
-run -- shell;      case "$(exec_line)" in *" bash") pass ;; *) fail "shell verb: $(exec_line)" ;; esac
+run -- shell;      case "$(exec_line)" in *"exec bash \"\$@\" _ bash") pass ;; *) fail "shell verb default without host SHELL: $(exec_line)" ;; esac
+# The ancestor walk finds this harness (bash) where /proc is readable; inside the
+# sandbox host /proc is bound with foreign PIDs, so it falls back to SHELL (zsh).
+run SHELL=/usr/bin/zsh -- shell;            case "$(exec_line)" in *" _ bash"|*" _ zsh") pass ;; *) fail "shell verb default: $(exec_line)" ;; esac
+run SHELL=/usr/bin/zsh CLAUDE_SANDBOX_SHELL=fish -- shell -c ls; case "$(exec_line)" in *" _ fish -c ls") pass ;; *) fail "CLAUDE_SANDBOX_SHELL override: $(exec_line)" ;; esac
+run CLAUDE_SANDBOX_SHELL=fish --; assert_not_contains "shell choice is not baked at create" "$(create_line)" "-e CLAUDE_SANDBOX_SHELL=fish"
 run -- --resume;   case "$(exec_line)" in *" claude --resume") pass ;; *) fail "agent args without verb: $(exec_line)" ;; esac
 run -- version;    case "$(exec_line)" in *" claude-sandbox version") pass ;; *) fail "version verb not forwarded: $(exec_line)" ;; esac
 run -- gh-auth;    case "$(exec_line)" in *" claude-sandbox gh-auth") pass ;; *) fail "gh-auth verb not forwarded: $(exec_line)" ;; esac
@@ -80,6 +85,29 @@ assert_not_contains "container git config remains writable" "$(create_line)" ":/
 run --; case "$(create_line)" in *"--network=host"*) pass ;; *) fail "host net not default: $(create_line)" ;; esac
 run -- --bridge; case "$(create_line)" in *"--network=host"*) fail "--bridge still host net" ;; *) pass ;; esac
 
+# --- filesystem view: parent ro, project rw, --mount ro, --mount-rw ---------
+mkdir -p "$TMP/ws/project" "$TMP/ro" "$TMP/rw"
+PROJECT="$TMP/ws/project" run --
+case "$(create_line)" in *"-v $TMP/ws:$TMP/ws:ro -v $TMP/ws/project:$TMP/ws/project -w"*) pass ;; *) fail "parent not ro before project rw: $(create_line)" ;; esac
+run --   # project directly under $HOME: parent holds ~, must not be mounted
+assert_not_contains "parent containing HOME is not mounted" "$(create_line)" "-v $TMP:$TMP:ro"
+case "$ERR" in *"contains your home directory"*) pass ;; *) fail "HOME guard silent: $ERR" ;; esac
+run -- --mount "$TMP/ro" --mount-rw "$TMP/rw"
+case "$(create_line)" in *"-v $TMP/ro:$TMP/ro:ro"*) pass ;; *) fail "--mount not ro: $(create_line)" ;; esac
+case "$(create_line)" in *"-v $TMP/rw:$TMP/rw -"*) pass ;; *) fail "--mount-rw not rw: $(create_line)" ;; esac
+case "$(create_line)" in *"-e CLAUDE_SANDBOX_ALLOW_WRITE=$TMP/rw "*) pass ;; *) fail "allow-write missing rw mount: $(create_line)" ;; esac
+assert_not_contains "ro mount not in allow-write" "$(create_line)" "ALLOW_WRITE=$TMP/rw:$TMP/ro"
+run -- --mount; [ "$RC" = 1 ] && pass || fail "--mount without PATH accepted (rc=$RC)"
+
+# --- env: locale always, X11 only when the host has a DISPLAY --------------
+run --; case "$(create_line)" in *"-e LANG=en_US.UTF-8"*) pass ;; *) fail "LANG default: $(create_line)" ;; esac
+assert_not_contains "no DISPLAY without one on the host" "$(create_line)" "DISPLAY"
+touch "$TMP/.Xauthority"
+run DISPLAY=:1 --
+case "$(create_line)" in *"-e DISPLAY=:1"*) pass ;; *) fail "DISPLAY not passed: $(create_line)" ;; esac
+case "$(create_line)" in *"-v $TMP/.Xauthority:/root/.Xauthority:ro"*) pass ;; *) fail "Xauthority not mounted ro: $(create_line)" ;; esac
+rm -f "$TMP/.Xauthority"
+
 # --- pre-4.0 spellings refuse rather than leak into agent argv -------------
 for old in --agent --host-net --shell; do
     run -- $old codex
@@ -90,7 +118,7 @@ run -- install; [ "$RC" = 2 ] && pass || fail "install verb accepted by the scri
 # --- in-container refusal (seam off) ---------------------------------------
 if [ -e /run/.containerenv ] || [ -e /.dockerenv ]; then
     : > "$LOG"
-    ( cd "$TMP/project" && env -i PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP" LOG="$LOG" MARK="$TMP/mark" \
+    ( cd "${PROJECT:-$TMP/project}" && env -i PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP" LOG="$LOG" MARK="$TMP/mark" \
         bash "$LAUNCHER" 2>"$TMP/err" ); rc=$?
     [ "$rc" = 1 ] && grep -q 'inside' "$TMP/err" && [ -z "$(exec_line)" ] && pass \
         || fail "in-container launch not refused (rc=$rc): $(cat "$TMP/err")"
