@@ -2,6 +2,11 @@
 
 ## At a glance
 
+The recommended entry point is `uv tool install claude-sandbox`, then
+`claude-sandbox` from a host project directory. The PyPI launcher starts a
+prebuilt container; the wrapper described below runs **inside** that container.
+Your own devcontainer can use the same wrapper via `uvx claude-sandbox install`.
+
 `claude-sandbox` is a launch-time wrapper. A **shadow** `claude` sits first
 on `$PATH` at `/usr/local/bin/claude`; the real Anthropic binary is
 **relocated off-PATH** to `/usr/libexec/claude-sandbox/claude`. Every plain
@@ -23,7 +28,8 @@ highest-precedence managed-settings layer, fires in every folder and fails loud
 Five ideas run through the whole system, and every file below is an expression
 of one of them:
 
-- **Small enough to audit in one read.** It is Bash, not a package. The shadow
+- **Small enough to audit in one read.** The security implementation is Bash;
+  the PyPI package bundles and launches it. The shadow
   is a single file you can read top-to-bottom; the `bwrap` argv builder is
   inlined, not sourced from elsewhere.
 - **Default-deny by inversion.** The base mount is `--ro-bind / /` and `$HOME`
@@ -255,8 +261,9 @@ graph TD
 ```
 
 Three things work together. **`DISABLE_AUTOUPDATER=1` + `autoUpdates=false`** is
-the root-cause removal: updates now only happen when *you* re-run `./install`,
-which re-relocates the binary and re-asserts the shadow. **`sandbox-verify.sh`**
+the root-cause removal: agent updates require deliberate replacement, normally
+by upgrading the launcher and recreating its container. A devcontainer reinstall
+reasserts the shadow but keeps an existing agent binary. **`sandbox-verify.sh`**
 (`SessionStart`) runs the full battery and warns loudly when unwrapped — but
 `SessionStart` hooks can only inject messages, never block. **`sandbox-gate.sh`**
 (`UserPromptSubmit`) is the one mechanism that can actually stop work: a
@@ -282,7 +289,7 @@ run. The full guard mechanics are in [integrity guard](integrity-guard.md).
 The sandbox config (`workspace-root`, `no-forge`, `allow-write`, `pass-env`,
 `egress-jail`, `allow-ip`) follows the same `/etc`-not-the-workspace discipline
 as the guard, and for the same reason. `install.sh` seeds `/etc` with the
-shipped defaults from the installing clone; you edit
+shipped defaults from the package or clone; you edit
 `/etc/claude-sandbox.conf` directly (an unsandboxed root shell — your
 container terminal); the shadow reads it from `/etc` at launch — never
 from `$PWD`. Like `allow-write`, the `allow-ip` device allowlist is read
@@ -317,14 +324,16 @@ Every way of consuming the sandbox runs the **same** `install.sh` from
 the **same** repo — the machinery is never copied into consuming
 projects:
 
-- **This repo's own devcontainer** (dogfood) — `postCreate` runs the
-  installer.
-- **A clone beside your project** (guest) — `git clone` + `./install`
-  inside any devcontainer; a team wires the same thing into their
-  project's `postCreate` at a pinned tag
+- **The PyPI host launcher (recommended)** — `uv tool install claude-sandbox`,
+  then `claude-sandbox`, starts the published image at the package's version.
+- **The PyPI wheel** (guest) — `uvx claude-sandbox install` inside any
+  devcontainer (or a clone + `./install` without `uv`); a team wires the
+  same line into their project's `postCreate` at a pinned version
   ([Sandbox a team devcontainer](../how-to/sandbox-a-team-devcontainer.md)).
 - **The published container image** — the image build sources
   `install.sh` through the same seam.
+- **This repo's own devcontainer** — `postCreate` runs the installer for
+  development on the sandbox itself.
 
 An earlier mechanism, `just promote`, copied the install machinery *by
 value* into target workspaces. It was removed ({ref}`adr-remove-promote`,
@@ -339,7 +348,7 @@ manual either way — it is JSONC in the wild, and only you know whether a
 
 | Concern | File |
 |---|---|
-| Shadow + inlined `bwrap` argv builder, recursion guard, gitconfig render, `script(1)` wrap, egress-jail orchestration (`egress_jail_enabled` / `netns_launch` / `netns_holder`) | `.devcontainer/claude-sandbox/claude-shadow` |
+| Shadow + inlined `bwrap` argv builder, recursion guard, gitconfig render, `script(1)` wrap, egress-jail orchestration (`egress_jail_enabled` / `netns_launch` / `netns_holder`) | `.devcontainer/claude-sandbox/agent-shadow` |
 | Relocate real binary off-PATH; wire shadow; merge managed-settings guard; disable auto-updater; place `/etc` config | `.devcontainer/claude-sandbox/install.sh` |
 | `SessionStart` guard — full integrity battery + loud warn when unwrapped | `.devcontainer/claude-sandbox/sandbox-verify.sh` |
 | `UserPromptSubmit` guard — sub-second fail-closed `IS_SANDBOX` gate | `.devcontainer/claude-sandbox/sandbox-gate.sh` |

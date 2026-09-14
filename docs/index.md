@@ -4,16 +4,22 @@ html_theme.sidebar_secondary.remove: true
 
 # claude-sandbox
 
-bwrap-isolated Claude Code for Debian/Ubuntu devcontainers (rootless Podman is
-the supported runtime; rootless Docker likely works but is untested with the
-default egress jail). A hostile prompt, file, or
-tool result cannot reach your host credentials, IDE bridges, or shell
-environment. The protection is launch-time: plain `claude` resolves to a shadow
-that wraps the real binary in `bwrap`, and a global integrity guard fails loud
-and closed if it is ever launched unwrapped. By default Claude also runs in a
-per-process egress jail (ADR 0015) that blackholes RFC1918 internal networks, so
-a compromised session can't pivot sideways to internal hosts or lab devices while
-the internet, DNS, and configured `allow-ip` devices stay reachable.
+Run Claude Code, Codex or Pi in a container with isolated credentials,
+limited writable paths and a network jail.
+
+On a Linux host with [uv](https://docs.astral.sh/uv/getting-started/installation/)
+and rootless Podman:
+
+```bash
+uv tool install claude-sandbox
+cd ~/src/my-project
+claude-sandbox
+```
+
+The launcher creates the container and starts sandboxed Claude. No clone or
+devcontainer setup is needed. [Getting started](tutorials/getting-started.md)
+covers prerequisites, login and verification. Already have a project
+devcontainer? [Install into it](how-to/sandbox-a-team-devcontainer.md).
 
 ## How the documentation is structured
 

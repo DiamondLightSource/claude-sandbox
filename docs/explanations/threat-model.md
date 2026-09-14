@@ -1,13 +1,17 @@
 # Threat model
 
 `claude-sandbox` exists to answer one question: *what can go wrong when a
-developer runs Claude Code inside a devcontainer, and which of those failures
+developer runs Claude Code inside a container, and which of those failures
 is this tool responsible for preventing?* This page explains the reasoning
 behind the boundary. For the hard, look-it-up tables — the exact defences and
 the exact exposures — see [locked-down defences](../reference/locked-down-defences.md)
 and [deliberately exposed](../reference/deliberately-exposed.md). For how the
 bwrap primitives fit together to enforce all this, see
 [architecture](architecture.md).
+
+The [PyPI launcher](../tutorials/getting-started.md) supplies the container;
+the same sandbox can also be installed into a project's own devcontainer.
+This page uses Claude as the example; Codex and Pi share the isolation layer.
 
 ## Who and what we defend against
 
@@ -157,11 +161,12 @@ blast-radius arithmetic:
   repo you are working on — not the org.
 - A **short expiry** (7–30 days) means a leaked token dies on its own; re-auth
   costs seconds.
-- **Omitting `workflow` scope** (unless Claude must edit GitHub Actions) keeps a
+- **Omitting workflow write permissions** (unless Claude must edit GitHub Actions) keeps a
   compromise away from your CI; **no `admin:*` or org-wide write** keeps it off
   everything else.
-- GitLab gets the equivalent: project-scoped tokens, `api` only if you need
-  push, otherwise `read_repository` + `write_repository`.
+- GitLab gets project-scoped tokens with `write_repository` for HTTPS push;
+  grant broader `api` access only for API operations that require it. See
+  [forge authentication](../how-to/authenticate-with-forges.md) for scope details.
 
 The `claude-sandbox gh-auth` / `claude-sandbox glab-auth` helpers keep the token out of shell
 history, but they do **not** enforce scope — that part is irreducibly yours.
@@ -184,7 +189,7 @@ namespace can probe RFC1918, hit `169.254.169.254`, and — the incident that
 motivates this — reach lab devices with default credentials (EPICS IOCs, PMAC). Reaching a PMAC is a
 *safety* incident, not merely an information one.
 
-The jail ({ref}`adr-network-egress-jail`) runs *only* Claude in a per-process
+The jail ({ref}`adr-network-egress-jail`) runs each agent in a per-process
 network namespace beneath bwrap. The netns is **IPv4-only** (pasta `--ipv4-only`),
 so there is no IPv6 address family to pivot over. A routing allowlist blackholes
 `10/8`, `172.16/12`, `192.168/16`, the CGNAT range `100.64/10` (Tailscale et al.),

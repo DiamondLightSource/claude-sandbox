@@ -1,62 +1,76 @@
 # Authenticate with forges
 
-Give the sandboxed Claude a `gh` / `glab` token so `git push` works,
-without leaking the token into your shell history.
+Give the agent a project-scoped token when it needs to push or use forge APIs.
 
 ## Authenticate
 
+Use your normal devcontainer terminal, outside the agent. With the host launcher,
+open the equivalent terminal first:
+
+```bash
+claude-sandbox shell        # Skip if already in your devcontainer terminal
+```
+
+In either terminal, choose a forge:
+
 ```bash
 claude-sandbox gh-auth
-claude-sandbox glab-auth
 claude-sandbox glab-auth gitlab.example.com
 ```
 
-- `claude-sandbox gh-auth` authenticates `github.com`.
-- `claude-sandbox glab-auth` (no argument) authenticates the self-hosted
-  Diamond GitLab instance, `gitlab.diamond.ac.uk`.
-- `claude-sandbox glab-auth gitlab.example.com` authenticates any other
-  GitLab instance (including `gitlab.com`).
+The helpers prompt for a token without placing it in shell history.
+With the host launcher, exit the shell and run `claude-sandbox` to resume.
+In your devcontainer, stay in the terminal and run `claude`.
 
-Each command walks you through a fine-grained-PAT prompt, feeds the
-token to the respective CLI's `auth login`, and unsets the variable
-afterwards. The token never enters shell history.
+:::{note} DLS: Diamond GitLab
+Use `claude-sandbox glab-auth` with no hostname for `gitlab.diamond.ac.uk`.
+The shipped network config already allows its IP. Other internal forges need
+an [allow-ip entry](network-egress-jail.md#keep-a-lab-device-or-internal-forge-reachable).
+:::
 
-## Result
+The agent can read the resulting token store. Tokens stay in the project
+container and must be entered again after recreation.
 
-The CLI's token store (`~/.config/gh/` or `~/.config/glab-cli/`) is
-bound read-write into the sandbox, and the curated gitconfig uses the
-CLI as a git credential helper, so `git push` authenticates without an
-OAuth popup.
+## Choose permissions
 
-> **Internal (RFC1918) forge?** With the egress jail on (the default),
-> pushing to a forge on an internal IP also needs that IP punched
-> through the RFC1918 blackhole via `allow-ip` in
-> `/etc/claude-sandbox.conf` — otherwise authentication succeeds but the
-> push fails at the network layer. The shipped conf already allows
-> Diamond's GitLab (`172.23.142.119`); for a different internal forge
-> see [Configure the network egress jail](network-egress-jail.md).
+Restrict access to the project and use a short expiry, such as 7–30 days.
 
-## Recommended PAT shape
+For GitHub, select only the required repository. Pushing needs **Contents:
+Read and write**; add Issues or Pull requests write permission only for those
+tasks. The helper currently suggests read-only Contents, which does not permit
+push. Avoid workflow or administrative permissions unless required. See
+[GitHub's permission reference](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens).
 
-The token is reachable by a compromised session, so keep its blast
-radius small:
+For GitLab, prefer a project access token. Git-over-HTTPS push uses
+`write_repository`; broader API operations may require `api`.
+The helper's prompt recommends broader scopes; grant only what the intended
+workflow needs. See [GitLab's token scopes](https://docs.gitlab.com/security/tokens/access_token_scopes/).
+Project tokens can also read Internal-visibility projects in some circumstances;
+see [GitLab's project-token documentation](https://docs.gitlab.com/user/project/settings/project_access_tokens/).
 
-- **Fine-grained, single repo** — grant write access only to the
-  repository you are actively working on.
-- **Short expiry** — 7–30 days. Re-pasting via `claude-sandbox gh-auth`
-  takes seconds.
-- **No `workflow` scope** unless Claude needs to edit GitHub Actions
-  files. **No `admin:*` or org-wide write scopes.**
-- **GitLab** — equivalent fine-grained project tokens; `api` scope only
-  if you need push, otherwise `read_repository` + `write_repository`.
+The helpers do not enforce token permissions.
 
-`claude-sandbox gh-auth` / `claude-sandbox glab-auth` keep the token out
-of shell history but do **not** enforce scope discipline — that is
-yours.
+## Run without push access
 
-## See also
+When the agent does not need forge access, omit the token stores and
+credential helpers. With the PyPI launcher, add this to the
+[host config](use-the-container-image.md#configure-the-sandbox):
 
-- [Threat model](../explanations/threat-model.md) — why PAT hygiene
-  matters and what a leaked token can reach.
-- [Run without push access](run-without-push-access.md) — skip the token
-  binds entirely for sessions where Claude does not need to push.
+```ini
+no-forge
+```
+
+Or set the flag when creating the project container:
+
+```bash
+CLAUDE_SANDBOX_NO_FORGE=1 claude-sandbox
+```
+
+For an existing container, add `--recreate` to apply a changed environment
+variable. Recreation removes container-local packages and forge logins.
+
+In your own devcontainer, set `CLAUDE_SANDBOX_NO_FORGE=1` in the launching
+terminal or `remoteEnv`, or add `no-forge` to `/etc/claude-sandbox.conf`.
+
+This removes the sandbox's supplied credentials; it cannot prevent pushing
+with another token placed in the workspace or explicitly given to the agent.

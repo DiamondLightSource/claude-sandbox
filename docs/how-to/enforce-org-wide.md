@@ -2,7 +2,7 @@
 
 Make Claude Code on a *host* machine refuse to run and redirect the user
 to claude-sandbox, so the default path for everyone is the isolated
-devcontainer rather than an unwrapped session against host credentials.
+container rather than an unwrapped session against host credentials.
 
 This is for IT / platform teams rolling the sandbox out as policy. It is
 deliberately a *light* control: it defaults everyone into the sandbox and
@@ -47,7 +47,8 @@ set -uo pipefail
 
 echo "BLOCKED by IT policy: Claude Code must be run inside claude-sandbox so host
 credentials stay isolated. Set it up: https://github.com/DiamondLightSource/claude-sandbox
-(clone + ./install, then launch claude inside the devcontainer)." >&2
+(on a Linux host with rootless Podman: uv tool install claude-sandbox,
+then run claude-sandbox in your project)." >&2
 exit 2
 ```
 

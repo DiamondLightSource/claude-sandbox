@@ -192,9 +192,9 @@ capless — bwrap nests its userns inside the holder's, so Claude has a full
 `CapBnd` ceiling (a nested-userns artifact) — but `CapEff` is still 0 because
 bwrap runs `--cap-drop ALL`. What contains it is that the netns and its routes
 are owned by the holder's *ancestor* userns: route del/punch and device-add all
-return `EPERM` from inside. Because `CapEff=0` holds either way, check 06's
-assertion is unchanged, so the full `/verify-sandbox` battery passes in a jailed
-session with no jail-aware variant required.
+return `EPERM` from inside. Check 06 asserts `CapEff=0`; checks 19–20 inspect
+blackhole routes and representative destinations. Those network checks report
+a disabled jail as a pass with a note, so read the result details.
 
 The jail is **fail-closed**: if `/dev/net/tun` (the `--device=/dev/net/tun`
 runArg in `devcontainer.json`), `pasta` (apt package `passt`), or `unshare` is

@@ -2,7 +2,11 @@
 
 Focused recipes for specific tasks you already know you need to do.
 
-Most are workflow conveniences. The security-relevant ones: [Configure the network egress jail](how-to/network-egress-jail.md) — read it if your host needs `--device=/dev/net/tun` or you address lab devices by bare IP; and [Enforce sandbox use across an organisation](how-to/enforce-org-wide.md) — for IT/platform teams rolling the sandbox out as policy.
+Start with the [PyPI quick start](tutorials/getting-started.md).
+For day-to-day use, see [container options](how-to/use-the-container-image.md),
+[forge authentication](how-to/authenticate-with-forges.md),
+[upgrades](how-to/upgrade.md), or [Pi with a local model](how-to/pi-with-a-local-model.md).
+The devcontainer and organisation guides cover custom toolchains and rollout.
 
 ```{toctree}
 :maxdepth: 1

@@ -1,19 +1,24 @@
 # Configuration
 
-Reference for the two configuration surfaces: the host-global config
-file `/etc/claude-sandbox.conf` and the `CLAUDE_SANDBOX_*` environment
-variables. For task recipes see the [how-to guides](../how-to.md).
+The sandbox reads `/etc/claude-sandbox.conf` inside the container and
+`CLAUDE_SANDBOX_*` environment variables. With the PyPI host launcher, create
+`~/.config/claude-sandbox.conf` on the host; it is mounted read-only at that
+container path. See [mounting the config](../how-to/use-the-container-image.md#configure-the-sandbox).
+
+On the host, `claude-sandbox` launches containers. Inside the container, the
+same name is an administrative helper (`verify`, `gh-auth`, `version`, etc.).
+Run `claude-sandbox --help` on the host for launcher options.
 
 ## `/etc/claude-sandbox.conf`
 
 The shadow reads this file at every launch. It is seeded by
-`install.sh` from the installing clone's
+`install.sh` from the bundled
 `.devcontainer/claude-sandbox.conf` (the shipped defaults). It lives at
 `/etc`, **not** in the rw-bound workspace, so a compromised session
 cannot rewrite it to widen the next launch's binds — or, with
 `allow-ip`, its network reach.
 
-To change it, edit `/etc/claude-sandbox.conf` directly in the container
+For your own devcontainer, edit `/etc/claude-sandbox.conf` directly in the container
 (you are root); the next `claude` launch picks it up. Edits are
 per-devcontainer and not persisted: a rebuild, re-install, or
 `claude-sandbox update` restores the shipped defaults, so re-apply
@@ -42,7 +47,7 @@ skips placing it if the clone carries no conf. File mode is `0644`.
 | `pass-env` | variable name(s) | Forwards named environment variables through the `--clearenv` scrub. Comma- or space-separated, and repeatable. Names only — the value is read from the launching environment. Unset, non-identifier and denied names are skipped |
 | `local-model-port` | TCP port 1–65535; shipped default `1920`; `0` drops it; bare flag means `1920` | The port Pi discovers a model on at startup. Always part of the loopback relay set ({ref}`adr-local-port-all-agents`), so every agent reaches it on its own `127.0.0.1`. Environment `CLAUDE_SANDBOX_LOCAL_MODEL_PORT` takes precedence. See [Use Pi](../how-to/use-pi.md) |
 | `local-port` | TCP port 1–65535 | Adds a port to the loopback relay set: the outer container's `127.0.0.1:<port>` becomes reachable at the same address inside the jail, for every agent. Repeatable — one port per line. Merged with `CLAUDE_SANDBOX_LOCAL_PORTS` from the environment and deduplicated. Each relayed service is exposed in full. Requires the network jail and `socat`. See [Reach services on the host's loopback](../how-to/network-egress-jail.md#reach-services-on-the-hosts-loopback) |
-| `callback-port` | TCP port 1–65535; shipped default `53692` | The reverse relay ({ref}`adr-callback-port-relay`): a port the agent listens on inside its loopback becomes reachable at the outer container's `127.0.0.1:<port>`, so a browser on the host can complete an OAuth login that redirects to `localhost`. Repeatable. Merged with `CLAUDE_SANDBOX_CALLBACK_PORTS` and deduplicated; may not also be a `local-port` or `local-model-port`. A port already taken on the host is skipped with a warning. See [Let a browser login reach the agent](../how-to/network-egress-jail.md#let-a-browser-login-reach-the-agent) |
+| `callback-port` | TCP port 1–65535; disabled by default (commented examples) | Reverse relay: exposes an agent's loopback listener on the outer container's loopback for browser OAuth. Repeatable; merged with `CLAUDE_SANDBOX_CALLBACK_PORTS`. Cannot overlap `local-port` or `local-model-port`. Occupied host ports are skipped with a warning. See [browser logins](../how-to/network-egress-jail.md#let-a-browser-login-reach-the-agent) |
 | `egress-jail` | bare flag / `1` reaffirms on | The per-process network egress jail ({ref}`adr-network-egress-jail`) is **ON by default** and fail-closed; the key normally never needs to appear. An operator opt-out value exists but is deliberately not documented here — weakening the sandbox is discouraged. `CLAUDE_SANDBOX_EGRESS_JAIL` in the environment takes precedence over this key |
 | `allow-ip` | bare IP (no CIDR) | A device IP the egress jail keeps reachable past its RFC1918 blackhole (e.g. an EPICS IOC / PMAC / internal GitLab by bare address). Repeatable — each line punches one `/32` route via the gateway. Lives in `/etc`, not the workspace, so a compromised session cannot widen its own network reach. No effect when the jail is disabled |
 
@@ -67,9 +72,11 @@ These names are ignored, and the sandbox's own value always wins:
 
 ## Environment variables
 
-Set these in your devcontainer's `remoteEnv` (restart or rebuild for the
-change to take effect). Names below are verified against the shadow and
-installer sources.
+With the host launcher, `CLAUDE_SANDBOX_*` variables are forwarded at container
+creation; recreate to change them. Other host variables are not forwarded.
+Inside your own devcontainer, set variables in the launching terminal or
+`remoteEnv`. Config-file settings are usually simpler for durable host-launcher
+configuration.
 
 | Variable | Set by / read by | Meaning |
 |---|---|---|
@@ -89,7 +96,7 @@ installer sources.
 | `DISABLE_AUTOUPDATER` | set to `1` in managed settings by `install.sh` | Disables Claude Code's in-container auto-updater (alongside `autoUpdates:false`) so a self-update can't re-arm the unwrapped-launch bypass |
 
 `CLAUDE_SANDBOX_NO_FORGE` is documented as a task in
-[run a no-push session](../how-to/run-without-push-access.md); workspace scope
+[run a no-push session](../how-to/authenticate-with-forges.md#run-without-push-access); workspace scope
 is covered in [widen the writable workspace](../how-to/configure-workspace-scope.md);
 forwarding variables is covered in
 [pass environment variables in](../how-to/pass-environment-variables.md).

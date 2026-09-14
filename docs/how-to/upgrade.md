@@ -1,54 +1,61 @@
 # Upgrade claude-sandbox
 
+## Installed from PyPI on your host
+
 ```bash
-claude-sandbox update
+uv tool upgrade claude-sandbox
+cd ~/src/my-project
+claude-sandbox --recreate
 ```
 
-This clones the latest **release** into a fresh temporary directory,
-checks out its tag, runs the installer, and records the version — check
-what you have with:
+The package selects the matching image version. Existing project containers
+keep their old image until recreated, so repeat the second step in each
+project you want to update.
+
+Recreation removes the container's local packages, caches and forge logins.
+Project files and agent settings in `~/.config/terminal-config` survive.
+Exit active sessions before recreating, then
+[authenticate to forges](authenticate-with-forges.md) again if needed.
+
+Check the installed launcher with `claude-sandbox --version`.
+For a fixed version, install with `uv tool install claude-sandbox==4.0.0`;
+change that constraint explicitly to move to another release.
+
+If you use the one-off launcher instead of a tool install:
 
 ```bash
+uvx claude-sandbox@latest --recreate
+```
+
+See [uv's tool guide](https://docs.astral.sh/uv/guides/tools/#upgrading-tools)
+for package upgrade behaviour.
+
+## Installed into your own devcontainer
+
+Inside the container, as root:
+
+```bash
+uvx claude-sandbox@latest install
 claude-sandbox version
 ```
 
-The installer is idempotent; the shadow is re-established without
-re-downloading Claude. No persistent clone is needed — the temporary one
-is removed after the install.
+For a team, update the version in
+[postCreate](sandbox-a-team-devcontainer.md) and rebuild.
+Reapply custom `/etc/claude-sandbox.conf` settings after installation.
 
-(Inside the published container image, update by pulling a newer image
-and recreating the container instead — see
-[Use the container image](use-the-container-image.md).)
+The installer keeps existing agent binaries. Updating the sandbox does not
+itself guarantee a newer agent; a fresh devcontainer installs the current
+agents. The published image supplies the agents baked into that image.
 
-## Upgrading to 4.0
+For a legacy clone installation, `claude-sandbox update` fetches and installs
+the newest release. For a wheel installation it prints the PyPI update
+instructions. In the published image it refuses: upgrade from the host.
 
-The launcher's command line changed in 4.0 (ADR 23):
+## Migrating from the copied launcher
 
-- on hosts using the container image, run `uvx claude-sandbox@latest
-  --recreate` in place of a copied `claude-container`: it fetches the new
-  launcher and pulls `ghcr.io/diamondlightsource/claude-sandbox` at the same
-  version. The launcher's `--agent`, `--shell` and `--host-net` became the
-  verbs `claude`/`codex`/`pi`, `shell`, and a host-network default with
-  `--bridge` to opt out;
-- a sandbox installed by `uvx claude-sandbox install` updates by bumping
-  that pin (or `uvx claude-sandbox@latest install`); `claude-sandbox update`
-  says so rather than cloning past it.
+Replace `claude-container` with the PyPI tool install above. The old
+`--agent NAME` and `--shell` flags are now verbs (`codex`, `pi`, `shell`);
+host networking is the default, with `--bridge` as the alternative.
 
-## Why upgrades are deliberate
-
-Claude Code's in-container auto-updater is **disabled**
-(`env.DISABLE_AUTOUPDATER=1` + `autoUpdates:false`). The updater otherwise
-re-creates `~/.local/bin/claude` on a version bump, which — depending on
-your `PATH` order — can launch the real binary *unwrapped*, with no bwrap
-and no git steering. This is self-entrenching and silent.
-
-With the updater off, updates happen only when *you* run
-`claude-sandbox update` (or re-run the installer from a clone). Updating:
-
-- re-relocates the current Claude binary to
-  `/usr/libexec/claude-sandbox/claude` (off the user's PATH), and
-- re-asserts the shadow at `/usr/local/bin/claude`.
-
-For why this root-cause removal matters and how the global guard fails loud
-if an unwrapped binary ever appears anyway, see the
-[integrity guard explanation](../explanations/integrity-guard.md).
+Agent auto-updaters are disabled to preserve the sandbox wrapper.
+See [The integrity guard](../explanations/integrity-guard.md) for the rationale.

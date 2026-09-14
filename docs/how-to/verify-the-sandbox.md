@@ -1,71 +1,48 @@
 # Verify the sandbox
 
-Confirm that the Claude process you are running is actually inside the
-bwrap isolation, and that no defence has regressed.
+From your project on the host, open a container shell and run the verifier:
 
-```{include} ../_snippets/clone-note.md
-```
-
-## Run the verification
-
-From a terminal, in any workspace, *outside* a Claude session:
+Already in a devcontainer with the sandbox installed? Skip `claude-sandbox shell`
+and `exit`; the verification command is identical.
 
 ```bash
+claude-sandbox shell        # Skip if already in your devcontainer terminal
 claude-sandbox verify
+exit                       # Only if you opened the shell above
 ```
 
-That launches a sandboxed session, runs the checks against the live
-process, and prints a summary table.
+Run the helper outside the agent. It launches a sandboxed Claude session to
+run the battery; agent authentication is required.
 
-Inside a claude-sandbox clone it runs the full two-phase audit; anywhere
-else it runs the phase-1 battery. To drive the full audit yourself from
-within a Claude session in a clone:
-
-```bash
-/verify-sandbox
-```
-
-## What it does
-
-There are two phases:
-
-1. **The PASS/FAIL battery** — 21 checks against the running process,
-   one per defence (sandbox entered, capabilities dropped, namespaces
-   unshared, IPC/secrets/runtime dirs masked, curated gitconfig in
-   effect, and so on).
-2. **Adversarial breakout probes** — 10 probes that run only once the
-   battery passes, attempting actual breakout / disclosure paths.
-
-The full spec lives at `.claude/commands/verify-sandbox.md`.
+For another agent, use `claude-sandbox verify --agent codex` or
+`claude-sandbox verify --agent pi` inside the container.
 
 ## Read the result
 
-- Every line of the battery should report `PASS`.
-- Any `FAIL` line names the specific defence that regressed.
-- Probes may report `[INCONCLUSIVE]` for accepted information-disclosure
-  paths (e.g. network-identity disclosure, which applies only when an
-  operator has disabled the egress jail) — these are on the radar by
-  design, not failures.
+Every check should report `PASS`. A failure names the affected defence.
+[Verification checks](../reference/verification-checks.md) explains the checks
+and their limits. Checks 19–20 inspect network routes, but treat a disabled
+jail as a pass with a note; read those notes as well as the PASS count.
 
-> **Jailed sessions.** When the egress jail is on (the default), the full
-> 21-check battery still passes: check 06 asserts the *effective*
-> capability set (`CapEff=0`), which bwrap's `--cap-drop ALL` empties even
-> inside the jail's nested user namespace. The `CapBnd` *ceiling* will
-> read full (`…1ffffffffff`) rather than `0` — a nested-userns artifact,
-> not a regression; effective caps are zero and the netns routes are owned
-> by an ancestor namespace. A jail-aware additional check (netns exists +
-> RFC1918 blackhole holds) is a planned future addition, not yet
-> implemented. See {ref}`adr-network-egress-jail`.
+The helper opens an interactive agent session. For a direct result inside an
+already sandboxed agent's shell tool, run:
 
-The command **exits non-zero on any FAIL**, so the same invocation
-doubles as a CI assertion — wire it into a pipeline to fail the build
-if the sandbox ever regresses.
+```bash
+bash /usr/libexec/claude-sandbox/verify-sandbox-battery.sh
+```
 
-## See also
+The battery itself exits non-zero on failure. Do not treat the interactive
+helper's exit status as an automatic CI assertion of the battery's result.
 
-- [Verification checks](../reference/verification-checks.md) — the full
-  list of checks and what each one proves.
-- [The integrity guard](../explanations/integrity-guard.md) — the
-  always-on guard that re-runs the integrity subset every session and
-  blocks prompts when Claude is unwrapped, so you do not have to verify
-  by hand to stay protected.
+## Full adversarial audit
+
+In a claude-sandbox source checkout, `claude-sandbox verify` also selects
+the repository's `/verify-sandbox` command for an expanded audit.
+You can invoke that slash command from Claude in the checkout.
+
+Ordinary project installations get the installed battery without needing
+a clone. The full specification lives in `.claude/commands/verify-sandbox.md`.
+
+The [integrity guard](../explanations/integrity-guard.md) checks isolation
+automatically at agent startup; manual verification is useful when
+investigating an installation or changing its configuration.

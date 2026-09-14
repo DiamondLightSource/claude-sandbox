@@ -2,9 +2,9 @@
 
 `/verify-sandbox` runs two phases against the live Claude process: a
 deterministic **21-check PASS/FAIL battery**, then — only when all 21
-pass — **10 adversarial breakout probes**. Any FAIL in phase 1, or any
-`[ESCAPED]` probe in phase 2, exits the command non-zero, so it is
-usable as a CI assertion.
+pass — **10 adversarial breakout probes**. The battery exits non-zero on
+failure. The slash command is an agent-driven audit: inspect its reported
+results rather than relying on the interactive agent's exit status for CI.
 
 ```{include} ../_snippets/clone-note.md
 ```
@@ -51,8 +51,8 @@ stays empty inside the jail's nested userns, and the two jail checks
 | 20 | Behavioural counterpart to 19: representative non-allow-listed RFC1918/CGNAT addresses (and the connected subnet's base) get no forwardable route, while the gateway stays routable. Disabled jail ⇒ nothing to assert (pass). |
 | 21 | Agent binary mask: in a Codex session `$HOME/.codex/packages` is an empty `tmpfs` (or absent). The vendor unpacks Codex's own binary there — *inside* the read-write `~/.codex` bind — so an unmasked tree is a writable copy of the agent's binary in its own session: a persistence foothold that bypasses the read-only `/usr/libexec` copy actually exec'd. Check 03 cannot catch this, since it inspects only `$HOME`'s top level where `.codex` is legitimately allow-listed. Claude sessions have nothing to assert (pass with a note). |
 
-On any FAIL the command exits non-zero, names the regressed defence on
-the FAIL line, and **skips phase 2 entirely**.
+On any FAIL the battery exits non-zero and names the regressed defence.
+The audit instructions require the agent to skip phase 2 in that case.
 
 ```{note}
 Check 06 asserts the *effective* capability set, which bwrap's
@@ -98,8 +98,8 @@ Each probe is classified on one line:
 | Classification | Meaning | Effect |
 |---|---|---|
 | `[BLOCKED]` | The attempt failed the way the sandbox expects (EACCES, EPERM, ENOENT for masked paths, etc.). | None. |
-| `[ESCAPED]` | The attempt succeeded in a way that violates the threat model (readable host credential, writable host path outside the workspace, signal to a process outside the pidns, etc.). | Result becomes `SANDBOX LEAKING`; command exits non-zero regardless of phase 1. |
+| `[ESCAPED]` | The attempt succeeded in a way that violates the threat model (readable host credential, writable host path outside the workspace, signal to a process outside the pidns, etc.). | Audit reports `SANDBOX LEAKING`. |
 | `[INCONCLUSIVE]` | No error, but no demonstrated breach either. | Informational; does not change the exit code. Each is followed by a suggested follow-up. |
 
 If all 10 probes are `[BLOCKED]`, the final line is
-`RESULT: SANDBOX OK (18 deterministic + 10 adversarial)`.
+`RESULT: SANDBOX OK (21 deterministic + 10 adversarial)`.

@@ -1,26 +1,12 @@
 # Run Pi against a local model
 
-Serve a model on your own GPU with [lllm2](https://gilesknap.github.io/lllm2/),
-then run [Pi](https://pi.dev/) against it inside the sandbox, using the
-published container image. No cloud account, no devcontainer, and nothing the
-agent does can leave the jail. One page, start to finish; the lllm2 tutorial
-[From a model to Pi](https://gilesknap.github.io/lllm2/tutorials/installation.html)
-covers the model half in more depth.
+Use [lllm2](https://gilesknap.github.io/lllm2/) to serve a model on your host,
+then connect sandboxed Pi to it. Start with the
+[PyPI launcher](../tutorials/getting-started.md).
 
-## What you need
+## Start the model server
 
-- A Linux machine with an NVIDIA GPU and driver.
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) (DLS: `module load uv`).
-- Rootless Podman, and `/dev/net/tun` on the host. Check with:
-
-  ```bash
-  podman info --format '{{.Host.Security.Rootless}}'   # must print true
-  ```
-
-Run the shell commands below in a terminal on that machine, outside any
-container.
-
-## 1. Serve a model with lllm2
+On a Linux host with an NVIDIA GPU and driver:
 
 ```bash
 uv tool install --upgrade lllm2
@@ -28,119 +14,72 @@ lllm2 engines install cuda
 lllm2
 ```
 
-Open <http://127.0.0.1:8082> and keep the panel running. Under **Find models**,
-queue a download from **My catalogue** or search Hugging Face for a GGUF build
-that fits your card; a 27B to 35B parameter model at 4-bit quantisation is a
-good match for a 24 GB GPU. Then **Launch model**, choose it, and **Start
-Model**.
+Open `http://127.0.0.1:8082`. Download a model that fits your GPU, then select
+it under **Launch model** and start it. Use **Experiments → Run baseline**
+with **Discover usable context** to find a working context allocation.
+The model API defaults to `http://127.0.0.1:1920/v1`.
+See [lllm2's tutorial](https://gilesknap.github.io/lllm2/tutorials/installation.html)
+for model selection and engine setup.
 
-Before the first agent session it is worth one **Experiments → Run baseline**
-with **Discover usable context** checked. Pi's tool calls and a project's files
-eat context quickly; the baseline finds the largest window that actually loads,
-and **Try in Launch** carries it back to the launch settings. Save them.
-
-The model API is now at `http://127.0.0.1:1920/v1`. Nothing on the Pi side
-needs that address: the sandbox discovers it.
-
-```{admonition} DLS users
-Keep model files off your home directory. Before downloading, symlink
-`~/models` to scratch: `mkdir -p /scratch/<fedid>/models && ln -s
-/scratch/<fedid>/models ~/models`.
-```
-
-## 2. Install the launcher
-
-The published image ships the whole sandbox with Claude Code, Codex and Pi
-already installed. The host needs only [uv](https://docs.astral.sh/uv/):
-`uvx claude-sandbox` fetches the launcher from PyPI and pins the matching
-image. The launcher runs unsandboxed on your host, so read it first
-(`uvx claude-sandbox --help` prints its manual; the script is
-`container/claude-container` in the repository). Pin a release with
-`uvx claude-sandbox==4.0.0` if you want fixed provenance. See [Use the
-prebuilt container image](use-the-container-image.md) for the launcher's
-options, running it without uv, and its container-per-project model.
-
-## 3. Run Pi
-
-From the project directory you want Pi to work in:
+:::{warning} DLS: put model downloads on scratch
+Model files can fill your home quota. Before downloading, create a scratch
+directory and link it at lllm2's default model location:
 
 ```bash
-cd ~/src/my-project
-uvx claude-sandbox pi
+mkdir -p /scratch/<fedid>/models
+ln -s /scratch/<fedid>/models ~/models
 ```
 
-- The container shares the host's network namespace by default, so Pi's
-  relay can reach `127.0.0.1:1920`. (`--bridge` would give the container its
-  own loopback.) The agent's egress jail stays on regardless.
-- `pi` picks Pi over the default Claude Code.
+Replace `<fedid>` with your Diamond username. If `~/models` already exists,
+move its contents to scratch and move the old directory aside before creating
+the link; otherwise `ln` may create a link inside it instead.
+:::
 
-The first run pulls the image and creates a container named after the
-directory. At every Pi launch the sandbox queries lllm2 for the loaded model
-and its real context allocation and writes them into Pi's `lllm2` provider,
-so inside Pi you run `/model` and pick it, or start with
-`uvx claude-sandbox pi --provider lllm2`. Your project is
-mounted read-write at the same path as on the host; Pi's settings, sessions
-and extensions live in `~/.pi`, shared with every container on this host.
+## Start Pi
 
-Changed the model in lllm2? Restart Pi, or run `!claude-sandbox pi-local`
-from Pi's prompt and then `/model` again. Later runs in the same directory
-reuse the container, and the launcher says so; `--recreate` rebuilds it after
-pulling a newer image. The venv at `/cache/venv` and any `uv` or `npm`
-installs persist with the container.
-
-## 4. Install Pi extensions
-
-Pi packages bundle extensions, skills, prompt templates and themes, and are
-installed from npm or git. Inside a Pi session:
-
-```
-pi install npm:pi-web-access
-```
-
-The package lands in `~/.pi/agent/npm/`, on the shared store, so it stays
-installed across sessions and containers. The image carries Node 22 with npm,
-and npm lifecycle scripts are switched off by default: `pi install` runs no
-postinstall hooks inside the jail. Pure-JavaScript packages, which Pi
-extensions are, need nothing more. A package that must build a native module
-fails at install; opt in deliberately with a project `.npmrc` containing
-`ignore-scripts=false`.
-
-For work that has to happen outside the jail, open a plain shell in the same
-container:
+From your project on the host:
 
 ```bash
-uvx claude-sandbox shell
+claude-sandbox pi --provider lllm2
 ```
 
-You are root there, apt works, and the `claude-sandbox` CLI is on PATH. Use
-it to authenticate to a forge before the first agent session, or to install
-system libraries an extension needs. `pi install ...` from that shell still
-runs through the sandbox: `pi` is the shadow, and a management subcommand
-goes straight to Pi. Exit, then start the agent again.
+The launcher uses host networking by default. The sandbox relays port 1920
+into the agent's private loopback while keeping the network jail enabled.
+Do not use `--bridge` when the server is on the host's loopback.
+
+At launch, the helper discovers the loaded model and context allocation,
+then refreshes Pi's `lllm2` provider. You can also start
+`claude-sandbox pi` and choose it with `/model`.
+
+After changing the model, restart Pi or run `!claude-sandbox pi-local`
+inside Pi, then use `/model` again. If discovery fails, the existing
+configuration is retained. Test a file edit or tool call: support depends
+on the model and its chat template.
+
+## Change the port or configure a model manually
+
+Set `local-model-port` in your
+[host config](use-the-container-image.md#configure-the-sandbox), or in
+`/etc/claude-sandbox.conf` for your own devcontainer:
+
+```ini
+local-model-port = 1920
+```
+
+Restart Pi after changing it. Setting `0` disables discovery and that relay.
+A custom devcontainer needs host networking to reach a host-local server.
+
+For a server without llama.cpp's discovery endpoints, use your devcontainer
+terminal (or open `claude-sandbox shell` from the host) and supply the actual
+model ID, allocated context and port:
 
 ```bash
-uvx claude-sandbox shell
-claude-sandbox gh-auth               # forge push access for this container
-pi install npm:pi-web-access        # same as from inside a session
-exit
-uvx claude-sandbox pi
+claude-sandbox pi-local 'MODEL_ID' 32768 1920
 ```
 
-Project-local packages (`pi install -l`) write to `.pi/settings.json` in the
-project and install on startup once the project is trusted; they suit a team
-that shares one extension set through git.
+See [Configuration](../reference/configuration.md) for overrides and
+[Pi's model guide](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/models.md)
+for custom provider settings.
 
-## Where to read more
-
-- [pi.dev](https://pi.dev/) and the
-  [pi repository](https://github.com/earendil-works/pi), including its
-  [documentation folder](https://github.com/earendil-works/pi/tree/main/packages/coding-agent/docs)
-  and [packages guide](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/packages.md).
-  The installed command is the npm package
-  [`@earendil-works/pi-coding-agent`](https://www.npmjs.com/package/@earendil-works/pi-coding-agent).
-- [lllm2 documentation](https://gilesknap.github.io/lllm2/): model choice,
-  context discovery and tuning.
-- [Use Pi with OpenAI, Anthropic, or lllm2](use-pi.md): cloud logins, the
-  devcontainer route, and the loopback relay in detail.
-- [Use the prebuilt container image](use-the-container-image.md): launcher
-  options, forge authentication, persistence and limits.
+The relay exposes every API operation on the selected port.
+See [Use Pi](use-pi.md) for cloud login, extensions and verification.

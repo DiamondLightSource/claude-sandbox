@@ -31,10 +31,9 @@ catch.
 The installer sets `env.DISABLE_AUTOUPDATER=1` and `autoUpdates: false`
 in the managed policy. With the in-container updater off, the thing that
 re-creates `~/.local/bin/claude` never runs on its own. Updates become a
-deliberate act: you re-run `./install`, which re-fetches the binary,
-re-relocates it to `/usr/libexec/claude-sandbox/`, and re-asserts the
-shadow. See [upgrade Claude Code](../how-to/upgrade.md) for that
-workflow.
+deliberate act: upgrade the PyPI launcher and recreate the project container
+to use a newer image. In a custom devcontainer, the installer reasserts the
+shadow but keeps an existing agent binary. See [Upgrade](../how-to/upgrade.md).
 
 This is root-cause removal — the guard below is the backstop for if it
 ever happens anyway.

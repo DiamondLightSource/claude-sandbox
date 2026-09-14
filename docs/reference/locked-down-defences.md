@@ -25,7 +25,7 @@ exfiltration path closed by the matching primitive.
 | `.Xauthority` defence in depth | `--bind-try /dev/null /root/.Xauthority` | check 15 |
 | Curated gitconfig in effect | `GIT_CONFIG_GLOBAL=/etc/claude-gitconfig`, `GIT_CONFIG_SYSTEM=/dev/null` | check 16 |
 | Chrome browser-extension RPC channel disabled | shadow injects `--no-chrome` and strips user `--chrome` so Claude Code never writes its `NativeMessagingHosts` manifest | check 03 (regression manifests as browser dirs under `~/.config`) |
-| Lateral-movement (RFC1918) egress isolation | netns + `pasta` routing allowlist around bwrap (NOT a bwrap primitive — {ref}`ADR 0015 <adr-network-egress-jail>`); blackholes 10/8, 172.16/12, 192.168/16, 169.254/16 | no jail-aware check needed — check 06 (`CapEff=0`) still passes in the nested userns; an optional netns/blackhole check is a future item |
+| Lateral-movement egress isolation | netns + `pasta` routing allowlist around bwrap; blocks RFC1918, CGNAT, connected subnets and link-local ({ref}`adr-network-egress-jail`) | checks 19–20 inspect blackhole routes and representative destinations; a disabled jail is reported as a pass with a note |
 
 ## Notes
 
@@ -49,12 +49,11 @@ weakening the sandbox is discouraged. Only that opt-out path shares the
 host netns, which is what makes the host's network identity disclosable
 from inside.
 
-The jail sits *around* bwrap, so [`/verify-sandbox`](verification-checks.md)
-passes unchanged inside it — check 06 asserts `CapEff=0` (the effective
-set, empty even in the jail's nested userns), not netns state. There is
-therefore no PASS/FAIL check for the jail itself (a netns/blackhole check
-is a future item); any egress regression makes Claude fail on first use
-rather than silently. See the
+Check 06 asserts `CapEff=0` even in the nested user namespace.
+Checks 19–20 inspect the jail's routes and representative destinations.
+They report a disabled jail as a pass with a note, so a green battery alone
+does not establish that network isolation is enabled. See
+[Verification checks](verification-checks.md) and the
 [threat model](../explanations/threat-model.md).
 
 ### `--die-with-parent`
