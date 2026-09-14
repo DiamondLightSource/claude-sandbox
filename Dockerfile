@@ -20,6 +20,10 @@
 # Node source is a named stage (used by the claude-sandbox stage below).
 ARG NODE_VERSION=22
 FROM node:${NODE_VERSION}-slim AS node
+# EPICS client tools source (copied into the claude-sandbox stage below).
+# The runtime image is built on ubuntu:noble, the same glibc as our base.
+ARG EPICS_BASE_VERSION=23.9.2
+FROM ghcr.io/epics-containers/epics-base-runtime:${EPICS_BASE_VERSION} AS epics
 
 FROM ghcr.io/diamondlightsource/ubuntu-devcontainer:noble AS developer
 
@@ -138,6 +142,29 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     # node-gyp fail loudly with it; the agent should ask, not work around.
     && printf 'ignore-scripts=true\n' > /usr/local/etc/npmrc \
     && node --version && npm --version && npx --version
+
+# EPICS Channel Access and pvAccess client tools (caget, camonitor, pvget,
+# ...) for the UNSANDBOXED shell verb on a host with beamline networking
+# (--network=host is the launcher default). Copied from the epics-containers
+# runtime image rather than built: base is bash-only and this is a client
+# convenience, not part of the sandbox. Libraries go through ld.so.conf so
+# no LD_LIBRARY_PATH is needed — the shadow refuses LD_* pass-through by
+# design, and the tools are visible ro inside the jail too (where CA/PVA
+# broadcast needs an allow-ip route; see the networking skill). Only the
+# client tools are linked onto PATH: softIoc and friends stay reachable by
+# full path under /opt/epics.
+COPY --from=epics /epics/epics-base/bin/linux-x86_64 /opt/epics/epics-base/bin/linux-x86_64
+COPY --from=epics /epics/epics-base/lib/linux-x86_64 /opt/epics/epics-base/lib/linux-x86_64
+COPY --from=epics /epics/support/pvxs/bin/linux-x86_64 /opt/epics/support/pvxs/bin/linux-x86_64
+COPY --from=epics /epics/support/pvxs/lib/linux-x86_64 /opt/epics/support/pvxs/lib/linux-x86_64
+RUN printf '/opt/epics/epics-base/lib/linux-x86_64\n/opt/epics/support/pvxs/lib/linux-x86_64\n' > /etc/ld.so.conf.d/epics.conf \
+    && ldconfig \
+    && for t in caget caput camonitor cainfo caRepeater pvget pvput pvmonitor pvinfo pvlist; do \
+        ln -s /opt/epics/epics-base/bin/linux-x86_64/$t /usr/local/bin/$t; done \
+    && for t in pvxget pvxput pvxmonitor pvxinfo pvxlist pvxcall; do \
+        [ -x /opt/epics/support/pvxs/bin/linux-x86_64/$t ] && ln -s /opt/epics/support/pvxs/bin/linux-x86_64/$t /usr/local/bin/$t || true; done \
+    # Build-time proof the copied libs resolve on this base.
+    && ! ldd /usr/local/bin/caget /usr/local/bin/pvget | grep "not found"
 
 # No USER directive, deliberately (the DLS base-image pattern): the
 # supported runtime is a ROOTLESS engine, where in-container root maps

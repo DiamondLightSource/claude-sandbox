@@ -151,7 +151,15 @@ lifetime, so it is per project. The uv download cache at `/cache/uv` is a
 named volume, `claude-sandbox-uv-cache`, shared by every project container
 and kept by `--recreate` and `clean` (set `CLAUDE_SANDBOX_UV_CACHE` to
 another name, or empty for none). The mounted project's `.venv` is not
-used by the image's default uv configuration. Home-directory caches inside the
+used by the image's default uv configuration.
+
+EPICS Channel Access and pvAccess client tools (`caget`, `camonitor`,
+`pvget`, ...) are on the PATH, copied from the epics-containers runtime
+image. From a `shell` session on a beamline-networked host they reach IOCs
+directly, since the container shares the host network. Inside an agent
+session the egress jail applies: see
+[Configure the network egress jail](network-egress-jail.md) for
+`EPICS_CA_ADDR_LIST` and `allow-ip`. Home-directory caches inside the
 sandbox are ephemeral.
 
 npm lifecycle scripts are disabled by default, but project configuration can
