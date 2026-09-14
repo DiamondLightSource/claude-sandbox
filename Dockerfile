@@ -99,9 +99,16 @@ RUN bash -c ' \
 # devcontainer to supply one, so the image does: a uv-managed interpreter
 # baked into the read-only root, and a shared venv + uv cache + tool dir
 # under /cache, which the shipped conf already binds rw (allow-write =
-# /cache) and which lives in the named container's writable layer — so
-# it persists across sessions, is per-project for free (one container per
-# directory), and is wiped by --recreate. UV_PROJECT_ENVIRONMENT keeps
+# /cache). The launcher puts /cache on a named volume shared by every
+# project container, laid out as the DLS python-copier devcontainer does:
+# the venv lives on the SAME filesystem as the uv cache, at
+# /cache/venv-for<project path>, so uv hardlinks wheels in instead of
+# copying; the entrypoint (re)creates it on a fresh container (postCreate's
+# `uv venv --clear`) and points /opt/venv — container-local, on PATH
+# below — at it, so two projects sharing the volume never share a venv.
+# Without the launcher (plain `podman run`) the defaults here apply: the
+# venv at /cache/venv in the container layer, wiped with the container.
+# UV_PROJECT_ENVIRONMENT keeps
 # `uv sync`/`uv add` out of the workspace: the host's own .venv there is
 # never touched, and the container's interpreter path never leaks into
 # it. The shadow passes VIRTUAL_ENV and the UV_* vars through --clearenv
@@ -113,9 +120,10 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python \
     VIRTUAL_ENV=/cache/venv \
     UV_CACHE_DIR=/cache/uv \
     UV_TOOL_DIR=/cache/uv-tools \
-    PATH=/cache/venv/bin:$PATH
+    PATH=/opt/venv/bin:$PATH
 RUN uv python install --no-progress "$PYTHON_VERSION" \
     && uv venv /cache/venv --python "$PYTHON_VERSION" \
+    && ln -s /cache/venv /opt/venv \
     && uv cache clean --quiet
 
 # Node.js LTS for the agent — IMAGE-ONLY, same reasoning as the Python

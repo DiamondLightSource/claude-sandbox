@@ -128,3 +128,95 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   in-session; overridable by ~/.npmrc so a default not a gate) — pi's own
   npm call passes no `--ignore-scripts`. Don't drop it "because package X
   needs postinstall": that is the case for asking the user.
+- **Launcher verbs are forwarded (PR #40, 2026-09-14)**: `claude-sandbox`
+  names two commands — the host launcher (first word = agent) and the
+  in-container helper CLI (first word = verb). The launcher now execs
+  `gh-auth|glab-auth|verify|pi-local|version|update` inside the project
+  container, so the same spelling works on either side. Refuse: renaming
+  the inner CLI (docs, wheel console script and muscle memory all carry
+  the name; a rename would not stop the host launcher swallowing the
+  verb as an agent arg anyway). Everything else after the options is
+  still agent argv (`uvx claude-sandbox --resume` must keep working).
+- **`clean [--force] [--images]` (PR #42)**: removes the launcher's
+  project containers — stopped only by default, running too with
+  `--force`, unused `*/diamondlightsource/claude-sandbox` image tags with
+  `--images`. Match is name prefix `claude-sandbox-` AND the keeper
+  command, never the name alone. Why it exists: reconnecting keeps the
+  image a container was created from, so after a pull it is unclear
+  which image a session runs; `--recreate` is one project at a time.
+- **Devcontainer-like filesystem view (2026-09-14)**: the launcher binds
+  the project's PARENT read-only at its host path (siblings readable, as
+  the devcontainer's `/workspaces` mount) and the project rw, nested
+  over it; `--mount` is now READ-ONLY and `--mount-rw` is the old rw +
+  allow-write behaviour. The parent bind is skipped when the parent is
+  `/` or contains `$HOME` (a project directly under `~` would hand
+  `~/.ssh` and every host token to the container, ro or not — the
+  launcher says so). `shell` execs the shell the launcher was run FROM
+  (`detect_shell` walks the ancestors; `$SHELL` is only the login shell —
+  bash at DLS while terminals run zsh), or `CLAUDE_SANDBOX_SHELL` (per
+  run, not create-time; bash fallback inside):
+  the DLS base image already installs zsh + oh-my-zsh and writes
+  `/root/.zshrc` to source `/user-terminal-config/zshrc`, so the
+  terminal-config richness was inherited all along — only the verb
+  hard-coded bash. Refuse: hard-coding zsh instead (user declined to force
+  it on people). `LANG` is always
+  set; `DISPLAY` + `/tmp/.X11-unix` + `~/.Xauthority` (ro) are passed
+  only when the host has a DISPLAY, and only the unsandboxed shell sees
+  them (the shadow masks `~/.Xauthority`; nothing in the agent path
+  changed). Parent and `--mount`/`--mount-rw` binds use `bind-propagation=slave`
+  (as builder2ibek's devcontainer does for `/dls_sw`): a rootless
+  container may not TRIGGER an autofs mount (`ls /dls_sw/work` → EPERM)
+  but host-made mounts propagate in. Refuse: plain `-v` for these
+  (loses propagation); mounting the parent when it holds `$HOME`; making
+  `--mount` rw again "for convenience"; forwarding DISPLAY into the
+  shadow's pass-through list.
+- **/cache volume + per-project venv (PR #43, 2026-09-14)**: the launcher
+  mounts ONE named volume `claude-sandbox-cache` at `/cache` and sets
+  `UV_PROJECT_ENVIRONMENT`/`VIRTUAL_ENV=/cache/venv-for<project path>`,
+  `PRE_COMMIT_HOME`, `UV_PYTHON_CACHE_DIR` at create — the DLS
+  python-copier devcontainer layout (`/workspaces/podbench/.devcontainer`).
+  THE LESSON (user, after my first cut put only `/cache/uv` on a volume):
+  venv and uv cache on the SAME filesystem is the point — uv hardlinks
+  wheels into the venv, so installs cost no disk and little time; split
+  them and you need `UV_LINK_MODE=copy` and pay a copy per install. And
+  persistence of packages was never the goal: that template runs
+  `uv venv --clear && uv sync` on every create, the cache makes it fast.
+  Image side: PATH carries `/opt/venv/bin`, a CONTAINER-LOCAL symlink the
+  entrypoint points at `$VIRTUAL_ENV` (a symlink on the shared volume
+  would be shared by every project), created fresh once per container
+  (`/var/lib/claude-sandbox/venv-created` marker; restarts keep it).
+  `clean --venvs` prunes `venv-for<path>` dirs whose container name
+  (recomputed from the path) no longer exists, via throwaway `run`s on
+  the volume. Refuse: a volume on `/cache/uv` alone; `UV_LINK_MODE=copy`;
+  a shared symlink inside the volume; `uv sync` in the entrypoint (runs
+  before the session with no feedback — the agent or user syncs).
+- **Walked back — EPICS client tools in the image (PR #43, 2026-09-14)**:
+  built and green (caget & co. + pvxs `pvx*` copied from
+  `ghcr.io/epics-containers/epics-base-runtime:7.0.10ec5`, ld.so.conf,
+  libevent, amd64-only per-arch stage), then removed the same day: the
+  user judged CA too DLS-specific for a generic tool and not that useful
+  (agents are behind the egress jail anyway); a user who wants the
+  binaries can copy them in. Don't propose it again; the branch history
+  has the working recipe if ever needed.
+- **Testing a shadow branch in the launcher container**: `uvx
+  claude-sandbox shell`, clone the branch, `./install --here`; verify
+  with `cat /usr/libexec/claude-sandbox/version` (branch hash, not a
+  tag) and a grep for the new code in `/usr/local/bin/claude`. It lives
+  only in that named container: `--recreate` or `clean` reverts it. The
+  checks must run INSIDE — on the host `uvx claude-sandbox version`
+  launched claude with `version` as its prompt until PR #40.
+- **Walked back — filtering terminal escape sequences in the pty relay
+  (PR #39, closed 2026-09-14)**: RHEL 8/9 desktop terminals DRAW
+  unsupported sequences (`␛[>4;2m`, the modifyOtherKeys enable every
+  agent emits) instead of dropping them; it reproduces with a native
+  host `claude`, so the sandbox is not the cause. A chunk-safe node
+  filter on `script`'s output (`pty_launch`) was built, tested, and
+  installed on a DLS box — the junk stayed, and mouse-selection drew
+  more of the same, so the user abandoned it as a losing game against
+  that terminal. Don't propose stripping sequences again; the real
+  answers are a capable terminal or tmux ≥ 3.2 in front of the old one.
+  Branch `fix/xtmodkeys-filter` kept. One finding from it is STILL
+  UNFIXED on main: the shadow runs `script -q -E never` without `-e`, so
+  script always exits 0 and the agent's exit status never reaches the
+  caller — `claude-sandbox verify`'s "non-zero on failure" promise is
+  broken. Fix is one flag (`script -q -e -E never`) plus a test.

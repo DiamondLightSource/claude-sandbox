@@ -29,8 +29,12 @@ claude-sandbox shell        # Skip if already in your devcontainer terminal
 ```
 
 `shell` is an **unsandboxed shell inside the container**, for administration
-such as forge login and installing system packages. From there, `claude`,
-`codex` and `pi` still start sandboxed agents.
+such as forge login and installing system packages. It runs the shell
+you launched from (zsh in a zsh terminal, even where the login `$SHELL` is
+bash; override with `CLAUDE_SANDBOX_SHELL=zsh`; bash if the image lacks it) and sources your `~/.config/terminal-config` rc file, as a
+devcontainer terminal does. X11 applications reach your display when
+`DISPLAY` was set at creation.
+From there, `claude`, `codex` and `pi` still start sandboxed agents.
 
 This is equivalent to your normal terminal in a devcontainer with the sandbox
 installed. There, skip `claude-sandbox shell` and the matching `exit` in these
@@ -63,6 +67,7 @@ launcher created on this host in one go:
 claude-sandbox clean                    # stopped project containers; running ones are listed and kept
 claude-sandbox clean --force            # running ones too, ending their sessions
 claude-sandbox clean --force --images   # also drop claude-sandbox image tags no container uses
+claude-sandbox clean --venvs            # also drop venvs on the cache volume whose project container is gone
 ```
 
 The next launch in any project then creates a fresh container from the
@@ -120,10 +125,15 @@ next agent launch; recreate if your editor replaces the mounted file.
 See [Configuration](../reference/configuration.md) for all keys and
 [Configure the network egress jail](network-egress-jail.md) for network access.
 
-To expose another directory in both the container and the sandbox:
+The project directory is the only writable path. Its parent is mounted
+read-only, so sibling checkouts are readable as in a devcontainer (skipped
+when the parent is your home directory). Automounted trees such as `/dls_sw`
+work: the binds use slave propagation, so mounts the host automounter makes
+appear inside without the container triggering them. To add more:
 
 ```bash
-claude-sandbox --mount ~/src/shared-lib
+claude-sandbox --mount ~/src/shared-lib       # read-only
+claude-sandbox --mount-rw ~/src/other-repo    # writable in the container and the sandbox
 ```
 
 Mounts, network mode and forwarded `CLAUDE_SANDBOX_*` variables are fixed
@@ -137,10 +147,17 @@ CLAUDE_SANDBOX_NO_FORGE=1 claude-sandbox --recreate
 ## Toolchains
 
 The image includes Python with an active environment at `/cache/venv`,
-uv, Node.js and npm. Python packages and caches under `/cache` persist for
-the container's lifetime; the mounted project's `.venv` is not used by
-the image's default uv configuration. Home-directory caches inside the
-sandbox are ephemeral.
+uv, Node.js and npm. `/cache` is a named volume, `claude-sandbox-cache`,
+shared by every project container and laid out as the DLS python-copier
+devcontainer lays out its own: the uv download cache, the pre-commit home
+and one venv per project at `/cache/venv-for<project path>`, all on one
+filesystem so uv hardlinks packages into the venv instead of copying them.
+A new container gets a fresh venv, as a devcontainer rebuild does; the
+downloads it installs from survive `--recreate` and `clean`. Venvs of
+projects whose container is gone stay on the volume until
+`claude-sandbox clean --venvs` removes them. Set `CLAUDE_SANDBOX_CACHE` to
+another volume name, or empty for none. The mounted project's `.venv` is not
+used by the image's default uv configuration.
 
 npm lifecycle scripts are disabled by default, but project configuration can
 override that setting. Extensions needing native libraries may need an
