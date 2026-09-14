@@ -902,6 +902,9 @@ port_in_use() {
 
 # Each socat owns a new process group, including forked connections. Kill every
 # group on exit so neither streaming requests nor listeners outlive the agent.
+# Their stderr is dropped: startup is verified by wait_for below, and the only
+# thing socat says otherwise is "W exiting on signal 15" at this teardown —
+# noise that lands after the agent's own error and reads as a second failure.
 stop_relay() {
     local pid
     for pid in "$@"; do
@@ -928,7 +931,7 @@ local_model_outer() {
     export CLAUDE_JAIL_LOCAL_PORTS
     for port in $CLAUDE_JAIL_LOCAL_PORTS; do
         setsid socat "UNIX-LISTEN:$CLAUDE_JAIL_RELAY_DIR/$port.sock,mode=0600,fork" \
-            "TCP4:127.0.0.1:$port" &
+            "TCP4:127.0.0.1:$port" 2>/dev/null &
         model_relay="$model_relay $!"
         wait_for test -S "$CLAUDE_JAIL_RELAY_DIR/$port.sock" \
             || jail_fail "— loopback relay for port $port failed to start"
@@ -950,7 +953,7 @@ callback_outer() {
             continue
         fi
         setsid socat "TCP4-LISTEN:$port,bind=127.0.0.1,reuseaddr,fork" \
-            "UNIX-CONNECT:$CLAUDE_JAIL_RELAY_DIR/in-$port.sock" &
+            "UNIX-CONNECT:$CLAUDE_JAIL_RELAY_DIR/in-$port.sock" 2>/dev/null &
         model_relay="$model_relay $!"
         if wait_for port_in_use "$port"; then
             started="$started$port "
@@ -974,7 +977,7 @@ local_model_inner() {
     trap 'exit 143' TERM HUP
     for port in ${CLAUDE_JAIL_LOCAL_PORTS:-}; do
         setsid socat "TCP4-LISTEN:$port,bind=127.0.0.1,reuseaddr,fork" \
-            "UNIX-CONNECT:$CLAUDE_JAIL_RELAY_DIR/$port.sock" &
+            "UNIX-CONNECT:$CLAUDE_JAIL_RELAY_DIR/$port.sock" 2>/dev/null &
         relay="$relay $!"
         # ss reads the kernel listener table; do not probe by connecting to the
         # service or require it to be running just to use a cloud provider.
@@ -983,7 +986,7 @@ local_model_inner() {
     done
     for port in ${CLAUDE_JAIL_CALLBACK_PORTS:-}; do
         setsid socat "UNIX-LISTEN:$CLAUDE_JAIL_RELAY_DIR/in-$port.sock,mode=0600,fork" \
-            "TCP4:127.0.0.1:$port" &
+            "TCP4:127.0.0.1:$port" 2>/dev/null &
         relay="$relay $!"
         wait_for test -S "$CLAUDE_JAIL_RELAY_DIR/in-$port.sock" \
             || jail_fail "— callback relay for port $port failed to start"

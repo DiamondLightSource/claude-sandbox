@@ -33,7 +33,7 @@ case "$*" in
     "image inspect -f {{index .Config.Labels \"org.opencontainers.image.revision\"}} "*) echo abc123 ;;
     "image inspect -f {{.Id}} "*) echo img1 ;;
     "create "*) touch "$MARK" ;;
-    "run --rm -v "*" find /cache/venv-for "*) cat "$VENVS" 2>/dev/null ;;
+    "run --rm --entrypoint find -v "*" /cache/venv-for "*) cat "$VENVS" 2>/dev/null ;;
     "ps -a --filter name=^claude-sandbox- --format {{.Names}}") cat "$PS" 2>/dev/null ;;
     "images --filter reference=*/diamondlightsource/claude-sandbox --format {{.Repository}}:{{.Tag}}") cat "$IMAGES" 2>/dev/null ;;
     "rmi "*) [ "${2:-}" != "in-use:1" ] ;;
@@ -122,6 +122,12 @@ assert_not_contains "volume name not baked as env" "$(create_line)" "-e CLAUDE_S
 run CLAUDE_SANDBOX_CACHE= --
 case "$(create_line)" in *":/cache "*) fail "empty name should disable the volume: $(create_line)" ;; *) pass ;; esac
 
+# --- a typo'd verb still goes to claude, with a hint ------------------------
+run -- clear --venvs
+case "$(exec_line)" in *" claude clear --venvs") pass ;; *) fail "typo'd verb must still be agent argv: $(exec_line)" ;; esac
+case "$ERR" in *"not a launcher verb"*) pass ;; *) fail "no near-miss hint: $ERR" ;; esac
+run -- "fix the failing test"; case "$ERR" in *"not a launcher verb"*) fail "hint fired on an ordinary prompt" ;; *) pass ;; esac
+
 # --- pre-4.0 spellings refuse rather than leak into agent argv -------------
 for old in --agent --host-net --shell; do
     run -- $old codex
@@ -172,14 +178,16 @@ live="$TMP/ws/live"; gone="$TMP/ws/gone"
 live_name="claude-sandbox-live-$(printf '%s' "$live" | cksum | awk '{print $1}')"
 printf '%s\n' "$live_name" > "$TMP/ps"            # only the live project's container exists (and is running)
 printf '%s\n' "/cache/venv-for$live" "/cache/venv-for$gone" > "$TMP/venvs"
-run -- clean --venvs
-[ "$RC" = 0 ] && pass || fail "clean --venvs rc=$RC: $ERR"
-grep -q "rm -rf /cache/venv-for$gone" "$LOG" && pass || fail "stale venv not removed: $(cat "$LOG")"
-grep -q "rm -rf /cache/venv-for$live" "$LOG" && fail "live project's venv removed" || pass
+run -- clean
+[ "$RC" = 0 ] && pass || fail "clean rc=$RC: $ERR"
+grep -q -- "-rf /cache/venv-for$gone" "$LOG" && pass || fail "stale venv not removed: $(grep "^run" "$LOG")"
+grep -q -- "-rf /cache/venv-for$live" "$LOG" && fail "live project's venv removed" || pass
 case "$ERR" in *"1 venv(s) removed"*) pass ;; *) fail "venvs summary: $ERR" ;; esac
-run -- clean; grep -q 'venv-for' "$LOG" && fail "clean touched venvs without --venvs" || pass
-run CLAUDE_SANDBOX_CACHE= -- clean --venvs
-case "$ERR" in *"no cache volume"*) pass ;; *) fail "clean --venvs without a volume: $ERR" ;; esac
+grep -q "run --rm --entrypoint find " "$LOG" && pass || fail "venv listing must bypass the image entrypoint: $(grep "^run" "$LOG")"
+grep -q "run --rm --entrypoint rm " "$LOG" && pass || fail "venv removal must bypass the image entrypoint"
+run -- clean --venvs; [ "$RC" = 2 ] && pass || fail "--venvs should be gone (rc=$RC)"
+run CLAUDE_SANDBOX_CACHE= -- clean
+grep -q "^run " "$LOG" && fail "clean ran helper containers with no cache volume" || pass
 rm -f "$TMP/ps" "$TMP/venvs"
 
 run -- clean --bogus; [ "$RC" = 2 ] && [ -z "$(grep '^rm ' "$LOG")" ] && pass || fail "clean --bogus accepted (rc=$RC)"

@@ -34,14 +34,15 @@
 #                   run that helper of the in-container `claude-sandbox` CLI
 #                   (same as typing it in a shell session), e.g.
 #                   `uvx claude-sandbox gh-auth` or `uvx claude-sandbox verify`.
-#   clean [--force] [--images] [--venvs]
+#   clean [--force] [--images]
 #                   remove the STOPPED project containers this launcher
 #                   created on this host (forge logins in them are lost).
 #                   Running ones are listed and kept; --force removes those
 #                   too, ending their sessions. --images also removes
 #                   claude-sandbox image tags no container uses any more.
-#                   --venvs also removes venvs on the cache volume whose
-#                   project container no longer exists.
+#                   Venvs on the cache volume whose project container no
+#                   longer exists are removed too (a new container gets a
+#                   fresh venv anyway).
 #                   Use it before testing a newly pulled image, so no launch
 #                   silently reconnects to a container built from the old one.
 #   install         (uvx only) install the sandbox into the devcontainer this
@@ -147,7 +148,6 @@ inner=0
 clean=0
 clean_force=0
 clean_images=0
-clean_venvs=0
 create_opts=()     # create-time flags the user passed, for the reuse warning
 mounts_ro=()
 mounts_rw=()
@@ -198,8 +198,7 @@ case "${1:-}" in
             case "$1" in
                 --force)  clean_force=1 ;;
                 --images) clean_images=1 ;;
-                --venvs)  clean_venvs=1 ;;
-                *) echo "claude-container: clean takes only --force, --images and --venvs" >&2; exit 2 ;;
+                *) echo "claude-container: clean takes only --force and --images" >&2; exit 2 ;;
             esac
             shift
         done
@@ -209,6 +208,17 @@ case "${1:-}" in
         exit 2
         ;;
 esac
+
+# A bare first word that is not a verb is the agent's own argv (a prompt,
+# say) and must stay so — but a typo'd verb would launch claude with the
+# typo as its prompt and fail obscurely. Hint on a near miss, then carry on.
+if [ "$inner" = 0 ] && [ "$shell" = 0 ] && [ "$clean" = 0 ] && [ "$agent" = claude ] && [ $# -gt 0 ]; then
+    case "$1" in
+        -*) ;;
+        clear|cleanup|cleam|claen|clena|sh|zsh|bash|sehll|shel|verifiy|verfy|updat|upgrade|gh-login|login|auth)
+            echo "claude-container: note: '$1' is not a launcher verb, so it goes to claude as its argument (verbs: clean | shell | verify | update | gh-auth | glab-auth | version | pi-local)" >&2 ;;
+    esac
+fi
 
 # Inside a container there is nothing for this launcher to do: an installed
 # sandbox is run by its own command names, and a bare container wants the
@@ -264,14 +274,17 @@ clean_containers() {
         "$ENGINE" rmi "$img" >/dev/null 2>&1 && echo "claude-container: removed image $img" >&2
     done < <("$ENGINE" images --filter reference='*/diamondlightsource/claude-sandbox' --format '{{.Repository}}:{{.Tag}}' 2>/dev/null)
 }
-# --venvs: venvs under /cache/venv-for<path> on the cache volume whose
-# project container no longer exists. Listed and removed from a throwaway
-# container (the volume's host mountpoint is engine-specific and, under
-# docker, root-owned). The container name is recomputed from the path the
-# same way the launcher names it, so a venv is only pruned when ITS
+# Venvs under /cache/venv-for<path> on the cache volume whose project
+# container no longer exists — always, as part of clean: a removed
+# container gets a fresh venv on its next create anyway, so its old one
+# is only disk. Listed and removed from a throwaway container (the
+# volume's host mountpoint is engine-specific and, under docker,
+# root-owned) with the entrypoint BYPASSED: it would run the userns
+# probe and venv setup first, and a refusal there reads as "no venvs".
+# The container name is recomputed from the path the same way the launcher names it, so a venv is only pruned when ITS
 # container is gone — a live project keeps its venv.
 clean_venvs() {
-    [ -n "$CACHE_VOLUME" ] || { echo "claude-container: no cache volume configured (CLAUDE_SANDBOX_CACHE is empty)" >&2; return 0; }
+    [ -n "$CACHE_VOLUME" ] || return 0
     local venv path slug hash removed=0
     while IFS= read -r venv; do
         [ -n "$venv" ] || continue
@@ -281,15 +294,15 @@ clean_venvs() {
         if "$ENGINE" container inspect "claude-sandbox-${slug}-${hash}" >/dev/null 2>&1; then
             continue
         fi
-        "$ENGINE" run --rm -v "$CACHE_VOLUME:/cache" "$IMAGE" rm -rf "$venv" >/dev/null \
+        "$ENGINE" run --rm --entrypoint rm -v "$CACHE_VOLUME:/cache" "$IMAGE" -rf "$venv" >/dev/null \
             && { echo "claude-container: removed venv for $path" >&2; removed=$((removed + 1)); }
-    done < <("$ENGINE" run --rm -v "$CACHE_VOLUME:/cache" "$IMAGE" \
-        find /cache/venv-for -name pyvenv.cfg -printf '%h\n' 2>/dev/null)
+    done < <("$ENGINE" run --rm --entrypoint find -v "$CACHE_VOLUME:/cache" "$IMAGE" \
+        /cache/venv-for -name pyvenv.cfg -printf '%h\n' 2>/dev/null)
     echo "claude-container: $removed venv(s) removed" >&2
 }
 if [ "$clean" = 1 ]; then
     clean_containers
-    [ "$clean_venvs" = 1 ] && clean_venvs
+    clean_venvs
     exit 0
 fi
 
@@ -376,7 +389,7 @@ create_container() {
     # wheels into the venv instead of copying. The entrypoint (re)creates the
     # venv on a fresh container — like postCreate's `uv venv --clear` — and
     # points /opt/venv (on the image PATH) at it. Venvs of projects whose
-    # container is gone accumulate on the volume: `clean --venvs` prunes them.
+    # container is gone accumulate on the volume: `clean` prunes them.
     if [ -n "$CACHE_VOLUME" ]; then
         args+=( -v "$CACHE_VOLUME:/cache" )
     fi
