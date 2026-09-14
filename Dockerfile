@@ -177,6 +177,9 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 # full path under /opt/epics.
 COPY --from=epics-tools /opt /opt
 RUN if [ ! -d /opt/epics ]; then echo "no EPICS tools for $(uname -m)"; exit 0; fi \
+    # pvxs links libevent, which the runtime image gets from apt.
+    && apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends libevent-core-2.1-7t64 libevent-pthreads-2.1-7t64 \
+    && rm -rf /var/lib/apt/lists/* \
     && printf '/opt/epics/epics-base/lib/linux-x86_64\n/opt/epics/support/pvxs/lib/linux-x86_64\n' > /etc/ld.so.conf.d/epics.conf \
     && ldconfig \
     # CA tools from base, pvAccess tools from pvxs (pvx*; the epics-containers
