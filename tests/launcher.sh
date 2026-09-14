@@ -108,6 +108,16 @@ case "$(create_line)" in *"-e DISPLAY=:1"*) pass ;; *) fail "DISPLAY not passed:
 case "$(create_line)" in *"-v $TMP/.Xauthority:/root/.Xauthority:ro"*) pass ;; *) fail "Xauthority not mounted ro: $(create_line)" ;; esac
 rm -f "$TMP/.Xauthority"
 
+# --- uv download cache on a named volume; venv stays per container ---------
+run --
+case "$(create_line)" in *"-v claude-sandbox-uv-cache:/cache/uv -e UV_LINK_MODE=copy"*) pass ;; *) fail "uv cache volume: $(create_line)" ;; esac
+assert_not_contains "venv is not on the shared volume" "$(create_line)" "/cache "
+run CLAUDE_SANDBOX_UV_CACHE=mine --
+case "$(create_line)" in *"-v mine:/cache/uv"*) pass ;; *) fail "uv cache volume name override: $(create_line)" ;; esac
+assert_not_contains "volume name not baked as env" "$(create_line)" "-e CLAUDE_SANDBOX_UV_CACHE=mine"
+run CLAUDE_SANDBOX_UV_CACHE= --
+case "$(create_line)" in *":/cache/uv"*) fail "empty name should disable the volume: $(create_line)" ;; *) pass ;; esac
+
 # --- pre-4.0 spellings refuse rather than leak into agent argv -------------
 for old in --agent --host-net --shell; do
     run -- $old codex

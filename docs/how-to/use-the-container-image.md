@@ -146,9 +146,12 @@ CLAUDE_SANDBOX_NO_FORGE=1 claude-sandbox --recreate
 ## Toolchains
 
 The image includes Python with an active environment at `/cache/venv`,
-uv, Node.js and npm. Python packages and caches under `/cache` persist for
-the container's lifetime; the mounted project's `.venv` is not used by
-the image's default uv configuration. Home-directory caches inside the
+uv, Node.js and npm. The environment persists for the container's
+lifetime, so it is per project. The uv download cache at `/cache/uv` is a
+named volume, `claude-sandbox-uv-cache`, shared by every project container
+and kept by `--recreate` and `clean` (set `CLAUDE_SANDBOX_UV_CACHE` to
+another name, or empty for none). The mounted project's `.venv` is not
+used by the image's default uv configuration. Home-directory caches inside the
 sandbox are ephemeral.
 
 npm lifecycle scripts are disabled by default, but project configuration can

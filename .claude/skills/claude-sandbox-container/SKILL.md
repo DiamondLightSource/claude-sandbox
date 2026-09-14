@@ -170,6 +170,15 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   (loses propagation); mounting the parent when it holds `$HOME`; making
   `--mount` rw again "for convenience"; forwarding DISPLAY into the
   shadow's pass-through list.
+- **uv cache volume (PR #43)**: `-v claude-sandbox-uv-cache:/cache/uv`
+  plus `UV_LINK_MODE=copy` (cache and venv on different filesystems; the
+  shadow forwards `UV_LINK_MODE`, scenario 8c). ONLY the download cache:
+  `/cache/venv` stays in the container's layer so it is per project.
+  Refuse: a volume over all of `/cache` (one venv for every project, and
+  the baked venv is hidden by a pre-existing volume); reusing the DLS
+  devcontainer volume `devcontainer-shared-cache` (its uv cache is a
+  subdir, and volume subpaths are not portable across podman/docker).
+  `clean` never removes volumes.
 - **Testing a shadow branch in the launcher container**: `uvx
   claude-sandbox shell`, clone the branch, `./install --here`; verify
   with `cat /usr/libexec/claude-sandbox/version` (branch hash, not a

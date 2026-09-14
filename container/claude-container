@@ -73,6 +73,9 @@
 #   CLAUDE_SANDBOX_SHELL          shell the `shell` verb runs, by name: zsh, bash, ...
 #                                 (default: the shell you ran this from, else
 #                                 $SHELL; bash when the image lacks it). Per run.
+#   CLAUDE_SANDBOX_UV_CACHE       named volume for the uv download cache at
+#                                 /cache/uv, shared by every project container
+#                                 (default claude-sandbox-uv-cache; empty = none)
 #   CLAUDE_SANDBOX_*              any other sandbox variable is passed through
 #                                 at create time (allow-ip, egress-jail, ...)
 set -euo pipefail
@@ -336,6 +339,14 @@ create_container() {
     fi
     # Locale for zsh, git and friends; the image generates en_US.UTF-8.
     args+=( -e "LANG=${LANG:-en_US.UTF-8}" )
+    # The uv download cache on a named volume, as the devcontainer's /cache
+    # volume: wheels fetched once serve every project container and survive
+    # --recreate. Only the cache — /cache/venv stays per container, which is
+    # what makes it per project. Cache and venv are then on different
+    # filesystems, so tell uv to copy rather than warn about hardlinks.
+    if [ -n "${CLAUDE_SANDBOX_UV_CACHE-claude-sandbox-uv-cache}" ]; then
+        args+=( -v "${CLAUDE_SANDBOX_UV_CACHE-claude-sandbox-uv-cache}:/cache/uv" -e UV_LINK_MODE=copy )
+    fi
     # X11 for the UNSANDBOXED shell verb only: agents never see it (the
     # shadow masks ~/.Xauthority and the egress jail has no host sockets).
     # Needs --network=host (the default) for the abstract socket; the
@@ -380,7 +391,7 @@ create_container() {
         case "$v" in
             CLAUDE_SANDBOX_IMAGE|CLAUDE_SANDBOX_ENGINE) continue ;;
             CLAUDE_SANDBOX_SHARED_CONFIG|CLAUDE_SANDBOX_CONF) continue ;;
-            CLAUDE_SANDBOX_ALLOW_WRITE|CLAUDE_SANDBOX_SHELL) continue ;;
+            CLAUDE_SANDBOX_ALLOW_WRITE|CLAUDE_SANDBOX_SHELL|CLAUDE_SANDBOX_UV_CACHE) continue ;;
         esac
         args+=( -e "$v=${!v}" )
     done
