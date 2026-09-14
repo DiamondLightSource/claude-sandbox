@@ -159,8 +159,7 @@ image. From a `shell` session on a beamline-networked host they reach IOCs
 directly, since the container shares the host network. Inside an agent
 session the egress jail applies: see
 [Configure the network egress jail](network-egress-jail.md) for
-`EPICS_CA_ADDR_LIST` and `allow-ip`. Home-directory caches inside the
-sandbox are ephemeral.
+`EPICS_CA_ADDR_LIST` and `allow-ip`.
 
 npm lifecycle scripts are disabled by default, but project configuration can
 override that setting. Extensions needing native libraries may need an
