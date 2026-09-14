@@ -83,8 +83,13 @@ if [ "$MODE" != here ] && ! git_here rev-parse --git-dir >/dev/null 2>&1; then
         echo "claude-sandbox: --release needs a git clone, and $SCRIPT_DIR is not one." >&2
         exit 1
     fi
-    # A tarball/vendored copy has no revisions to choose between.
-    echo "claude-sandbox: not a git clone — installing these files as they are." >&2
+    # No revisions to choose between. The uvx wheel is the usual case: the
+    # wheel is the pin, and its tree is the release it was built from.
+    if [ "${CLAUDE_SANDBOX_INSTALLER:-}" = uvx ]; then
+        echo "claude-sandbox: installing the bundled ${CLAUDE_SANDBOX_VERSION:-unknown} tree from the uvx wheel." >&2
+    else
+        echo "claude-sandbox: not a git clone — installing these files as they are." >&2
+    fi
     MODE=here
 fi
 
