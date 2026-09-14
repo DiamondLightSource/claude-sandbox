@@ -1,13 +1,4 @@
-    # CA tools from base, pvAccess tools from pvxs (pvx*; the epics-containers
-    # base builds no pvAccessCPP tools). Existence-checked: a dangling link
-    # would be a 127 at runtime.
-    && for d in /opt/epics/epics-base/bin/linux-x86_64 /opt/epics/support/pvxs/bin/linux-x86_64; do \
-        for t in caget caput camonitor cainfo caRepeater \
-                 pvxget pvxput pvxmonitor pvxinfo pvxlist pvxcall; do \
-            [ -x "$d/$t" ] && ln -s "$d/$t" "/usr/local/bin/$t"; done; done; \
-    ls -l /usr/local/bin/ | grep opt/epics \
-    # Build-time proof the copied libs resolve on this base.
-    && ! ldd /usr/local/bin/caget | grep "not found"# Two consumers, one file, one base:
+# Two consumers, one file, one base:
 #
 #   developer      — the repo's own devcontainer (devcontainer.json builds
 #                    `target: developer`). Intentionally a bare FROM: the
@@ -174,7 +165,7 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && printf 'ignore-scripts=true\n' > /usr/local/etc/npmrc \
     && node --version && npm --version && npx --version
 
-# EPICS Channel Access and pvAccess client tools (caget, camonitor, pvget,
+# EPICS Channel Access and pvAccess client tools (caget, camonitor, pvxget,
 # ...) for the UNSANDBOXED shell verb on a host with beamline networking
 # (--network=host is the launcher default). Copied from the epics-containers
 # runtime image rather than built: base is bash-only and this is a client
@@ -188,12 +179,16 @@ COPY --from=epics-tools /opt /opt
 RUN if [ ! -d /opt/epics ]; then echo "no EPICS tools for $(uname -m)"; exit 0; fi \
     && printf '/opt/epics/epics-base/lib/linux-x86_64\n/opt/epics/support/pvxs/lib/linux-x86_64\n' > /etc/ld.so.conf.d/epics.conf \
     && ldconfig \
-    && for t in caget caput camonitor cainfo caRepeater pvget pvput pvmonitor pvinfo pvlist; do \
-        ln -s /opt/epics/epics-base/bin/linux-x86_64/$t /usr/local/bin/$t; done \
-    && for t in pvxget pvxput pvxmonitor pvxinfo pvxlist pvxcall; do \
-        [ -x /opt/epics/support/pvxs/bin/linux-x86_64/$t ] && ln -s /opt/epics/support/pvxs/bin/linux-x86_64/$t /usr/local/bin/$t || true; done \
+    # CA tools from base, pvAccess tools from pvxs (pvx*; the epics-containers
+    # base builds no pvAccessCPP tools). Existence-checked: a dangling link
+    # would be a 127 at runtime.
+    && for d in /opt/epics/epics-base/bin/linux-x86_64 /opt/epics/support/pvxs/bin/linux-x86_64; do \
+        for t in caget caput camonitor cainfo caRepeater \
+                 pvxget pvxput pvxmonitor pvxinfo pvxlist pvxcall; do \
+            [ -x "$d/$t" ] && ln -s "$d/$t" "/usr/local/bin/$t"; done; done; \
+    ls -l /usr/local/bin/ | grep opt/epics \
     # Build-time proof the copied libs resolve on this base.
-    && ! ldd /usr/local/bin/caget /usr/local/bin/pvget | grep "not found"
+    && ! ldd /usr/local/bin/caget /usr/local/bin/pvxget | grep "not found"
 
 # No USER directive, deliberately (the DLS base-image pattern): the
 # supported runtime is a ROOTLESS engine, where in-container root maps
