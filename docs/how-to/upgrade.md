@@ -20,6 +20,20 @@ is removed after the install.
 and recreating the container instead — see
 [Use the container image](use-the-container-image.md).)
 
+## Upgrading to 4.0
+
+The launcher's command line changed in 4.0 (ADR 23):
+
+- on hosts using the container image, run `uvx claude-sandbox@latest
+  --recreate` in place of a copied `claude-container`: it fetches the new
+  launcher and pulls `ghcr.io/diamondlightsource/claude-sandbox` at the same
+  version. The launcher's `--agent`, `--shell` and `--host-net` became the
+  verbs `claude`/`codex`/`pi`, `shell`, and a host-network default with
+  `--bridge` to opt out;
+- a sandbox installed by `uvx claude-sandbox install` updates by bumping
+  that pin (or `uvx claude-sandbox@latest install`); `claude-sandbox update`
+  says so rather than cloning past it.
+
 ## Why upgrades are deliberate
 
 Claude Code's in-container auto-updater is **disabled**

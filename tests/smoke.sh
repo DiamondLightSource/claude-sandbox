@@ -110,6 +110,11 @@ else
     fail "claude-sandbox version did not report the stamped value"
 fi
 
+# Installer stamp (ADR 23): absent for a clone install; `uvx` when the
+# wheel drove it, which `claude-sandbox update` turns into a uvx hint.
+INSTALLER_DEST="$PREFIX/usr/libexec/claude-sandbox/installer"
+[ ! -e "$INSTALLER_DEST" ] && pass || fail "installer stamp present after a clone install"
+
 # Guard scripts + the /verify-sandbox phase-1 battery placed OFF the rw
 # set under /usr/libexec (prefixed), like the relocated real binary. All
 # executable, mode 0755 (the battery rides along for the same off-PATH,

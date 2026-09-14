@@ -47,11 +47,12 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   (`_is_mount`) and skips re-stamping. Conf stays outside the sandbox rw set.
 - A git tag publishes `ghcr.io/...:<tag>` without touching `:latest`
   (`latest` is default-branch-only) — beta images are safe to cut anytime.
-- **Launcher versioning (notify-only, by design)**: the `VERSION=` line
-  in `container/claude-container` is the single source of truth; CI seds
-  it into the Dockerfile `ARG` → OCI label
-  `io.diamondlightsource.claude-sandbox.launcher-version`, and a CI step asserts
-  label == baked script. Each run the launcher compares itself against
+- **Launcher versioning (notify-only, by design)**: on a tag build CI
+  bakes the tag into the Dockerfile `ARG` → OCI label
+  `io.diamondlightsource.claude-sandbox.launcher-version` (else the script's
+  `VERSION=` literal, which only a copied script relies on); the uvx entry
+  point passes the wheel's tag in as `CLAUDE_SANDBOX_LAUNCHER_VERSION`.
+  Each run the launcher compares itself against
   the LOCAL image's label (instant, offline, no container start) and
   prints a curl pinned to `org.opencontainers.image.revision` when
   outdated, or a pull+`--recreate` hint when newer. **Refuse:** a
@@ -63,6 +64,30 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   `io.gilesknap.…` in the DLS-org rebrand (2026-07-24); images built
   before then carry only the old key, so a new launcher reads an empty
   label and degrades to silence — expected, not a bug.
+- **PyPI front door (ADR 23, 2026-09-13)**: `uvx claude-sandbox` is the
+  launcher and `uvx claude-sandbox install` the guest-devcontainer installer.
+  The wheel (`packaging/pypi/`, hatchling, wheel-only) bundles the bash
+  VERBATIM via `force-include` and one module execs it; the version is
+  the git tag via hatch-vcs (`_dist.yml`/`_pypi.yml`/`_release.yml` copied
+  from the DLS python-copier template, wired in `ci.yml`), so wheel == image
+  tag (4.0.0 onward; nothing in the tree to bump). The entry point pins `CLAUDE_SANDBOX_IMAGE` to its own version and
+  sets `CLAUDE_SANDBOX_LAUNCHER=uvx`, which flips the outdated hint from
+  curl to `uvx claude-sandbox@latest`; a copied script keeps `:latest` +
+  the label check. Verbs `claude|codex|pi|shell` replaced `--agent` /
+  `--shell` (old spellings exit 2 with the new form — no aliases);
+  **host-net is the default**, `--bridge` opts out (create-time). The
+  launcher refuses inside a container (`/run/.containerenv` or
+  `/.dockerenv`; `CLAUDE_SANDBOX_NESTED=1` overrides — also the test seam,
+  `tests/launcher.sh` runs against a fake engine); the entry point refuses
+  `install` OUTSIDE one (`CLAUDE_SANDBOX_HOST_INSTALL=1` overrides).
+  `install.sh` stamps `/usr/libexec/claude-sandbox/installer` = `uvx` so
+  `claude-sandbox update` points back at uvx instead of cloning past the
+  pin. **Refuse:** logic in the Python module beyond locate + env + exec;
+  a second console script or package (reopens `--from` for `@latest`);
+  an sdist (a second copy of the tree); a devcontainer *feature* as the
+  guest path (considered, slow to start, and useless for the host
+  launcher). PyPI trusted publishing needs the `pypi` GitHub environment
+  and the project's publisher configured once, by hand.
 - **Distribution/conf decisions parked as issues** (re-read before
   re-designing any of these): **#79** ship `/verify-sandbox` as a plugin
   via managed settings — docs-verified that `extraKnownMarketplaces`

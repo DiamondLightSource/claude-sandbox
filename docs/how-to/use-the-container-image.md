@@ -1,7 +1,7 @@
 # Use the prebuilt container image (no devcontainer)
 
-Run fully sandboxed Claude Code on any Linux host with rootless podman
-(or docker) — no devcontainer, no VS Code, no root access on the host.
+Run fully sandboxed Claude Code, Codex or Pi on any Linux host with rootless
+podman (or docker) — no devcontainer, no VS Code, no root access on the host.
 The published image ships the whole sandbox pre-installed: the `claude`
 shadow, the relocated real binary, the [integrity
 guard](../explanations/integrity-guard), and the [network egress
@@ -21,6 +21,8 @@ container update itself.
   user — the same requirement as any rootless container use.
 - **`/dev/net/tun`** on the host (present on stock Linux). The egress
   jail is fail-closed without it.
+- **`uv`** for the `uvx` front door, or fetch the launcher script by hand
+  (below).
 - **Unprivileged user namespaces** enabled — the default on RHEL 8/9 and
   most distros. Ubuntu 24.04 hosts restrict them via AppArmor; the
   container entrypoint probes and refuses with instructions rather than
@@ -28,37 +30,11 @@ container update itself.
 
 ## Quick start
 
-Fetch the launcher and put it on your `PATH`:
-
-```bash
-curl -fsSLO https://raw.githubusercontent.com/DiamondLightSource/claude-sandbox/main/container/claude-container
-chmod +x claude-container
-```
-
-The launcher runs **unsandboxed on your host**, so give it the scrutiny
-that deserves: it is ~200 lines of plain bash — read it before you run
-it. For fixed provenance, replace `main` in the URL with a release tag
-or commit SHA (any ref that contains `container/claude-container`) and
-re-fetch the same pinned ref when you update:
-
-```bash
-curl -fsSLO https://raw.githubusercontent.com/DiamondLightSource/claude-sandbox/<tag-or-commit>/container/claude-container
-```
-
-You don't have to watch this repo for launcher fixes: each published
-image carries a label naming the launcher version it was built and
-tested with, and on every run the launcher compares itself against your
-locally pulled image (`claude-container --version` prints your copy's
-version). When your copy is older it prints a `curl` command pinned to
-the exact revision the image was built from; it never updates itself —
-the launcher runs unsandboxed, so replacing it stays a deliberate,
-reviewable act.
-
-Then, from any project directory:
+From any project directory:
 
 ```bash
 cd ~/src/my-project
-claude-container
+uvx claude-sandbox
 ```
 
 The first run pulls the image, creates a container named after the
@@ -67,6 +43,47 @@ mounted read-write. Later runs reuse the same container. Everything
 you know from the devcontainer applies inside: `claude-sandbox verify`
 runs the live battery, the egress jail is on by default, and plain
 `claude` can only ever resolve to the shadow.
+
+`uvx` fetches the `claude-sandbox` wheel from PyPI. The wheel is a front
+door only: it bundles the launcher script from this repository,
+`container/claude-container`, unchanged, and a ten-line Python entry point
+that execs it. The launcher runs **unsandboxed on your host**, so give it
+the scrutiny that deserves: it is ~300 lines of plain bash — read it before
+you run it. `uvx claude-sandbox --help` prints its manual.
+
+### Versions and updates
+
+The wheel version, the launcher's own version and the image tag are one
+number, and the wheel pins the image it launches:
+
+```bash
+uvx claude-sandbox            # the wheel uv has cached; image tag = its version
+uvx claude-sandbox@latest     # the newest release on PyPI, and its image
+uvx claude-sandbox==4.0.0     # exactly this release, launcher and image
+```
+
+`uvx` reuses its cached wheel, so a plain `uvx claude-sandbox` never moves
+you to a new release on its own. Updating is the `@latest` form, followed
+by `--recreate` to move an existing project container onto the new image;
+the launcher says so when it notices the container predates the pulled
+image. Nothing updates itself: the launcher runs unsandboxed, so replacing
+it stays a deliberate act.
+
+### Without uv
+
+Fetch the same script and put it on your `PATH`:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/DiamondLightSource/claude-sandbox/main/container/claude-container
+chmod +x claude-container
+```
+
+Replace `main` with a release tag or commit SHA for fixed provenance, and
+re-fetch the same pinned ref when you update. Run as a copied script the
+launcher defaults to the `:latest` image, and each published image carries
+a label naming the launcher version it was built with: when your copy is
+older the launcher prints a `curl` command pinned to the exact revision
+the image was built from.
 
 ## One named container per project
 
@@ -81,12 +98,12 @@ project directory** rather than a throwaway `--rm` container:
   pulling a newer image, or to change create-time settings). Forge
   logins must then be re-done — that ceremony is the deliberate cost of
   keeping PAT blast radius small.
-- The container's own process is an idle keeper; every `claude-container`
-  run is a new session exec'd into it, so `--agent`, `--shell` and any
-  agent arguments apply on every run. A second run in the same project
-  while a session is active opens another session in the same container.
-  The container stops when its last session exits.
-- Only `--host-net` and `--mount` are fixed at create time. On every reuse
+- The container's own process is an idle keeper; every `uvx claude-sandbox`
+  run is a new session exec'd into it, so the verb (`claude`, `codex`,
+  `pi`, `shell`) and any agent arguments apply on every run. A second run
+  in the same project while a session is active opens another session in
+  the same container. The container stops when its last session exits.
+- Only `--bridge` and `--mount` are fixed at create time. On every reuse
   the launcher prints which container it is reconnecting to and, if you
   passed either of those, that they are being ignored until `--recreate`.
 - Pulling a newer image does not touch an existing container. The reuse
@@ -98,23 +115,23 @@ project directory** rather than a throwaway `--rm` container:
 ## Authenticate to forges
 
 Forge logins run outside the sandbox but inside the container, where the
-`claude-sandbox` CLI is on PATH. `--shell` opens a plain, unsandboxed bash
-there; authenticate, then start the agent from that shell or from a fresh
-`claude-container` run:
+`claude-sandbox` CLI is on PATH. The `shell` verb opens a plain, unsandboxed
+bash there; authenticate, then start the agent from that shell or from a
+fresh `uvx claude-sandbox` run:
 
 ```bash
-claude-container --shell
+uvx claude-sandbox shell
 claude-sandbox gh-auth
 claude-sandbox glab-auth gitlab.example.com
 exit
-claude-container
+uvx claude-sandbox
 ```
 
 See [Authenticate with forges](authenticate-with-forges) for the
 recommended PAT scopes.
 
 Note: inside the published image, update by pulling a newer image and
-recreating the container (`claude-container --recreate`), not with
+recreating the container (`uvx claude-sandbox --recreate`), not with
 `claude-sandbox update` — the CLI refuses there.
 
 ## Persist login and memory
@@ -169,7 +186,7 @@ Per-session (create-time) settings are environment variables, passed
 through automatically when the container is created:
 
 ```bash
-CLAUDE_SANDBOX_NO_FORGE=1 claude-container          # no forge creds inside
+CLAUDE_SANDBOX_NO_FORGE=1 uvx claude-sandbox        # no forge creds inside
 ```
 
 They are frozen into the container at create time — `--recreate` to
@@ -193,16 +210,17 @@ To make extra folders writable, `--mount` binds them into the container
 *and* adds a matching `allow-write` entry for the sandbox:
 
 ```bash
-claude-container --mount ~/src/shared-lib
+uvx claude-sandbox --mount ~/src/shared-lib
 ```
 
-## Run Codex instead of Claude
+## Run Codex or Pi instead of Claude
 
-The image ships both agents behind the same shadow, so either is sandboxed
-identically. Pick one with `--agent`:
+The image ships all three agents behind the same shadow, so each is
+sandboxed identically. Pick one with a verb; the default is `claude`:
 
 ```bash
-claude-container --agent codex
+uvx claude-sandbox codex
+uvx claude-sandbox pi
 ```
 
 Codex signs in separately from Claude (its credentials live in `~/.codex`,
@@ -210,23 +228,34 @@ persisted through the same `/user-terminal-config` share), and a Codex session
 sees no Claude credentials — nor the reverse. Everything else is the same
 container: the same project bind, the same forge auth, the same egress jail.
 
-## EPICS / lab-device hosts
+## Host networking is the default
 
-`--host-net` creates the container with `--network=host` (Channel Access
-broadcast for non-Claude shells). Claude itself stays inside the egress
-jail either way — the jail is container-network-mode-agnostic — so
-device access for Claude is still granted per-IP with `allow-ip`.
+The container is created with `--network=host`. That is what lets Pi's
+relay reach a model server on the host's loopback, and what gives a `shell`
+session Channel Access broadcast and X11. The agents gain nothing from it:
+every agent runs inside the egress jail either way — the jail only ever
+restricts, whatever the container's network mode — so device access for an
+agent is still granted per-IP with `allow-ip`, and the host's loopback is
+reachable only through the relay ports the conf lists.
+
+`--bridge` creates the container on the engine's bridge network instead. It
+is a create-time choice, so switching needs `--recreate`. One consequence
+of host mode to know: two projects' containers share the host's loopback,
+so the inbound callback relay (port 53692 by default) is taken by whichever
+starts first; the second warns and launches without it.
 
 ## Update
 
 ```bash
-podman pull ghcr.io/diamondlightsource/claude-sandbox:latest
-claude-container --recreate
+uvx claude-sandbox@latest --recreate
 ```
 
-If you launch with `CLAUDE_SANDBOX_ENGINE=docker`, pull with `docker`
-instead — and set the variable on the `--recreate` run too (the launcher
-reads it on every invocation; it is not remembered).
+That fetches the newest wheel, pulls the image of the same version, and
+rebuilds the project container from it. With a copied script, pull
+`ghcr.io/diamondlightsource/claude-sandbox:latest` yourself and run the
+script with `--recreate`. If you launch with `CLAUDE_SANDBOX_ENGINE=docker`,
+set the variable on the `--recreate` run too (the launcher reads it on
+every invocation; it is not remembered).
 
 ## Limitations
 

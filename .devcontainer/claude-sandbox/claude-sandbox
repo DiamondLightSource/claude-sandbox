@@ -8,6 +8,8 @@ REPO_URL="https://github.com/DiamondLightSource/claude-sandbox"
 # Stamped by install.sh from `git describe` on the installing clone.
 # Seam for tests only (version reporting is not security-critical).
 VERSION_FILE="${CLAUDE_SANDBOX_VERSION_FILE:-/usr/libexec/claude-sandbox/version}"
+# Written by install.sh only when the installer was the PyPI wheel.
+INSTALLER_FILE="${CLAUDE_SANDBOX_INSTALLER_FILE:-/usr/libexec/claude-sandbox/installer}"
 
 usage() {
     cat <<'EOF'
@@ -105,7 +107,13 @@ cmd_update() {
         exit 1
     fi
     if [ -d /opt/claude-sandbox ]; then
-        echo "claude-sandbox: this is the published container image — update by pulling a newer image and recreating the container (claude-container --recreate)." >&2
+        echo "claude-sandbox: this is the published container image — update by pulling a newer image and recreating the container (uvx claude-sandbox@latest --recreate)." >&2
+        exit 1
+    fi
+    if [ "$(cat "$INSTALLER_FILE" 2>/dev/null)" = uvx ]; then
+        # The wheel is the pin (ADR 23): a git clone here would step past it.
+        echo "claude-sandbox: this sandbox was installed from the PyPI wheel — update with: uvx claude-sandbox@latest install" >&2
+        echo "  (or bump the pinned version in your devcontainer's postCreate)" >&2
         exit 1
     fi
     local tmp

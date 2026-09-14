@@ -51,17 +51,14 @@ Keep model files off your home directory. Before downloading, symlink
 ## 2. Install the launcher
 
 The published image ships the whole sandbox with Claude Code, Codex and Pi
-already installed. The host needs only the launcher script:
-
-```bash
-curl -fsSLO https://raw.githubusercontent.com/DiamondLightSource/claude-sandbox/main/container/claude-container
-chmod +x claude-container && mv claude-container ~/.local/bin/   # anywhere on PATH
-```
-
-It runs unsandboxed on your host, so read it first; it is a short bash script.
-Pin a release tag in the URL instead of `main` if you want fixed provenance.
-See [Use the prebuilt container image](use-the-container-image.md) for the
-launcher's options and its container-per-project model.
+already installed. The host needs only [uv](https://docs.astral.sh/uv/):
+`uvx claude-sandbox` fetches the launcher from PyPI and pins the matching
+image. The launcher runs unsandboxed on your host, so read it first
+(`uvx claude-sandbox --help` prints its manual; the script is
+`container/claude-container` in the repository). Pin a release with
+`uvx claude-sandbox==4.0.0` if you want fixed provenance. See [Use the
+prebuilt container image](use-the-container-image.md) for the launcher's
+options, running it without uv, and its container-per-project model.
 
 ## 3. Run Pi
 
@@ -69,19 +66,19 @@ From the project directory you want Pi to work in:
 
 ```bash
 cd ~/src/my-project
-claude-container --host-net --agent pi
+uvx claude-sandbox pi
 ```
 
-- `--host-net` shares the model server's network namespace, so Pi's relay can
-  reach `127.0.0.1:1920`. Without it the container's loopback is its own.
-  The agent's egress jail stays on regardless.
-- `--agent pi` picks Pi over the default Claude Code.
+- The container shares the host's network namespace by default, so Pi's
+  relay can reach `127.0.0.1:1920`. (`--bridge` would give the container its
+  own loopback.) The agent's egress jail stays on regardless.
+- `pi` picks Pi over the default Claude Code.
 
 The first run pulls the image and creates a container named after the
 directory. At every Pi launch the sandbox queries lllm2 for the loaded model
 and its real context allocation and writes them into Pi's `lllm2` provider,
 so inside Pi you run `/model` and pick it, or start with
-`claude-container --host-net --agent pi --provider lllm2`. Your project is
+`uvx claude-sandbox pi --provider lllm2`. Your project is
 mounted read-write at the same path as on the host; Pi's settings, sessions
 and extensions live in `~/.pi`, shared with every container on this host.
 
@@ -112,7 +109,7 @@ For work that has to happen outside the jail, open a plain shell in the same
 container:
 
 ```bash
-claude-container --shell
+uvx claude-sandbox shell
 ```
 
 You are root there, apt works, and the `claude-sandbox` CLI is on PATH. Use
@@ -122,11 +119,11 @@ runs through the sandbox: `pi` is the shadow, and a management subcommand
 goes straight to Pi. Exit, then start the agent again.
 
 ```bash
-claude-container --shell
-claude-sandbox gh-auth              # forge push access for this container
+uvx claude-sandbox shell
+claude-sandbox gh-auth               # forge push access for this container
 pi install npm:pi-web-access        # same as from inside a session
 exit
-claude-container --host-net --agent pi
+uvx claude-sandbox pi
 ```
 
 Project-local packages (`pi install -l`) write to `.pi/settings.json` in the

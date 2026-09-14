@@ -456,6 +456,23 @@ stamp_version() {
     chmod 0644 "$dst"
 }
 
+# stamp_installer: record the front door (see INSTALLER_FILE_PATH). Byte-
+# stable on re-run like stamp_version; removed when a clone install
+# replaces a wheel install so the record never lies.
+stamp_installer() {
+    local dst
+    dst="$(prefixed "$INSTALLER_FILE_PATH")"
+    if [ -z "${CLAUDE_SANDBOX_INSTALLER:-}" ]; then
+        rm -f "$dst"
+        return 0
+    fi
+    if [ -f "$dst" ] && [ "$(cat "$dst")" = "$CLAUDE_SANDBOX_INSTALLER" ]; then
+        return 0
+    fi
+    printf '%s\n' "$CLAUDE_SANDBOX_INSTALLER" > "$dst"
+    chmod 0644 "$dst"
+}
+
 # _is_mount PATH — true if PATH is itself a mount target. Compares the
 # st_dev of PATH against its parent (the heuristic mountpoint(1) uses),
 # NOT /proc/mounts: inside the sandbox /proc is the host's procfs
@@ -612,6 +629,10 @@ BATTERY_PATH="$GUARD_LIBEXEC/verify-sandbox-battery.sh"
 # it lives with the guard scripts (root-owned, ro in the sandbox) so a
 # compromised session can't spoof what "version" reports.
 VERSION_FILE_PATH="$GUARD_LIBEXEC/version"
+# Which front door installed us: `uvx` when the PyPI wheel did (ADR 23), so
+# `claude-sandbox update` can point at the wheel instead of a git clone that
+# would step past the wheel's pin. Absent for a clone install.
+INSTALLER_FILE_PATH="$GUARD_LIBEXEC/installer"
 VERIFY_CMD="bash $VERIFY_PATH"
 GATE_CMD="bash $GATE_PATH"
 MANAGED_SETTINGS="/etc/claude-code/managed-settings.json"
@@ -937,6 +958,7 @@ main() {
     ensure_cred_dirs
     install_conf
     stamp_version
+    stamp_installer
     # GLOBAL integrity guard via the MANAGED settings layer: scripts off
     # the rw set in /usr/libexec, hook entries + updater-disable in
     # /etc/claude-code/managed-settings.json (highest precedence, not

@@ -2,10 +2,16 @@
 
 Bash-only. No Python package, no uv, no pytest — don't add them back.
 
-Python is prohibited except for these **two** uses:
+Python is prohibited except for these **three** uses:
 
 1. The documentation toolchain under `docs/`.
 2. The standard-library Unix-socket fixture in `tests/codex_launch.sh`.
+3. The PyPI front door under `packaging/pypi/` (ADR 23): a `pyproject.toml`
+   that bundles the bash launcher and installer VERBATIM as package data,
+   and one module that execs them. It holds no sandbox logic and may not
+   grow any. No root `pyproject.toml`, no lockfile, no `src/`, no pytest.
+   Version comes from the git tag (hatch-vcs). Build:
+   `uv build --wheel packaging/pypi`.
 
 The documentation toolchain stays fully isolated
 to `docs/` (`docs/requirements.txt`: Sphinx + MyST + pydata theme + mermaid).
@@ -18,8 +24,10 @@ grow past that boundary. Contributors may *run* that toolchain with
 uses `pip`) — that is not a route to a `uv.lock` or a `pyproject.toml`.
 
 The Unix-socket fixture is a test-only exception. It adds no Python package
-or runtime dependency to the installed sandbox. Neither exception permits
-Python elsewhere in the sandbox implementation or tests.
+or runtime dependency to the installed sandbox. The wheel adds a Python
+requirement to the HOST that runs `uvx`, never to the installed sandbox.
+None of the three exceptions permits Python elsewhere in the sandbox
+implementation or tests.
 
 - Docs (Diátaxis, Sphinx): `docs/` → published to GitHub Pages by
   `.github/workflows/docs.yml`. Build locally: `python -m venv .venv-docs
