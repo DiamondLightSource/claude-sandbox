@@ -43,7 +43,7 @@ In a host terminal, install the launcher and run it from your project:
 module load uv                     # DLS workstations
 uv tool install claude-sandbox
 cd /path/to/my-project
-claude-sandbox pi --provider lllm2
+claude-sandbox pi
 ```
 
 :::{note} DLS module setup
@@ -56,15 +56,16 @@ into the agent's private loopback while keeping the network jail enabled.
 Do not use `--bridge` when the server is on the host's loopback.
 
 At launch, the helper discovers the loaded model and context allocation,
-then refreshes Pi's `lllm2` provider. You can also start
-`claude-sandbox pi` and choose it with `/model`.
+then refreshes Pi's `lllm2` provider. If needed, select it with `/model`.
 
 After changing the model, restart Pi or run `!claude-sandbox pi-local`
 inside Pi, then use `/model` again. If discovery fails, the existing
 configuration is retained. Test a file edit or tool call: support depends
 on the model and its chat template.
 
-## Change the port or configure a model manually
+:::{dropdown} Advanced: other model servers or ports
+
+Skip this if you use lllm2 with its default port.
 
 Set `local-model-port` in your
 [host config](use-the-container-image.md#configure-the-sandbox), or in
@@ -90,4 +91,6 @@ See [Configuration](../reference/configuration.md) for overrides and
 for custom provider settings.
 
 The relay exposes every API operation on the selected port.
+:::
+
 See [Use Pi](use-pi.md) for cloud login, extensions and verification.
