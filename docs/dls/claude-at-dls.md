@@ -21,7 +21,7 @@ workstation, two things compound:
   issue with Claude" to credential theft, data exfiltration, or lateral
   movement to internal hosts.
 
-[agent-sandbox](https://github.com/DiamondLightSource/agent-sandbox)
+[claude-sandbox](https://github.com/DiamondLightSource/claude-sandbox)
 mitigates this by wrapping every `claude` launch in a
 [bubblewrap](https://github.com/containers/bubblewrap) jail, inside a
 devcontainer:
@@ -39,7 +39,7 @@ devcontainer:
 The full analysis is in the
 [threat model](../explanations/threat-model.md); the
 [verification checks](../reference/verification-checks.md) are runnable
-on any install via `agent-sandbox verify`. As evidence of the checks in
+on any install via `claude-sandbox verify`. As evidence of the checks in
 practice, see an
 [example expanded audit run](https://gist.github.com/gilesknap/a294d4ee803ec96c6f89196b4f011f0e):
 210 adversarial probes against a live sandbox.
@@ -51,7 +51,7 @@ practice, see an
    managed-settings gate that user configuration cannot override) and
    points the user at this page.
 2. **Always run inside a devcontainer, sandboxed.** All Claude Code use happens
-   in a project devcontainer with agent-sandbox installed; the setup is
+   in a project devcontainer with claude-sandbox installed; the setup is
    below.
 
 ## Install and run
@@ -99,18 +99,18 @@ memory survive rebuilds and follow you across devcontainers; the
 
 Then rebuild: `F1` → **"Dev Containers: Rebuild Container"**.
 
-### 4. Install agent-sandbox
+### 4. Install claude-sandbox
 
 In a terminal inside the container (`` Ctrl+` `` in VS Code), paste:
 
 ```bash
-cd /tmp && rm -rf agent-sandbox && git clone https://github.com/DiamondLightSource/agent-sandbox && agent-sandbox/install
+cd /tmp && rm -rf claude-sandbox && git clone https://github.com/DiamondLightSource/claude-sandbox && claude-sandbox/install
 ```
 
 The clone is disposable: nothing depends on it after install. You get the
 newest **release** — the installer checks the newest release tag out
 before installing and prints which one — so a fresh install and
-`agent-sandbox update` (step 6) always agree on what "current" means.
+`claude-sandbox update` (step 6) always agree on what "current" means.
 
 ### 5. Run Claude
 
@@ -123,8 +123,8 @@ step 3). To let Claude push to a forge, authenticate with a
 short-lived, single-repo token:
 
 ```bash
-agent-sandbox gh-auth                    # GitHub
-agent-sandbox glab-auth                  # Diamond GitLab
+claude-sandbox gh-auth                    # GitHub
+claude-sandbox glab-auth                  # Diamond GitLab
 ```
 
 See [Authenticate with forges](../how-to/authenticate-with-forges.md)
@@ -133,8 +133,8 @@ for the recommended token shape.
 ### 6. Stay current
 
 ```bash
-agent-sandbox version    # what you have
-agent-sandbox update     # upgrade to the latest release
+claude-sandbox version    # what you have
+claude-sandbox update     # upgrade to the latest release
 ```
 
 ## Further reading

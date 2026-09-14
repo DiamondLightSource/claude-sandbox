@@ -11,13 +11,13 @@ bwrap isolation, and that no defence has regressed.
 From a terminal, in any workspace, *outside* a Claude session:
 
 ```bash
-agent-sandbox verify
+claude-sandbox verify
 ```
 
 That launches a sandboxed session, runs the checks against the live
 process, and prints a summary table.
 
-Inside a agent-sandbox clone it runs the full two-phase audit; anywhere
+Inside a claude-sandbox clone it runs the full two-phase audit; anywhere
 else it runs the phase-1 battery. To drive the full audit yourself from
 within a Claude session in a clone:
 

@@ -5,11 +5,11 @@ token is exposed to the sandbox.
 
 ## Set the flag
 
-Add `AGENT_SANDBOX_NO_FORGE=1` to your devcontainer's `remoteEnv`:
+Add `CLAUDE_SANDBOX_NO_FORGE=1` to your devcontainer's `remoteEnv`:
 
 ```json
 // .devcontainer/devcontainer.json → remoteEnv
-"AGENT_SANDBOX_NO_FORGE": "1"
+"CLAUDE_SANDBOX_NO_FORGE": "1"
 ```
 
 A commented-out example is included in this repo's `devcontainer.json`.
