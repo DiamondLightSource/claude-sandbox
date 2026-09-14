@@ -15,19 +15,20 @@ from importlib.resources import files
 IMAGE = "ghcr.io/diamondlightsource/claude-sandbox"
 
 
-def _launcher_version(launcher: str) -> str:
-    """The launcher's VERSION= line, verbatim.
+def _release_tag() -> str:
+    """The git tag this wheel was built from, as the image is tagged.
 
-    This is the image tag. The wheel's own metadata version is derived from
-    the same line but PEP 440-normalised (``4.0.0-beta.1`` becomes
-    ``4.0.0b1``), and image tags are not normalised, so the literal wins.
+    hatch-vcs writes the PEP 440 form to ``_version.py`` (``4.0.0-beta.1``
+    becomes ``4.0.0b1``); image tags are the raw git tag, so map back.
     """
-    with open(launcher, encoding="utf-8") as fh:
-        for line in fh:
-            m = re.match(r'^VERSION="([^"]+)"$', line)
-            if m:
-                return m.group(1)
-    raise SystemExit("claude-sandbox: bundled launcher has no VERSION= line")
+    from ._version import __version__
+
+    names = {"a": "alpha", "b": "beta", "rc": "rc"}
+    return re.sub(
+        r"^(\d+(?:\.\d+)*)(a|b|rc)(\d+)",
+        lambda m: f"{m.group(1)}-{names[m.group(2)]}.{m.group(3)}",
+        __version__,
+    )
 
 
 def _in_container() -> bool:
@@ -47,7 +48,7 @@ def main() -> None:
     """Exec the launcher, or the installer when the first word is ``install``."""
     tree = str(files(__name__).joinpath("tree"))
     launcher = os.path.join(tree, "container", "claude-container")
-    ver = _launcher_version(launcher)
+    ver = _release_tag()
     argv = sys.argv[1:]
     env = dict(os.environ)
     if argv and argv[0] == "install":
@@ -66,7 +67,10 @@ def main() -> None:
         env.setdefault("CLAUDE_SANDBOX_VERSION", ver)
         env["CLAUDE_SANDBOX_INSTALLER"] = "uvx"
         os.execvpe("bash", ["bash", os.path.join(tree, "install"), *argv[1:]], env)
-    # The wheel pins the image: launcher and image are the same release.
-    env.setdefault("CLAUDE_SANDBOX_IMAGE", f"{IMAGE}:{ver}")
+    env.setdefault("CLAUDE_SANDBOX_LAUNCHER_VERSION", ver)
+    # The wheel pins the image: launcher and image are the same release. A
+    # wheel built between tags (a dev version) has no image of its own.
+    tag = "latest" if ("dev" in ver or "+" in ver) else ver
+    env.setdefault("CLAUDE_SANDBOX_IMAGE", f"{IMAGE}:{tag}")
     env["CLAUDE_SANDBOX_LAUNCHER"] = "uvx"
     os.execvpe("bash", ["bash", launcher, *argv], env)

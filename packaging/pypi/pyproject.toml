@@ -2,10 +2,11 @@
 # ONLY Python packaging in the repository, and it holds no sandbox logic:
 # the wheel ships the bash launcher and installer verbatim as package data,
 # and the one Python module execs them. Build with `uv build --wheel`
-# from this directory; the version is read from the launcher's VERSION line
-# so the wheel, the launcher and the image tag cannot drift apart.
+# from this directory; the version comes from the git tag (hatch-vcs, the
+# same setuptools_scm mechanism the DLS python-copier template uses), so the
+# wheel and the image tag are the same release by construction.
 [build-system]
-requires = ["hatchling>=1.25"]
+requires = ["hatchling>=1.25", "hatch-vcs>=0.4"]
 build-backend = "hatchling.build"
 
 [project]
@@ -29,9 +30,11 @@ Documentation = "https://diamondlightsource.github.io/claude-sandbox/"
 claude-sandbox = "claude_sandbox:main"
 
 [tool.hatch.version]
-source = "regex"
-path = "../../container/claude-container"
-pattern = '^VERSION="(?P<version>[^"]+)"$'
+source = "vcs"
+raw-options = { root = "../.." }
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/claude_sandbox/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/claude_sandbox"]

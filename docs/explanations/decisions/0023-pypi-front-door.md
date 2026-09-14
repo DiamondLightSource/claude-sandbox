@@ -58,18 +58,21 @@ the Python sets two environment variables and calls `execvpe`.
   started by the agents' own names, and a bare container wants `install`.
   `CLAUDE_SANDBOX_NESTED=1` overrides, for an engine inside a container.
 
-**One release number.** The `VERSION=` line in the launcher is the single
-source: the wheel reads its version from it at build, the entry point
-reads the same line from the bundled script at run time (image tags are
-not PEP 440-normalised, so a prerelease `4.0.0-beta.1` stays literal there
-while the wheel is `4.0.0b1`; the hyphen keeps the install shim's
-newest-stable filter from choosing a beta), CI bakes it into the
-image label as before, and a release tag that disagrees with it does not
-publish. The entry point pins the image to its own version
-(`CLAUDE_SANDBOX_IMAGE` still overrides), so `uvx claude-sandbox==4.0.0`
+**One release number: the git tag.** The wheel version comes from the tag
+by `hatch-vcs` (the same setuptools_scm mechanism the DLS python-copier
+template uses; `_dist.yml`, `_pypi.yml` and `_release.yml` are copied from
+it, and `ci.yml` wires them in the same way). PyPI normalises a prerelease
+tag such as `4.0.0-beta.1` to `4.0.0b1`; image tags are the raw tag, so the
+entry point maps the wheel version back before pinning
+`CLAUDE_SANDBOX_IMAGE` (a wheel built between tags has no image and falls
+back to `:latest`). The hyphen in the tag is what keeps the install shim's
+newest-stable filter from choosing a beta. CI bakes the tag into the image
+label on a tag build, and the entry point passes the same value to the
+launcher as `CLAUDE_SANDBOX_LAUNCHER_VERSION`, so `uvx claude-sandbox==4.0.0`
 runs that launcher against that image and `uvx claude-sandbox@latest` moves
-both together. A copied script keeps `:latest` and the label comparison,
-which is what serves that path.
+both together (`CLAUDE_SANDBOX_IMAGE` still overrides). A copied script keeps
+its own `VERSION=` literal, `:latest` and the label comparison, which is
+what serves that path.
 
 **Host networking by default.** The launcher now creates the container with
 `--network=host`; `--bridge` opts out. Pi's relay to a local model needs the
@@ -104,5 +107,5 @@ be a second copy of the tree, which ADR 17 forbids.
 - `uvx` caches the wheel: a plain `uvx claude-sandbox` does not move to a
   new release on its own. That is the deliberate-update property the
   notify-only design wanted, now provided by the package manager.
-- The wheel version jumps to the repository's release number (4.0.0), and
-  the launcher's own version goes with it.
+- Releases are git tags from 4.0.0 on: the wheel, the image and the
+  launcher report the tag, with nothing to bump in the tree.

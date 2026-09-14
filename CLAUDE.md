@@ -10,7 +10,7 @@ Python is prohibited except for these **three** uses:
    that bundles the bash launcher and installer VERBATIM as package data,
    and one module that execs them. It holds no sandbox logic and may not
    grow any. No root `pyproject.toml`, no lockfile, no `src/`, no pytest.
-   Version comes from the launcher's `VERSION=` line. Build:
+   Version comes from the git tag (hatch-vcs). Build:
    `uv build --wheel packaging/pypi`.
 
 The documentation toolchain stays fully isolated

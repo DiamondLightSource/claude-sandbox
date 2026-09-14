@@ -24,3 +24,5 @@ docs/_build/
 .venv-docs/
 .claude/workflows
 packaging/pypi/dist/
+# hatch-vcs writes this at build time
+packaging/pypi/src/claude_sandbox/_version.py

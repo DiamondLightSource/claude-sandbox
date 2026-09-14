@@ -53,10 +53,12 @@
 #                                 at create time (allow-ip, egress-jail, ...)
 set -euo pipefail
 
-# The project's release version — ONE number for the launcher, the wheel and
-# the image tag. CI asserts a release tag equals this line, bakes it into the
-# image as a label, and the PyPI build reads the wheel version from it.
+# The launcher version, compared with the image label by warn_if_outdated.
+# The release number is the git tag: the uvx front door passes it in from
+# the wheel (built from that tag), and CI bakes the tag into the image. The
+# literal only serves a copied script, which cannot know its tag.
 VERSION="4.0.0"
+[ -n "${CLAUDE_SANDBOX_LAUNCHER_VERSION:-}" ] && VERSION="$CLAUDE_SANDBOX_LAUNCHER_VERSION"
 # How to spell this launcher in hints: the uvx front door sets
 # CLAUDE_SANDBOX_LAUNCHER; a copied script is run by its own name.
 SELF="claude-container"
