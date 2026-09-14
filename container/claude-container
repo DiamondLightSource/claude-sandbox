@@ -313,7 +313,10 @@ create_container() {
     )
     # Siblings, as a devcontainer's /workspaces mount gives them: the
     # parent dir read-only at its host path, listed BEFORE the project so
-    # the project's rw bind nests over it. Not when the parent is / (that
+    # the project's rw bind nests over it. Slave propagation (here and on
+    # --mount/--mount-rw) is for autofs trees such as /dls_sw: a process in
+    # the container's user namespace may not TRIGGER an automount (EPERM on
+    # readdir), but mounts the host automounter makes propagate in. Not when the parent is / (that
     # would shadow the image root) or holds $HOME (that would hand ~/.ssh
     # and every host token to the container, ro or not).
     local parent
@@ -323,7 +326,7 @@ create_container() {
         *)
             case "$HOME/" in
                 "$parent"/*) echo "claude-container: not mounting $parent read-only: it contains your home directory" >&2 ;;
-                *) args+=( -v "$parent:$parent:ro" ) ;;
+                *) args+=( --mount "type=bind,src=$parent,dst=$parent,ro,bind-propagation=slave" ) ;;
             esac
             ;;
     esac
@@ -357,12 +360,12 @@ create_container() {
     # shows it to agents as-is; nothing in the container can write it.
     local m allow_write=""
     for m in "${mounts_ro[@]+"${mounts_ro[@]}"}"; do
-        args+=( -v "$m:$m:ro" )
+        args+=( --mount "type=bind,src=$m,dst=$m,ro,bind-propagation=slave" )
     done
     # --mount-rw PATH: read-write at the same path, and tell the sandbox to
     # bind it rw too (allow-write, joined with ':').
     for m in "${mounts_rw[@]+"${mounts_rw[@]}"}"; do
-        args+=( -v "$m:$m" )
+        args+=( --mount "type=bind,src=$m,dst=$m,bind-propagation=slave" )
         allow_write="${allow_write:+$allow_write:}$m"
     done
     if [ -n "$allow_write" ]; then

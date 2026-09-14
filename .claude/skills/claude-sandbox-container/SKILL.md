@@ -163,7 +163,11 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   set; `DISPLAY` + `/tmp/.X11-unix` + `~/.Xauthority` (ro) are passed
   only when the host has a DISPLAY, and only the unsandboxed shell sees
   them (the shadow masks `~/.Xauthority`; nothing in the agent path
-  changed). Refuse: mounting the parent when it holds `$HOME`; making
+  changed). Parent and `--mount`/`--mount-rw` binds use `bind-propagation=slave`
+  (as builder2ibek's devcontainer does for `/dls_sw`): a rootless
+  container may not TRIGGER an autofs mount (`ls /dls_sw/work` → EPERM)
+  but host-made mounts propagate in. Refuse: plain `-v` for these
+  (loses propagation); mounting the parent when it holds `$HOME`; making
   `--mount` rw again "for convenience"; forwarding DISPLAY into the
   shadow's pass-through list.
 - **Testing a shadow branch in the launcher container**: `uvx

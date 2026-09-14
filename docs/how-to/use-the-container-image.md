@@ -126,7 +126,9 @@ See [Configuration](../reference/configuration.md) for all keys and
 
 The project directory is the only writable path. Its parent is mounted
 read-only, so sibling checkouts are readable as in a devcontainer (skipped
-when the parent is your home directory). To add more:
+when the parent is your home directory). Automounted trees such as `/dls_sw`
+work: the binds use slave propagation, so mounts the host automounter makes
+appear inside without the container triggering them. To add more:
 
 ```bash
 claude-sandbox --mount ~/src/shared-lib       # read-only

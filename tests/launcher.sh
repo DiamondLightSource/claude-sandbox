@@ -88,13 +88,13 @@ run -- --bridge; case "$(create_line)" in *"--network=host"*) fail "--bridge sti
 # --- filesystem view: parent ro, project rw, --mount ro, --mount-rw ---------
 mkdir -p "$TMP/ws/project" "$TMP/ro" "$TMP/rw"
 PROJECT="$TMP/ws/project" run --
-case "$(create_line)" in *"-v $TMP/ws:$TMP/ws:ro -v $TMP/ws/project:$TMP/ws/project -w"*) pass ;; *) fail "parent not ro before project rw: $(create_line)" ;; esac
+case "$(create_line)" in *"--mount type=bind,src=$TMP/ws,dst=$TMP/ws,ro,bind-propagation=slave -v $TMP/ws/project:$TMP/ws/project -w"*) pass ;; *) fail "parent not ro before project rw: $(create_line)" ;; esac
 run --   # project directly under $HOME: parent holds ~, must not be mounted
-assert_not_contains "parent containing HOME is not mounted" "$(create_line)" "-v $TMP:$TMP:ro"
+assert_not_contains "parent containing HOME is not mounted" "$(create_line)" "--mount type=bind,src=$TMP,dst=$TMP,ro,bind-propagation=slave"
 case "$ERR" in *"contains your home directory"*) pass ;; *) fail "HOME guard silent: $ERR" ;; esac
 run -- --mount "$TMP/ro" --mount-rw "$TMP/rw"
-case "$(create_line)" in *"-v $TMP/ro:$TMP/ro:ro"*) pass ;; *) fail "--mount not ro: $(create_line)" ;; esac
-case "$(create_line)" in *"-v $TMP/rw:$TMP/rw -"*) pass ;; *) fail "--mount-rw not rw: $(create_line)" ;; esac
+case "$(create_line)" in *"src=$TMP/ro,dst=$TMP/ro,ro,bind-propagation=slave"*) pass ;; *) fail "--mount not ro: $(create_line)" ;; esac
+case "$(create_line)" in *"src=$TMP/rw,dst=$TMP/rw,bind-propagation=slave"*) pass ;; *) fail "--mount-rw not rw: $(create_line)" ;; esac
 case "$(create_line)" in *"-e CLAUDE_SANDBOX_ALLOW_WRITE=$TMP/rw "*) pass ;; *) fail "allow-write missing rw mount: $(create_line)" ;; esac
 assert_not_contains "ro mount not in allow-write" "$(create_line)" "ALLOW_WRITE=$TMP/rw:$TMP/ro"
 run -- --mount; [ "$RC" = 1 ] && pass || fail "--mount without PATH accepted (rc=$RC)"
