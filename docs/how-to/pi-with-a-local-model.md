@@ -1,14 +1,14 @@
 # Run Pi against a local model
 
 Use [lllm2](https://gilesknap.github.io/lllm2/) to serve a model on your host,
-then connect sandboxed Pi to it. Start with the
-[PyPI launcher](../tutorials/getting-started.md).
+then connect sandboxed Pi to it. The steps below install both tools.
 
 ## Start the model server
 
 On a Linux host with an NVIDIA GPU and driver:
 
 ```bash
+module load uv                     # DLS workstations
 uv tool install --upgrade lllm2
 lllm2 engines install cuda
 lllm2
@@ -37,11 +37,19 @@ the link; otherwise `ln` may create a link inside it instead.
 
 ## Start Pi
 
-From your project on the host:
+In a host terminal, install the launcher and run it from your project:
 
 ```bash
+module load uv                     # DLS workstations
+uv tool install claude-sandbox
+cd /path/to/my-project
 claude-sandbox pi --provider lllm2
 ```
+
+:::{note} DLS module setup
+`module load uv` makes uv available on DLS workstations. Elsewhere, install
+[uv](https://docs.astral.sh/uv/getting-started/installation/) and skip that line.
+:::
 
 The launcher uses host networking by default. The sandbox relays port 1920
 into the agent's private loopback while keeping the network jail enabled.

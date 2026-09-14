@@ -63,6 +63,14 @@ run -- shell;      case "$(exec_line)" in *" bash") pass ;; *) fail "shell verb:
 run -- --resume;   case "$(exec_line)" in *" claude --resume") pass ;; *) fail "agent args without verb: $(exec_line)" ;; esac
 
 # --- host networking is the default; --bridge opts out (create-time) -------
+touch "$TMP/.gitconfig"
+run --
+case "$(create_line)" in
+    *"$TMP/.gitconfig:/root/.gitconfig-host:ro"*) pass ;;
+    *) fail "host git config is not mounted separately read-only" ;;
+esac
+assert_not_contains "container git config remains writable" "$(create_line)" ":/root/.gitconfig:ro"
+
 run --; case "$(create_line)" in *"--network=host"*) pass ;; *) fail "host net not default: $(create_line)" ;; esac
 run -- --bridge; case "$(create_line)" in *"--network=host"*) fail "--bridge still host net" ;; *) pass ;; esac
 
