@@ -325,6 +325,10 @@ install_codex_binary() {
 
 # Download only into a private staging dir. Unlike vendor installers this
 # never puts an unwrapped pi on PATH or mutates the user's shell startup files.
+# --retry 6: curl backs off 1,2,4,8,16,32s, so a GitHub release-CDN blip
+# (504s for a minute or more, seen three times on 2026-09-14) no longer
+# leaves an image without Pi. Best-effort still: a real outage warns and
+# moves on, and the image test catches the missing binary.
 install_pi_binary() (
     [ "$SMOKE" != 1 ] && [ "$WITH_PI" = 1 ] || return 0
     local arch asset stage dest base checksum version release_url
@@ -342,7 +346,7 @@ install_pi_binary() (
     if [ "$version" = latest ]; then
         # Resolve ONCE, then fetch the archive and checksums from the same tag.
         # The release-page redirect avoids GitHub's anonymous API rate limit.
-        if ! release_url="$(curl -fsSLI --retry 2 -o /dev/null -w '%{url_effective}' \
+        if ! release_url="$(curl -fsSLI --retry 6 -o /dev/null -w '%{url_effective}' \
             https://github.com/earendil-works/pi/releases/latest)"; then
             echo 'claude-sandbox: WARNING — could not resolve the latest Pi release; existing installation preserved.' >&2
             return 0
@@ -357,8 +361,8 @@ install_pi_binary() (
     trap 'rm -rf "$stage"' EXIT
     asset="pi-linux-$arch.tar.gz"
     base="https://github.com/earendil-works/pi/releases/download/v$version"
-    if ! curl -fLSs --retry 2 "$base/$asset" -o "$stage/$asset" \
-        || ! curl -fLSs --retry 2 "$base/SHA256SUMS" -o "$stage/SHA256SUMS"; then
+    if ! curl -fLSs --retry 6 "$base/$asset" -o "$stage/$asset" \
+        || ! curl -fLSs --retry 6 "$base/SHA256SUMS" -o "$stage/SHA256SUMS"; then
         echo 'claude-sandbox: WARNING — Pi download failed; its shadow remains installed.' >&2
         return 0
     fi

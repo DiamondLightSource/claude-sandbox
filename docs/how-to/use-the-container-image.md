@@ -67,11 +67,11 @@ launcher created on this host in one go:
 claude-sandbox clean                    # stopped project containers; running ones are listed and kept
 claude-sandbox clean --force            # running ones too, ending their sessions
 claude-sandbox clean --force --images   # also drop claude-sandbox image tags no container uses
-claude-sandbox clean --venvs            # also drop venvs on the cache volume whose project container is gone
 ```
 
 The next launch in any project then creates a fresh container from the
-current image. As with recreation, forge logins inside those containers are
+current image, with a fresh venv; venvs left on the cache volume by removed
+containers are pruned by the same command. As with recreation, forge logins inside those containers are
 lost; project files and shared agent settings on the host survive.
 
 For a fixed release, use `uv tool install claude-sandbox==4.0.0`.
@@ -153,10 +153,9 @@ devcontainer lays out its own: the uv download cache, the pre-commit home
 and one venv per project at `/cache/venv-for<project path>`, all on one
 filesystem so uv hardlinks packages into the venv instead of copying them.
 A new container gets a fresh venv, as a devcontainer rebuild does; the
-downloads it installs from survive `--recreate` and `clean`. Venvs of
-projects whose container is gone stay on the volume until
-`claude-sandbox clean --venvs` removes them. Set `CLAUDE_SANDBOX_CACHE` to
-another volume name, or empty for none. The mounted project's `.venv` is not
+downloads it installs from survive `--recreate` and `clean`. `claude-sandbox clean` also removes the venvs of projects whose container
+is gone. Set `CLAUDE_SANDBOX_CACHE` to another volume name, or empty for
+none. The mounted project's `.venv` is not
 used by the image's default uv configuration.
 
 npm lifecycle scripts are disabled by default, but project configuration can

@@ -185,9 +185,13 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   entrypoint points at `$VIRTUAL_ENV` (a symlink on the shared volume
   would be shared by every project), created fresh once per container
   (`/var/lib/claude-sandbox/venv-created` marker; restarts keep it).
-  `clean --venvs` prunes `venv-for<path>` dirs whose container name
+  `clean` ALWAYS prunes `venv-for<path>` dirs whose container name
   (recomputed from the path) no longer exists, via throwaway `run`s on
-  the volume. Refuse: a volume on `/cache/uv` alone; `UV_LINK_MODE=copy`;
+  the volume with `--entrypoint find|rm` — the image entrypoint would
+  run the userns probe + venv setup first and a refusal there read as
+  "0 venvs" (seen on the DLS host). `--venvs` existed for one release
+  (4.1.0) and was folded in: a removed container gets a fresh venv on
+  create anyway, so the flag only saved disk-cleanup you always want. Refuse: a volume on `/cache/uv` alone; `UV_LINK_MODE=copy`;
   a shared symlink inside the volume; `uv sync` in the entrypoint (runs
   before the session with no feedback — the agent or user syncs).
 - **Walked back — EPICS client tools in the image (PR #43, 2026-09-14)**:
