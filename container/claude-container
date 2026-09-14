@@ -14,7 +14,7 @@
 # Only --bridge and --mount are fixed at create time (--recreate to
 # change them). The container stops when its last session exits.
 #
-# Usage: claude-container [OPTIONS] [VERB] [AGENT_ARGS...]
+# Usage: claude-container [OPTIONS] [VERB] [ARGS...]
 #
 # Verbs (the default is claude):
 #   claude | codex | pi   a sandboxed session of that agent. All use the same
@@ -23,6 +23,10 @@
 #   shell           a plain (UNSANDBOXED) bash in the container instead of an
 #                   agent — e.g. to run `claude-sandbox gh-auth` first. Start a
 #                   sandboxed session from it with claude / codex / pi.
+#   gh-auth | glab-auth | verify | pi-local | version | update
+#                   run that helper of the in-container `claude-sandbox` CLI
+#                   (same as typing it in a shell session), e.g.
+#                   `uvx claude-sandbox gh-auth` or `uvx claude-sandbox verify`.
 #   install         (uvx only) install the sandbox into the devcontainer this
 #                   runs in — see the sandbox-a-team-devcontainer guide.
 #
@@ -111,6 +115,7 @@ recreate=0
 host_net=1
 agent=claude
 shell=0
+inner=0
 create_opts=()     # create-time flags the user passed, for the reuse warning
 mounts=()
 while [ $# -gt 0 ]; do
@@ -144,6 +149,12 @@ done
 case "${1:-}" in
     claude|codex|pi) agent="$1"; shift ;;
     shell) shell=1; shift ;;
+    gh-auth|glab-auth|verify|pi-local|version|update)
+        # Helper verbs of the in-container `claude-sandbox` CLI. Forwarded, so
+        # they do the same thing typed on the host as inside: without this a
+        # host `uvx claude-sandbox version` launched claude with "version" as
+        # its argument. The verb stays in $@ as the inner CLI's argv.
+        inner=1 ;;
     install)
         echo "claude-container: install is a uvx verb: run \`uvx claude-sandbox install\` INSIDE the devcontainer" >&2
         exit 2
@@ -299,7 +310,9 @@ fi
 # The session. Fresh args apply every time: this is an exec, not a replay
 # of create-time arguments. A second claude-container in the same project
 # while one is active simply execs another session into the same container.
-if [ "$shell" = 1 ]; then
+if [ "$inner" = 1 ]; then
+    set -- claude-sandbox "$@"
+elif [ "$shell" = 1 ]; then
     set -- bash "$@"
 else
     set -- "$agent" "$@"

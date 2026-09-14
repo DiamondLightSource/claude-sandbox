@@ -1,4 +1,8 @@
-(adr-pypi-front-door)=
+(adr-py- `uvx claude-sandbox [OPTIONS] [claude|codex|pi|shell] [AGENT_ARGS...]` is
+  the launcher. The verbs replace `--agent NAME` and `--shell`. The helper
+  verbs of the in-container CLI (`gh-auth`, `glab-auth`, `verify`,
+  `pi-local`, `version`, `update`) are forwarded into the container, so
+  `uvx claude-sandbox verify` means the same on the host as inside.-front-door)=
 
 # 23. A PyPI wheel as the front door: `uvx claude-sandbox`
 
