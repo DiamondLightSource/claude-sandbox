@@ -1,0 +1,116 @@
+#!/bin/bash
+# Keep more than one GitHub fine-grained PAT usable inside the sandbox.
+#
+# gh stores one token per account per host, and a fine-grained PAT covers one
+# resource owner, so a second `gh auth login` replaces the first. gh-park
+# copies the active token to a named file and wires git checkouts to it with
+# a repo-local credential helper, leaving the default slot free for the next
+# paste. Files live in the container-scoped gh config directory, so they have
+# the same lifetime and reach as the login itself.
+set -euo pipefail
+
+store=${GH_PARK_DIR:-"$HOME/.config/gh/scoped"}
+
+usage() {
+    cat <<'USAGE'
+Usage:
+  gh-park save NAME [DIR...]   park the active gh token as NAME; wire DIRs to it
+  gh-park use NAME DIR...      wire more checkouts to a parked token
+  gh-park with NAME CMD...     run CMD with GH_TOKEN set to a parked token
+  gh-park status               table of parked tokens, expiry and checkouts
+  gh-park forget NAME          delete a parked token and unwire its checkouts
+Paste each PAT with `claude-sandbox gh-auth`, then park it before the next.
+USAGE
+}
+
+token_file() { printf '%s/%s.token\n' "$store" "$1"; }
+repos_file() { printf '%s/%s.repos\n' "$store" "$1"; }
+
+check_name() {
+    case "$1" in
+        ''|*[!a-zA-Z0-9_.-]*) echo "gh-park: NAME must be letters, digits, . _ -" >&2; exit 2 ;;
+    esac
+}
+
+expiry() {
+    GH_TOKEN=$(cat "$1") gh api -i user 2>/dev/null \
+        | awk 'tolower($1)=="github-authentication-token-expiration:" {print $2, $3; found=1} END {if (!found) print "unknown"}'
+}
+
+helper_for() {
+    printf '!f() { GH_TOKEN=$(cat %q) gh auth git-credential "$@"; }; f' "$1"
+}
+
+wire() {
+    local name=$1 dir file
+    file=$(token_file "$name")
+    shift
+    for dir in "$@"; do
+        dir=$(cd -- "$dir" && pwd)
+        git -C "$dir" rev-parse --git-dir >/dev/null
+        # Git asks every matching helper in config order and takes the first
+        # password. The host-wide gh helper in /etc/claude-gitconfig answers
+        # with the default slot, so an empty entry resets the list first.
+        git -C "$dir" config --local --unset-all credential.helper || true
+        git -C "$dir" config --local --add credential.helper ""
+        git -C "$dir" config --local --add credential.helper "$(helper_for "$file")"
+        grep -qxF "$dir" "$(repos_file "$name")" 2>/dev/null \
+            || printf '%s\n' "$dir" >> "$(repos_file "$name")"
+        echo "wired: $dir -> $name"
+    done
+}
+
+save() {
+    local name=$1 file
+    shift
+    check_name "$name"
+    file=$(token_file "$name")
+    mkdir -p "$store" && chmod 700 "$store"
+    (umask 077; gh auth token > "$file")
+    : > "$(repos_file "$name")"
+    echo "parked: $name (expires $(expiry "$file"))"
+    [ $# -eq 0 ] || wire "$name" "$@"
+}
+
+status() {
+    local file name repos active
+    active=$(gh auth token 2>/dev/null || true)
+    printf '%-12s %-24s %-8s %s\n' TOKEN EXPIRES ACTIVE CHECKOUTS
+    for file in "$store"/*.token; do
+        [ -e "$file" ] || { echo "(no parked tokens in $store)"; return; }
+        name=$(basename "$file" .token)
+        repos=$(paste -sd, "$(repos_file "$name")" 2>/dev/null || true)
+        if [ -n "$active" ] && [ "$(cat "$file")" = "$active" ]; then
+            printf '%-12s %-24s %-8s %s\n' "$name" "$(expiry "$file")" yes "${repos:--}"
+        else
+            printf '%-12s %-24s %-8s %s\n' "$name" "$(expiry "$file")" - "${repos:--}"
+        fi
+    done
+    echo
+    echo "ACTIVE = also the default gh slot, which gh api and gh pr use directly."
+    echo "Other tokens: prefix API commands with 'gh-park with NAME'."
+}
+
+forget() {
+    local name=$1 dir
+    check_name "$name"
+    if [ -f "$(repos_file "$name")" ]; then
+        while IFS= read -r dir; do
+            [ -d "$dir" ] && git -C "$dir" config --local --unset-all credential.helper || true
+        done < "$(repos_file "$name")"
+    fi
+    rm -f "$(token_file "$name")" "$(repos_file "$name")"
+    echo "forgotten: $name"
+}
+
+cmd=${1:-status}
+[ $# -eq 0 ] || shift
+case "$cmd" in
+    save)   [ $# -ge 1 ] || { usage >&2; exit 2; }; save "$@" ;;
+    use)    [ $# -ge 2 ] || { usage >&2; exit 2; }; check_name "$1"; [ -f "$(token_file "$1")" ] || { echo "gh-park: no parked token '$1'" >&2; exit 1; }; wire "$@" ;;
+    with)   [ $# -ge 2 ] || { usage >&2; exit 2; }; check_name "$1"; GH_TOKEN=$(cat "$(token_file "$1")") exec "${@:2}" ;;
+    status) status ;;
+    forget) [ $# -eq 1 ] || { usage >&2; exit 2; }; forget "$1" ;;
+    -h|--help|help) usage ;;
+    *) usage >&2; exit 2 ;;
+esac
