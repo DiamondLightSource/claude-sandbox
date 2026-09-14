@@ -128,3 +128,41 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   in-session; overridable by ~/.npmrc so a default not a gate) — pi's own
   npm call passes no `--ignore-scripts`. Don't drop it "because package X
   needs postinstall": that is the case for asking the user.
+- **Launcher verbs are forwarded (PR #40, 2026-09-14)**: `claude-sandbox`
+  names two commands — the host launcher (first word = agent) and the
+  in-container helper CLI (first word = verb). The launcher now execs
+  `gh-auth|glab-auth|verify|pi-local|version|update` inside the project
+  container, so the same spelling works on either side. Refuse: renaming
+  the inner CLI (docs, wheel console script and muscle memory all carry
+  the name; a rename would not stop the host launcher swallowing the
+  verb as an agent arg anyway). Everything else after the options is
+  still agent argv (`uvx claude-sandbox --resume` must keep working).
+- **`clean [--force] [--images]` (PR #42)**: removes the launcher's
+  project containers — stopped only by default, running too with
+  `--force`, unused `*/diamondlightsource/claude-sandbox` image tags with
+  `--images`. Match is name prefix `claude-sandbox-` AND the keeper
+  command, never the name alone. Why it exists: reconnecting keeps the
+  image a container was created from, so after a pull it is unclear
+  which image a session runs; `--recreate` is one project at a time.
+- **Testing a shadow branch in the launcher container**: `uvx
+  claude-sandbox shell`, clone the branch, `./install --here`; verify
+  with `cat /usr/libexec/claude-sandbox/version` (branch hash, not a
+  tag) and a grep for the new code in `/usr/local/bin/claude`. It lives
+  only in that named container: `--recreate` or `clean` reverts it. The
+  checks must run INSIDE — on the host `uvx claude-sandbox version`
+  launched claude with `version` as its prompt until PR #40.
+- **Walked back — filtering terminal escape sequences in the pty relay
+  (PR #39, closed 2026-09-14)**: RHEL 8/9 desktop terminals DRAW
+  unsupported sequences (`␛[>4;2m`, the modifyOtherKeys enable every
+  agent emits) instead of dropping them; it reproduces with a native
+  host `claude`, so the sandbox is not the cause. A chunk-safe node
+  filter on `script`'s output (`pty_launch`) was built, tested, and
+  installed on a DLS box — the junk stayed, and mouse-selection drew
+  more of the same, so the user abandoned it as a losing game against
+  that terminal. Don't propose stripping sequences again; the real
+  answers are a capable terminal or tmux ≥ 3.2 in front of the old one.
+  Branch `fix/xtmodkeys-filter` kept. One finding from it is STILL
+  UNFIXED on main: the shadow runs `script -q -E never` without `-e`, so
+  script always exits 0 and the agent's exit status never reaches the
+  caller — `claude-sandbox verify`'s "non-zero on failure" promise is
+  broken. Fix is one flag (`script -q -e -E never`) plus a test.
