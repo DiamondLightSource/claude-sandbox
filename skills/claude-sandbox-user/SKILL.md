@@ -124,7 +124,7 @@ If you or the user doubt the isolation, run the installed battery from
 inside the jail:
 
 ```sh
-bash /usr/libexec/claude-sandbox/verify-sandbox-battery.sh
+claude-sandbox verify
 ```
 
 Every line should read `PASS`. Quick checks that should always hold:
@@ -134,6 +134,8 @@ repair the sandbox from inside it.
 
 ## Related skills
 
+- `verify-sandbox` runs the installed battery followed by an agent-driven
+  adversarial audit when the user requests a full isolation review.
 - `vscode-headless` runs VS Code inside the jail on a virtual display. Its
   install script is the standard example of something the user runs in the
   outer shell.

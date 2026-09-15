@@ -31,10 +31,15 @@ jail as a pass with a note; read those notes as well as the PASS count.
 
 ## Full adversarial audit
 
-The repository's `/verify-sandbox` Claude command adds an expanded adversarial
-audit. Invoke that slash command from Claude in a source checkout when you
-want the agent-driven audit. Its specification is in
-`.claude/commands/verify-sandbox.md`.
+The shipped `verify-sandbox` skill adds an expanded adversarial audit in
+Claude, Codex and Pi. Ask the agent to use that skill (or invoke
+`/verify-sandbox` in Claude). It runs the installed battery first, then tries
+ten adversarial probes only if all checks pass. No source checkout is needed.
+The workflow lives in `skills/verify-sandbox/SKILL.md`.
+
+After updating an existing installation, start a fresh agent session to get
+the new skill mount. Remove obsolete personal `verify-sandbox` commands or
+skills so there is only one maintained audit workflow.
 
 Ordinary verification uses the installed battery and needs no source checkout.
 There are no automatic session or prompt hooks.

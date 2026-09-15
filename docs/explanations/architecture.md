@@ -300,7 +300,7 @@ manual either way — it is JSONC in the wild, and only you know whether a
 |---|---|
 | Shadow + inlined `bwrap` argv builder, recursion guard, gitconfig render, `script(1)` wrap, egress-jail orchestration (`egress_jail_enabled` / `netns_launch` / `netns_holder`) | `.devcontainer/claude-sandbox/claude-shadow` |
 | Relocate real binary off-PATH; wire shadow; disable auto-updater; place `/etc` config | `.devcontainer/claude-sandbox/install.sh` |
-| Integrity-battery spec (21 checks + 10 adversarial probes) | `.claude/commands/verify-sandbox.md` |
+| Integrity-battery spec (21 checks + 10 adversarial probes) | `skills/verify-sandbox/SKILL.md` |
 | Tests CI runs (argv builder, smoke) | `tests/bwrap_argv.sh`, `tests/smoke.sh` |
 
 ### See also

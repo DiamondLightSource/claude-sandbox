@@ -790,7 +790,7 @@ main() {
     echo "  managed:     $(prefixed "$MANAGED_SETTINGS") (updater disabled)"
     echo "  codex conf:  $(prefixed "$CODEX_MANAGED_CONFIG") (updater settings)"
     echo "  statusline:  $USER_HOME/.claude/settings.json (preference only)"
-    echo "  run \`claude-sandbox verify\` for the live battery (or \`/verify-sandbox\` inside Claude in a claude-sandbox clone for the full audit)."
+    echo "  run \`claude-sandbox verify\` for the live battery, or use the shipped verify-sandbox skill for the full audit."
 
 
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # verify-sandbox phase-1 battery — the 21 deterministic PASS/FAIL checks
-# behind the /verify-sandbox command (.claude/commands/verify-sandbox.md).
+# behind the /verify-sandbox command (skills/verify-sandbox/SKILL.md).
 #
 # WHY THIS IS A COMMITTED SCRIPT, NOT INLINE IN THE COMMAND MARKDOWN:
 #   - Slash-command loading substitutes $1..$9 as POSITIONAL ARGUMENTS.

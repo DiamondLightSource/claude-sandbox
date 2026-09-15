@@ -6,7 +6,7 @@ description: How agent skills ship to claude-sandbox users (ADR 24). The top-lev
 # claude-sandbox-shipped-skills
 
 Skills that sandboxed agents should have in every workspace (currently
-`vscode-headless` and `claude-sandbox-user`) reach users through the **sandbox itself**, not through
+`vscode-headless`, `claude-sandbox-user` and `verify-sandbox`) reach users through the **sandbox itself**, not through
 their `~/.claude`. This skill records the pattern; the `claude-sandbox`
 skill records the invariants it rests on (4 and 5: trust anchors live in
 `/etc` and `/usr/libexec`, ro in-session, never in a host-shared or
@@ -65,10 +65,9 @@ system-wide skills directory and no managed key that adds a skills path
 network at first use, and is Claude-only. The bind is harness-agnostic.
 
 Shipped 2026-09-15 as 4.2.0 (PR #49). Verified live in all three agents,
-check 03 of the battery, and the wheel path from a branch. Parked issue
-**#79** (ship `/verify-sandbox` machine-wide) predates this pattern and
-assumed a plugin marketplace was the only channel; a `~/.claude/commands`
-ro-bind on the same model is the cheaper candidate to re-evaluate first.
+check 03 of the battery, and the wheel path from a branch. The full
+`verify-sandbox` audit now uses this same skill mechanism; the former
+repository-only `.claude/commands/verify-sandbox.md` has been removed.
 
 ## Adding a shipped skill
 
