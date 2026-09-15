@@ -72,6 +72,9 @@ network at first use, and is Claude-only. The bind is harness-agnostic.
 - A skill's scripts that need host-side setup (apt installs, as
   `install-vscode-driver-deps.sh` does) must tell the agent to ask the user
   to run them **outside** the sandbox and must not be extended beyond that.
+  The skill bind is invisible to the outer container, so the skill text must
+  also tell the agent to copy the script to a shared path (`/cache` or the
+  workspace) and hand the user that path, never one under `~/.claude/skills`.
 - Prefix names distinctively enough that they will not collide with a user's
   own skill: a collision is masked for the session, with a warning.
 - Tests: `tests/bwrap_argv.sh` scenario 15 (per-skill ro bind at each
