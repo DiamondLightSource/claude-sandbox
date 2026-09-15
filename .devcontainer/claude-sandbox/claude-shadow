@@ -215,26 +215,16 @@ agent_profile() {
     esac
 }
 
-# agent_inner_path HOME: where the agent is exec'd from INSIDE the sandbox.
-# Bind-back agents (claude) run from the conventional $HOME/.local/bin/<agent>
-# that the argv builder binds the real binary onto; the rest run in place from
-# their root-owned, read-only /usr/libexec path, which is already visible via
-# --ro-bind / /.
-agent_inner_path() {
-    if [ "$AGENT_BIND_BACK" = "1" ]; then
-        printf '%s/%s\n' "$1" "$AGENT_INNER_REL"
-    else
-        printf '%s\n' "$AGENT_REAL"
-    fi
-}
-
-# One dispatch path for both fresh sandboxes and already-sandboxed spawns.
-# Pass the real executable explicitly so the launcher has no relocation path.
+# agent_exec_argv OUT HOME: build the command for fresh and nested launches.
 agent_exec_argv() {
+    local -n _command_out="$1"
+    local agent_home="$2"
     if [ "$AGENT" = codex ]; then
-        printf '%s\n' /usr/libexec/claude-sandbox/codex-launch "$AGENT_REAL"
+        _command_out=( /usr/libexec/claude-sandbox/codex-launch "$AGENT_REAL" )
+    elif [ "$AGENT_BIND_BACK" = 1 ]; then
+        _command_out=( "$agent_home/$AGENT_INNER_REL" )
     else
-        agent_inner_path "$1"
+        _command_out=( "$AGENT_REAL" )
     fi
 }
 
@@ -254,7 +244,7 @@ if [ "$CLAUDE_SHADOW_SOURCE_ONLY" != "1" ] && [ "${IS_SANDBOX:-}" = "1" ]; then
     else
         _filtered=( "$@" )
     fi
-    mapfile -t _agent_command < <(agent_exec_argv "${HOME:-/root}")
+    agent_exec_argv _agent_command "${HOME:-/root}"
     exec "${_agent_command[@]}" \
         "${AGENT_INJECT[@]+"${AGENT_INJECT[@]}"}" "${_filtered[@]+"${_filtered[@]}"}"
 fi
@@ -262,19 +252,12 @@ fi
 # Export so the inlined bwrap_argv_build picks up the gitconfig path.
 export CLAUDE_SANDBOX_GITCONFIG_PATH="$GITCONFIG_PATH"
 
-# BwrapArgvBuilder: pure-function emitting the bwrap argv. Deterministic
-# given (workspace, real_claude, "$@") and ($HOME,
-# $CLAUDE_SANDBOX_GITCONFIG_PATH, $CLAUDE_SANDBOX_NO_FORGE,
-# $CLAUDE_SANDBOX_ALLOW_WRITE, $CLAUDE_SANDBOX_PASS_ENV — plus whatever
-# variables that last one names). No I/O, no subprocesses — sourced by
-# tests/bwrap_argv.sh and called in isolation.
-#
-# Procfs is always `--ro-bind /proc /proc` (no per-launch probe). Trade-
-# off: host PIDs are enumerable from inside the sandbox (info-disclosure),
-# but credential-bearing procfs entries stay gated by YAMA
-# ptrace_scope=1. Kernel-level pidns isolation (kill/ptrace scoping)
-# remains intact via --unshare-pid.
+# bwrap_argv_build OUT WORKSPACE REAL ARGS...: fill OUT with the bwrap command.
+# Reads configuration and source-path availability without creating files.
+# Keep arguments as arrays so newlines and empty strings survive unchanged.
+# Host procfs is read-only; PID namespace isolation still scopes kill/ptrace.
 bwrap_argv_build() {
+    local -n _bwrap_out="$1"; shift
     local workspace="$1"; shift
     local real_agent="$1"; shift
 
@@ -386,9 +369,8 @@ bwrap_argv_build() {
     # agent-spawns-agent path lookups see the path they expect.
     # Unconditional — the shadow's loud-fail upstream catches a missing
     # real binary.
-    local inner; inner="$(agent_inner_path "$home")"
     if [ "$AGENT_BIND_BACK" = "1" ]; then
-        argv+=( --bind "$real_agent" "$inner" )
+        argv+=( --bind "$real_agent" "$home/$AGENT_INNER_REL" )
     fi
 
     if [ -n "$workspace" ] && [ -d "$workspace" ]; then
@@ -574,10 +556,10 @@ bwrap_argv_build() {
     # Exec via the in-sandbox conventional path so the agent's argv[0]
     # matches what its official installer would have placed.
     local -a agent_command=()
-    mapfile -t agent_command < <(agent_exec_argv "$home")
+    agent_exec_argv agent_command "$home"
     argv+=( -- "${agent_command[@]}" \
         "${AGENT_INJECT[@]+"${AGENT_INJECT[@]}"}" "${user_args[@]+"${user_args[@]}"}" )
-    printf '%s\n' "${argv[@]}"
+    _bwrap_out=( "${argv[@]}" )
 }
 
 # resolve_workspace_root: pure function picking the rw bind-mount root.
@@ -1172,6 +1154,8 @@ EOF
 sandbox_launch() {
     local command
     printf -v command '%q ' "$@"
+    # printf %q uses Bash quoting, including $'...' for embedded newlines.
+    local -x SHELL=/bin/bash
     local -a terminal=( script --return -q -E never -c "$command" /dev/null )
     if egress_jail_enabled; then
         netns_launch "${terminal[@]}"
@@ -1274,7 +1258,7 @@ if egress_jail_enabled; then
     jail_stage_dns
 fi
 WORKSPACE_ROOT="$(resolve_workspace_root "$PWD")"
-mapfile -t ARGV < <(bwrap_argv_build "$WORKSPACE_ROOT" "$AGENT_REAL" "$@")
+bwrap_argv_build ARGV "$WORKSPACE_ROOT" "$AGENT_REAL" "$@"
 
 # Wrap bwrap in script(1) so the sandbox runs inside a freshly-allocated
 # pseudo-terminal. SIGWINCH propagates, job control works, and TIOCSTI

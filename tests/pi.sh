@@ -15,7 +15,7 @@ unset CLAUDE_SANDBOX_ALLOW_WRITE CLAUDE_SANDBOX_PASS_ENV CLAUDE_SANDBOX_NO_FORGE
 
 assert_eq detect-pi pi "$(detect_agent /usr/local/bin/pi '')"
 agent_profile pi
-argv="$(bwrap_argv_build /repo "$AGENT_REAL" --provider openai --model example)"
+argv="$(bwrap_argv_lines /repo "$AGENT_REAL" --provider openai --model example)"
 assert_pair pi-state "$argv" --bind "$HOME/.pi"
 assert_not_contains pi-isolation "$argv" "$HOME/.claude"
 assert_not_contains pi-isolation "$argv" "$HOME/.claude.json"
@@ -27,11 +27,11 @@ assert_pair pi-provider "$argv" --provider openai
 assert_pair pi-model "$argv" --model example
 for agent in claude codex; do
     agent_profile "$agent"
-    argv="$(bwrap_argv_build /repo "$AGENT_REAL")"
+    argv="$(bwrap_argv_lines /repo "$AGENT_REAL")"
     assert_not_contains "$agent-isolation" "$argv" "$HOME/.pi"
     if CLAUDE_SANDBOX_LOCAL_MODEL_PORT=1920 local_model_enabled; then pass
     else fail "$agent does not enable the local relay"; fi
-    argv="$(CLAUDE_SANDBOX_LOCAL_MODEL_PORT=8082 bwrap_argv_build /repo "$AGENT_REAL")"
+    argv="$(CLAUDE_SANDBOX_LOCAL_MODEL_PORT=8082 bwrap_argv_lines /repo "$AGENT_REAL")"
     assert_pair "$agent-relay-port" "$argv" CLAUDE_SANDBOX_LOCAL_MODEL_PORT 8082
 done
 agent_profile pi
@@ -39,7 +39,7 @@ unset CLAUDE_SANDBOX_LOCAL_MODEL_PORT
 if local_model_enabled; then fail 'relay enabled without configuration'; else pass; fi
 parse_config "$REPO_ROOT/.devcontainer/claude-sandbox.conf"
 assert_eq shipped-relay-port 1920 "$CLAUDE_SANDBOX_LOCAL_MODEL_PORT"
-argv="$(bwrap_argv_build /repo "$AGENT_REAL")"
+argv="$(bwrap_argv_lines /repo "$AGENT_REAL")"
 assert_pair discovery-port "$argv" CLAUDE_SANDBOX_LOCAL_MODEL_PORT 1920
 printf 'local-model-port = 1920\n' > "$tmp/conf"
 parse_config "$tmp/conf"
@@ -73,7 +73,7 @@ export CLAUDE_SANDBOX_LOCAL_MODEL_PORT=0
 parse_config "$tmp/conf"
 assert_eq relay-without-model-port $'8082\n1920\n9000' "$(local_ports)"
 assert_parse relay-without-model-port-enabled local_model_enabled
-argv="$(bwrap_argv_build /repo "$AGENT_REAL")"
+argv="$(bwrap_argv_lines /repo "$AGENT_REAL")"
 assert_not_contains no-discovery-without-model-port "$argv" CLAUDE_SANDBOX_LOCAL_MODEL_PORT
 unset CLAUDE_SANDBOX_LOCAL_MODEL_PORT CLAUDE_SANDBOX_LOCAL_PORTS
 if CLAUDE_SANDBOX_LOCAL_MODEL_PORT=0 local_model_enabled; then fail 'relay enabled with nothing configured'; else pass; fi

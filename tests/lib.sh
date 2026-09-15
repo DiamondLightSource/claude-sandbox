@@ -119,3 +119,11 @@ finish() {
     echo "$1: $PASSED passed / $FAILED failed"
     [ "$FAILED" -eq 0 ]
 }
+
+# Text view for existing single-line argv assertions. Production uses arrays;
+# tests that exercise argument boundaries inspect the array directly.
+bwrap_argv_lines() {
+    local -a built_args=()
+    bwrap_argv_build built_args "$@"
+    printf '%s\n' "${built_args[@]}"
+}
