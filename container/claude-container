@@ -411,15 +411,15 @@ create_container() {
     fi
     # --mount PATH: read-only at the same path. The sandbox's --ro-bind / /
     # shows it to agents as-is; nothing in the container can write it.
-    local m allow_write=""
+    local m allow_write="${CLAUDE_SANDBOX_ALLOW_WRITE:-}"
     for m in "${mounts_ro[@]+"${mounts_ro[@]}"}"; do
         args+=( --mount "type=bind,src=$m,dst=$m,ro,bind-propagation=slave" )
     done
     # --mount-rw PATH: read-write at the same path, and tell the sandbox to
-    # bind it rw too (allow-write, joined with ':').
+    # bind it rw too. The shadow reads one allow-write path per line.
     for m in "${mounts_rw[@]+"${mounts_rw[@]}"}"; do
         args+=( --mount "type=bind,src=$m,dst=$m,bind-propagation=slave" )
-        allow_write="${allow_write:+$allow_write:}$m"
+        allow_write="${allow_write:+$allow_write$'\n'}$m"
     done
     if [ -n "$allow_write" ]; then
         args+=( -e "CLAUDE_SANDBOX_ALLOW_WRITE=$allow_write" )

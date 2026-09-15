@@ -32,7 +32,14 @@ case "$*" in
         [ -n "${FAKE_IMG_VER:-}" ] && echo "$FAKE_IMG_VER" ;;
     "image inspect -f {{index .Config.Labels \"org.opencontainers.image.revision\"}} "*) echo abc123 ;;
     "image inspect -f {{.Id}} "*) echo img1 ;;
-    "create "*) touch "$MARK" ;;
+    "create "*)
+        touch "$MARK"
+        for arg in "$@"; do
+            case "$arg" in
+                CLAUDE_SANDBOX_ALLOW_WRITE=*) printf '%s' "${arg#*=}" > "$LOG.mount-env" ;;
+            esac
+        done
+        ;;
     "run --rm --entrypoint find -v "*" /cache/venv-for "*) cat "$VENVS" 2>/dev/null ;;
     "ps -a --filter name=^claude-sandbox- --format {{.Names}}") cat "$PS" 2>/dev/null ;;
     "images --filter reference=*/diamondlightsource/claude-sandbox --format {{.Repository}}:{{.Tag}}") cat "$IMAGES" 2>/dev/null ;;
@@ -46,7 +53,7 @@ chmod +x "$TMP/bin/podman"
 run() {
     local -a envs=()
     while [ "$1" != "--" ]; do envs+=( "$1" ); shift; done; shift
-    : > "$LOG"; rm -f "$TMP/mark"
+    : > "$LOG"; rm -f "$TMP/mark" "$LOG.mount-env"
     ( cd "${PROJECT:-$TMP/project}" && env -i PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP" \
         LOG="$LOG" MARK="$TMP/mark" PS="$TMP/ps" IMAGES="$TMP/images" VENVS="$TMP/venvs" CLAUDE_SANDBOX_NESTED=1 "${envs[@]}" \
         bash "$LAUNCHER" "$@" 2>"$TMP/err" ); RC=$?
@@ -101,6 +108,24 @@ case "$(create_line)" in *"src=$TMP/rw,dst=$TMP/rw,bind-propagation=slave"*) pas
 case "$(create_line)" in *"-e CLAUDE_SANDBOX_ALLOW_WRITE=$TMP/rw "*) pass ;; *) fail "allow-write missing rw mount: $(create_line)" ;; esac
 assert_not_contains "ro mount not in allow-write" "$(create_line)" "ALLOW_WRITE=$TMP/rw:$TMP/ro"
 run -- --mount; [ "$RC" = 1 ] && pass || fail "--mount without PATH accepted (rc=$RC)"
+
+# Exercise the format handed from the host launcher to the actual shadow.
+mkdir -p "$TMP/rw second" "$TMP/from-env"
+run CLAUDE_SANDBOX_ALLOW_WRITE="$TMP/from-env" -- --mount-rw "$TMP/rw" --mount-rw "$TMP/rw second"
+assert_eq 'merge writable mount paths as lines' \
+    "$TMP/from-env"$'\n'"$TMP/rw"$'\n'"$TMP/rw second" "$(cat "$LOG.mount-env")"
+binds="$(
+    export CLAUDE_SHADOW_SOURCE_ONLY=1
+    source "$HERE/../.devcontainer/claude-sandbox/claude-shadow"
+    CLAUDE_SANDBOX_ALLOW_WRITE="$(cat "$LOG.mount-env")"
+    bwrap_argv_build built "$TMP/project" /fake/claude
+    printf '%s\n' "${built[@]}"
+)"
+for path in "$TMP/from-env" "$TMP/rw" "$TMP/rw second"; do
+    assert_pair 'host writable path reaches sandbox' "$binds" --bind "$path"
+done
+run CLAUDE_SANDBOX_ALLOW_WRITE="$TMP/from-env" --
+assert_eq 'forward writable environment without mount flags' "$TMP/from-env" "$(cat "$LOG.mount-env")"
 
 # --- env: locale always, X11 only when the host has a DISPLAY --------------
 run --; case "$(create_line)" in *"-e LANG=en_US.UTF-8"*) pass ;; *) fail "LANG default: $(create_line)" ;; esac
