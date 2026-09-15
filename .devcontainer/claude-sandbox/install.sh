@@ -5,7 +5,6 @@
 #
 # Test paths:
 #   INSTALL_PREFIX    (default /)     — root of installed files
-#   INSTALL_WORKSPACE (default $PWD)  — workspace reported by the installer
 #   INSTALL_USER_HOME (default $HOME) — user settings and credential dirs
 #   CLAUDE_SANDBOX_SMOKE=1            skip apt + the curl-install of every
 #                                    agent binary.
@@ -29,7 +28,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # REPO_ROOT is the clone — two levels above .devcontainer/claude-sandbox.
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PREFIX="${INSTALL_PREFIX:-/}"
-WORKSPACE="${INSTALL_WORKSPACE:-$PWD}"
 USER_HOME="${INSTALL_USER_HOME:-$HOME}"
 SMOKE="${CLAUDE_SANDBOX_SMOKE:-0}"
 WITH_CODEX="${WITH_CODEX:-1}"
@@ -792,7 +790,6 @@ main() {
     echo "  managed:     $(prefixed "$MANAGED_SETTINGS") (updater disabled)"
     echo "  codex conf:  $(prefixed "$CODEX_MANAGED_CONFIG") (updater settings)"
     echo "  statusline:  $USER_HOME/.claude/settings.json (preference only)"
-    echo "  workspace:   $WORKSPACE"
     echo "  run \`claude-sandbox verify\` for the live battery (or \`/verify-sandbox\` inside Claude in a claude-sandbox clone for the full audit)."
 
 

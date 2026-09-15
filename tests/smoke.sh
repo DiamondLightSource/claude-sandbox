@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Install smoke test. Runs the installer with INSTALL_PREFIX +
-# INSTALL_WORKSPACE pointed at fresh tmpdirs and asserts on the
+# Install smoke test. Installs files and user settings in temporary
+# directories and asserts on the
 # resulting file placement. Set CLAUDE_SANDBOX_SMOKE=1 to skip
 # apt-install and the curl-install of the real Claude binary.
 #
@@ -15,16 +15,14 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$REPO_ROOT/tests/lib.sh"
 
 PREFIX="$(mktemp -d)"
-WORKSPACE="$(mktemp -d)"
 # USER_HOME is the user-scope ~/.claude home the GLOBAL guard merges
 # into. Pin it at a tmpdir so the suite NEVER touches the real
 # ~/.claude/settings.json of whoever runs the test.
 USER_HOME_DIR="$(mktemp -d)"
-register_cleanup "$PREFIX" "$WORKSPACE" "$USER_HOME_DIR"
+register_cleanup "$PREFIX" "$USER_HOME_DIR"
 
 export CLAUDE_SANDBOX_SMOKE=1
 export INSTALL_PREFIX="$PREFIX"
-export INSTALL_WORKSPACE="$WORKSPACE"
 export INSTALL_USER_HOME="$USER_HOME_DIR"
 
 run_install() {
@@ -258,7 +256,6 @@ LINK_HOME="$(mktemp -d)"
 LINK_SHARED="$(mktemp -d)"
 register_cleanup "$LINK_HOME" "$LINK_SHARED"
 HOME="$LINK_HOME" CLAUDE_SHARED_CONFIG="$LINK_SHARED" \
-    INSTALL_WORKSPACE="$WORKSPACE" \
     bash "$REPO_ROOT/.devcontainer/claude-sandbox/install.sh" >/dev/null 2>&1
 if [ "$(readlink "$LINK_HOME/.claude" 2>/dev/null)" = "$LINK_SHARED/.claude" ] \
         && [ "$(readlink "$LINK_HOME/.claude.json" 2>/dev/null)" = "$LINK_SHARED/.claude.json" ]; then
@@ -307,7 +304,6 @@ mkdir -p "$ADOPT_HOME/.claude" "$ADOPT_SHARED/.claude"
 echo local  > "$ADOPT_HOME/.claude/marker";   printf 'local'  > "$ADOPT_HOME/.claude.json"
 echo shared > "$ADOPT_SHARED/.claude/marker"; printf 'shared' > "$ADOPT_SHARED/.claude.json"
 HOME="$ADOPT_HOME" CLAUDE_SHARED_CONFIG="$ADOPT_SHARED" \
-    INSTALL_WORKSPACE="$WORKSPACE" \
     bash "$REPO_ROOT/.devcontainer/claude-sandbox/install.sh" >/dev/null 2>&1
 if [ "$(readlink "$ADOPT_HOME/.claude" 2>/dev/null)" = "$ADOPT_SHARED/.claude" ] \
         && [ "$(readlink "$ADOPT_HOME/.claude.json" 2>/dev/null)" = "$ADOPT_SHARED/.claude.json" ] \
@@ -326,7 +322,6 @@ mkdir -p "$SEED_HOME/.claude"
 echo seedme > "$SEED_HOME/.claude/marker"
 printf 'token-abc' > "$SEED_HOME/.claude.json"
 HOME="$SEED_HOME" CLAUDE_SHARED_CONFIG="$SEED_SHARED" \
-    INSTALL_WORKSPACE="$WORKSPACE" \
     bash "$REPO_ROOT/.devcontainer/claude-sandbox/install.sh" >/dev/null 2>&1
 if [ "$(readlink "$SEED_HOME/.claude" 2>/dev/null)" = "$SEED_SHARED/.claude" ] \
         && [ "$(readlink "$SEED_HOME/.claude.json" 2>/dev/null)" = "$SEED_SHARED/.claude.json" ] \
