@@ -63,8 +63,7 @@ covers the clone fallback.
 
 Agent tools can be steered by malicious content or make mistakes. The sandbox
 limits the damage: the project is writable, host secrets are masked, and the
-network jail blocks lateral access to internal hosts. Claude and Codex also
-have managed integrity hooks; Pi checks isolation at launch.
+network jail blocks lateral access to internal hosts. Run `claude-sandbox verify` to check the installed isolation.
 
 The project files and credentials you explicitly share remain accessible to
 the agent, and internet access stays open. Read the

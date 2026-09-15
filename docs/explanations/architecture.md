@@ -19,13 +19,12 @@ By default Claude's egress is also *jailed* ({ref}`adr-network-egress-jail`): a
 per-process network namespace blackholes the internal RFC1918 network so a
 compromised session cannot pivot sideways to internal hosts, while
 `api.anthropic.com`, the forges, DNS, and configured `allow-ip` devices stay
-reachable. A separate **integrity guard**, delivered through Claude Code's
-highest-precedence managed-settings layer, fires in every folder and fails loud
-(and closed) if Claude is ever launched outside the shadow.
+reachable. The wrapper refuses to launch if its isolation prerequisites fail.
+Use explicit verification to inspect the running sandbox.
 
 ## Design philosophy
 
-Five ideas run through the whole system, and every file below is an expression
+Four ideas run through the whole system, and every file below is an expression
 of one of them:
 
 - **Small enough to audit in one read.** The security implementation is Bash;
@@ -38,11 +37,8 @@ of one of them:
 - **`/etc`, never the workspace.** Config and policy that govern the *next*
   launch live under `/etc` (outside the read-write workspace), so a compromised
   session cannot rewrite them to widen its own binds.
-- **Tamper-resistant guard.** The guard's policy lives in managed settings
-  (un-removable by editing your own `~/.claude`) and its scripts live off-PATH,
-  read-only inside the sandbox.
-- **Refusal over silent degradation.** If unprivileged user namespaces are
-  forbidden, the installer refuses rather than install a non-functional sandbox.
+- **Protected launch path.** Real agent binaries live off PATH; updater
+  controls keep the wrapper as the normal entry point.
 
 Two protections live here: **credential isolation** (the `bwrap` bind model) and
 **lateral / sideways network isolation** (the egress jail,
@@ -147,7 +143,7 @@ sequenceDiagram
         S->>FS: regenerate /etc/claude-gitconfig<br/>from host user.name / user.email
         S->>FS: parse_config /etc/claude-sandbox.conf
         S->>S: resolve_workspace_root ($PWD or override)
-        S->>S: bwrap_argv_build(workspace, real, args)
+        S->>S: bwrap_argv_build(argv, workspace, real, args)
         alt egress jail enabled (default) — netns_launch
             S->>H: fork unshare -rn holder
             S->>P: pasta attach to holder by PID
@@ -231,64 +227,18 @@ over them survives if that baseline ever regresses. The rationale for the XDG
 polarity split is in the [threat model](threat-model.md); the exact bind list is
 in the [reference](../explanations/sandbox-internals.md).
 
-## 4. Integrity guard
+## 4. Launch isolation and updates
 
-The filesystem inversion only protects you if Claude actually entered the jail.
-The guard defends the *launch path itself*. Its failure mode is the auto-updater
-re-creating `~/.local/bin/claude` and launching the real binary unwrapped — this
-happened in practice and silently disabled the sandbox for days. The guard
-closes it with both a root-cause fix and a fail-loud safety net, and crucially
-puts both somewhere a user cannot accidentally edit away.
-
-```{mermaid}
-graph TD
-    subgraph precedence["settings precedence (highest wins)"]
-        direction TB
-        managed["/etc/claude-code/managed-settings.json<br/>HIGHEST · un-removable by user"]
-        userset["~/.claude/settings.json<br/>(user-editable · cannot override managed)"]
-        managed -.->|outranks| userset
-    end
-
-    managed --> ss["SessionStart →<br/>bash /usr/libexec/claude-sandbox/sandbox-verify.sh"]
-    managed --> ups["UserPromptSubmit →<br/>bash /usr/libexec/claude-sandbox/sandbox-gate.sh"]
-    managed --> upd["env.DISABLE_AUTOUPDATER=1<br/>autoUpdates=false"]
-
-    ss --> ssact["full integrity battery once/session<br/>WARN loudly if IS_SANDBOX unset<br/>(cannot block)"]
-    ups --> upsact{"IS_SANDBOX=1 ?"}
-    upsact -->|yes| pass["exit 0 — prompt proceeds"]
-    upsact -->|no| block["exit 2 — BLOCK every prompt<br/>(unless /etc/claude-code/allow-unwrapped exists)"]
-    upd --> noarm["updater can't re-arm the bypass"]
-```
-
-Three things work together. **`DISABLE_AUTOUPDATER=1` + `autoUpdates=false`** is
-the root-cause removal: agent updates require deliberate replacement, normally
-by upgrading the launcher and recreating its container. A devcontainer reinstall
-reasserts the shadow but keeps an existing agent binary. **`sandbox-verify.sh`**
-(`SessionStart`) runs the full battery and warns loudly when unwrapped — but
-`SessionStart` hooks can only inject messages, never block. **`sandbox-gate.sh`**
-(`UserPromptSubmit`) is the one mechanism that can actually stop work: a
-sub-second `IS_SANDBOX=1` string compare that `exit 2`s (blocks) every prompt
-otherwise. Both skip on Claude Code Web (`CLAUDE_CODE_REMOTE=true`), and the
-root-owned flag `/etc/claude-code/allow-unwrapped` downgrades the gate to
-warn-only — a flag under `/etc` rather than an env var because a confined
-Claude can forge an env var via `~/.claude/settings.json` but cannot write
-`/etc` (deep-review H4).
-
-Why a user editing `~/.claude/settings.json` cannot disable it: the hook
-*entries* live in the managed-settings layer, which outranks user settings and
-is only writable by `root` (or a deliberate `./install`). The hook *scripts*
-live in `/usr/libexec/claude-sandbox/` — root-owned, off-PATH, and read-only
-inside the sandbox (`--ro-bind / /`), so even a compromised in-session Claude
-cannot rewrite them to `exit 0`. The installer merges the policy in
-idempotently, preserves any real enterprise admin policy already present, and
-deliberately does **not** set `allowManagedHooksOnly`, so your own hooks still
-run. The full guard mechanics are in [integrity guard](integrity-guard.md).
+The wrapper establishes isolation before launching an agent. Vendor binaries
+live off PATH, and updater settings keep their installers from replacing the
+wrapper. Direct vendor-binary invocations are outside this launch path.
+See [launch isolation](launch-isolation.md) and
+[explicit verification](../how-to/verify-the-sandbox.md).
 
 ## 5. Config trust flow
 
 The sandbox config (`workspace-root`, `no-forge`, `allow-write`, `pass-env`,
-`egress-jail`, `allow-ip`) follows the same `/etc`-not-the-workspace discipline
-as the guard, and for the same reason. `install.sh` seeds `/etc` with the
+`egress-jail`, `allow-ip`) lives outside the writable workspace. `install.sh` seeds `/etc` with the
 shipped defaults from the package or clone; you edit
 `/etc/claude-sandbox.conf` directly (an unsandboxed root shell — your
 container terminal); the shadow reads it from `/etc` at launch — never
@@ -348,17 +298,15 @@ manual either way — it is JSONC in the wild, and only you know whether a
 
 | Concern | File |
 |---|---|
-| Shadow + inlined `bwrap` argv builder, recursion guard, gitconfig render, `script(1)` wrap, egress-jail orchestration (`egress_jail_enabled` / `netns_launch` / `netns_holder`) | `.devcontainer/claude-sandbox/agent-shadow` |
-| Relocate real binary off-PATH; wire shadow; merge managed-settings guard; disable auto-updater; place `/etc` config | `.devcontainer/claude-sandbox/install.sh` |
-| `SessionStart` guard — full integrity battery + loud warn when unwrapped | `.devcontainer/claude-sandbox/sandbox-verify.sh` |
-| `UserPromptSubmit` guard — sub-second fail-closed `IS_SANDBOX` gate | `.devcontainer/claude-sandbox/sandbox-gate.sh` |
+| Shadow + inlined `bwrap` argv builder, recursion guard, gitconfig render, `script(1)` wrap, egress-jail orchestration (`egress_jail_enabled` / `netns_launch` / `netns_holder`) | `.devcontainer/claude-sandbox/claude-shadow` |
+| Relocate real binary off-PATH; wire shadow; disable auto-updater; place `/etc` config | `.devcontainer/claude-sandbox/install.sh` |
 | Integrity-battery spec (21 checks + 10 adversarial probes) | `.claude/commands/verify-sandbox.md` |
 | Tests CI runs (argv builder, smoke) | `tests/bwrap_argv.sh`, `tests/smoke.sh` |
 
 ### See also
 
 - [Threat model](threat-model.md) — what is locked down, what is deliberately exposed, and why.
-- [Integrity guard](integrity-guard.md) — the managed-settings guard and the unwrapped-launch bypass it closes.
+- [Launch isolation](launch-isolation.md) — wrapper entry points and updater controls.
 - [Sandbox internals](../explanations/sandbox-internals.md) — the exact `bwrap` flags and bind list.
 - [Configuration](../reference/configuration.md) — `/etc/claude-sandbox.conf` keys and env-var overrides.
 - [Configure the network egress jail](../how-to/network-egress-jail.md) — turn the lateral-isolation jail on/off and allow-list device IPs.

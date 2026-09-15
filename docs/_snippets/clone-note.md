@@ -1,7 +1,7 @@
 :::{admonition} Working in a different workspace?
 :class: tip
 
-The shadow and the global integrity guard protect `claude` in *every*
+The shadow wraps `claude` in *every*
 folder — a workspace needs nothing added to it to be safe, and the
 `claude-sandbox` helper commands are on PATH everywhere.
 

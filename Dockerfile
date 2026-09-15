@@ -38,8 +38,7 @@ LABEL io.diamondlightsource.claude-sandbox.launcher-version="${LAUNCHER_VERSION}
 ARG CLAUDE_SANDBOX_VERSION=""
 
 # Whether to fetch OpenAI's Codex CLI at build time (install.sh's own
-# WITH_CODEX knob, exposed here). The codex SHADOW and its managed guard
-# are installed either way — Invariant 1 says the shadow must own the name
+# WITH_CODEX knob, exposed here). The codex SHADOW is installed either way — Invariant 1 says the shadow must own the name
 # on $PATH regardless — this only controls the best-effort curl fetch of
 # the real binary. Default on, matching install.sh; set to 0 to build an
 # image that never reaches chatgpt.com (e.g. an offline/air-gapped build,

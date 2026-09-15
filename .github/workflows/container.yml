@@ -4,7 +4,7 @@
 # DiamondLightSource/ubuntu-devcontainer approach: per-arch native builds
 # pushed by digest, merged into one multi-arch manifest.
 #
-# The in-image auto-updater is disabled by design (integrity guard), so
+# The in-image auto-updater is disabled by design (managed updater settings), so
 # the baked Claude version is frozen at build time — the weekly cron
 # rebuild is what picks up new Claude releases.
 name: Container
@@ -85,12 +85,9 @@ jobs:
             test -x /usr/local/bin/pi
             test -x /usr/libexec/claude-sandbox/pi-run
             test -x /usr/libexec/claude-sandbox/pi-dist/pi
-            test -x /usr/libexec/claude-sandbox/sandbox-verify.sh
-            test -x /usr/libexec/claude-sandbox/sandbox-gate.sh
             test -x /usr/libexec/claude-sandbox/verify-sandbox-battery.sh
             test -f /etc/claude-sandbox.conf
-            jq -e ".hooks.SessionStart and .hooks.UserPromptSubmit
-                   and .autoUpdates == false
+            jq -e ".autoUpdates == false
                    and .env.DISABLE_AUTOUPDATER == \"1\"" \
               /etc/claude-code/managed-settings.json
             /usr/libexec/claude-sandbox/claude --version

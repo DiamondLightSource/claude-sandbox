@@ -40,11 +40,10 @@ closes the concrete exfiltration routes — environment variables, dotfiles, IPC
 and runtime sockets, X11, `TIOCSTI` terminal injection, setuid escalation —
 that an attacker-controlled Claude can actually reach.
 
-A consequence of taking the *developer* off the threat list: enforcement
-targets *accidental* exposure, not a determined human deliberately dismantling
-their own sandbox. The integrity guard is built to survive Claude Code's own
-self-updates and stray `~/.claude/settings.json` edits, not to win a fight
-against the box's owner with root.
+The sandbox protects sessions started through its wrapper. A developer can
+deliberately bypass it by launching a vendor binary directly or changing the
+container configuration. Vendor auto-updaters are disabled to keep the normal
+PATH entry pointing at the wrapper.
 
 ## Why each exposure is in or out of scope
 

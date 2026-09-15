@@ -115,21 +115,13 @@ fi
 INSTALLER_DEST="$PREFIX/usr/libexec/claude-sandbox/installer"
 [ ! -e "$INSTALLER_DEST" ] && pass || fail "installer stamp present after a clone install"
 
-# Guard scripts + the /verify-sandbox phase-1 battery placed OFF the rw
-# set under /usr/libexec (prefixed), like the relocated real binary. All
-# executable, mode 0755 (the battery rides along for the same off-PATH,
-# ro-in-sandbox tamper-resistance).
-VERIFY_DEST="$PREFIX/usr/libexec/claude-sandbox/sandbox-verify.sh"
-GATE_DEST="$PREFIX/usr/libexec/claude-sandbox/sandbox-gate.sh"
+# The explicit verification battery stays installed read-only in the jail.
 BATTERY_DEST="$PREFIX/usr/libexec/claude-sandbox/verify-sandbox-battery.sh"
-for g in "$VERIFY_DEST" "$GATE_DEST" "$BATTERY_DEST"; do
-    if [ -x "$g" ] && [ "$(stat -c '%a' "$g" 2>/dev/null)" = "755" ]; then
-        pass
-    else
-        fail "guard script missing or not 0755-executable at $g"
-    fi
-done
-
+if [ -x "$BATTERY_DEST" ] && [ "$(stat -c '%a' "$BATTERY_DEST")" = 755 ]; then
+    pass
+else
+    fail "battery missing or not executable"
+fi
 
 # Shipped skills: the repo's top-level skills/ tree lands under /usr/libexec
 # (root-owned, ro in-session — the shadow binds each skill into the agent's
@@ -147,28 +139,12 @@ if [ -e "$USER_HOME_DIR/.claude/skills" ]; then
 else
     pass
 fi
-# Managed settings (the highest-precedence, user-uneditable policy layer)
-# carries the guard hooks + updater-disable.
+# Managed settings disable updates without adding prompt/session hooks.
 MANAGED="$PREFIX/etc/claude-code/managed-settings.json"
-jq_check "managed-settings.json missing or not valid JSON at $MANAGED" \
-    '.' "$MANAGED"
-jq_check "managed-settings.json missing SessionStart sandbox-verify.sh entry" \
-    'any(.hooks.SessionStart[].hooks[]?; (.command // "") | endswith("sandbox-verify.sh"))' "$MANAGED"
-jq_check "managed-settings.json missing UserPromptSubmit sandbox-gate.sh entry" \
-    'any(.hooks.UserPromptSubmit[].hooks[]?; (.command // "") | endswith("sandbox-gate.sh"))' "$MANAGED"
-# Guard commands must point at the absolute /usr/libexec scripts (not $HOME).
-jq_check "managed guard command does not point at /usr/libexec/claude-sandbox" \
-    'any(.. | .command? // empty; startswith("bash /usr/libexec/claude-sandbox/"))' "$MANAGED"
-# Auto-updater hard-disabled in managed settings.
-jq_check "managed-settings.json missing env.DISABLE_AUTOUPDATER=1 / autoUpdates=false" \
-    '(.env.DISABLE_AUTOUPDATER == "1") and (.autoUpdates == false)' "$MANAGED"
-# allowManagedHooksOnly must NOT be set — that would block the owner's
-# own hooks, which is more than we want.
-jq_check "managed-settings.json set allowManagedHooksOnly (would block owner hooks)" \
-    '(has("allowManagedHooksOnly") | not)' "$MANAGED"
+jq_check "managed updater defaults" \
+    '.env.DISABLE_AUTOUPDATER == "1" and .autoUpdates == false and (has("hooks") | not)' "$MANAGED"
 
-# User-scope settings.json now holds ONLY the statusline preference — the
-# guard must NOT be wired here.
+# Seed a user statusline preference.
 SETTINGS="$USER_HOME_DIR/.claude/settings.json"
 SL_DEST="$USER_HOME_DIR/.claude/statusline-command.sh"
 if [ -x "$SL_DEST" ]; then
@@ -180,9 +156,7 @@ jq_check "user settings.json missing or not valid JSON at $SETTINGS" \
     '.' "$SETTINGS"
 jq_check "user settings.json missing/!command .statusLine" \
     '(.statusLine.type == "command") and (.statusLine.command | endswith("statusline-command.sh"))' "$SETTINGS"
-# The guard must NOT appear in user-scope settings.
-jq_check "guard hooks leaked into user-scope settings.json (should be managed-only)" \
-    '[.. | .command? // empty | select(endswith("sandbox-verify.sh") or endswith("sandbox-gate.sh"))] | length == 0' "$SETTINGS"
+jq_check "user hooks were installed" 'has("hooks") | not' "$SETTINGS"
 
 # Config placement: install copies the clone's conf to the host-global
 # /etc/claude-sandbox.conf the shadow reads at launch (prefixed for the
@@ -201,11 +175,9 @@ else
     fail "installed config differs from source conf"
 fi
 
-# Idempotency: second install must be byte-for-byte stable across the
-# shadow, both guard scripts, the managed-settings + user-settings jq
-# merges (each must be a fixed point), and the conf.
+# Reinstalling unchanged inputs is byte-stable.
 declare -A SUM_A
-for f in "$SHADOW_DEST" "$CLI_DEST" "$VERSION_DEST" "$VERIFY_DEST" "$GATE_DEST" "$BATTERY_DEST" "$MANAGED" "$SETTINGS" "$CONF_DEST"; do
+for f in "$SHADOW_DEST" "$CLI_DEST" "$VERSION_DEST" "$BATTERY_DEST" "$MANAGED" "$SETTINGS" "$CONF_DEST"; do
     SUM_A["$f"]="$(sha256sum "$f" | awk '{print $1}')"
 done
 
@@ -213,7 +185,7 @@ if ! run_install; then
     fail "second install run exited non-zero"
 fi
 
-for f in "$SHADOW_DEST" "$CLI_DEST" "$VERSION_DEST" "$VERIFY_DEST" "$GATE_DEST" "$BATTERY_DEST" "$MANAGED" "$SETTINGS" "$CONF_DEST"; do
+for f in "$SHADOW_DEST" "$CLI_DEST" "$VERSION_DEST" "$BATTERY_DEST" "$MANAGED" "$SETTINGS" "$CONF_DEST"; do
     if [ "${SUM_A[$f]}" = "$(sha256sum "$f" | awk '{print $1}')" ]; then
         pass
     else
@@ -221,9 +193,7 @@ for f in "$SHADOW_DEST" "$CLI_DEST" "$VERSION_DEST" "$VERIFY_DEST" "$GATE_DEST" 
     fi
 done
 
-# Managed-settings merge with a pre-existing admin policy: a foreign key
-# AND a foreign hook in the same events must be preserved; our guard is
-# added (deduped); the merge is a fixed point.
+# Preserve existing managed policy and administrator hooks.
 MGD_PREFIX="$(mktemp -d)"
 register_cleanup "$MGD_PREFIX"
 mkdir -p "$MGD_PREFIX/etc/claude-code"
@@ -243,20 +213,8 @@ jq_check "managed merge dropped pre-existing admin key" \
     '.permissions.defaultMode == "plan"' "$MGD"
 jq_check "managed merge dropped pre-existing admin hook" \
     'any(.hooks.SessionStart[].hooks[]?; .command == "org-audit.sh")' "$MGD"
-jq_check "managed merge did not add our guard alongside the admin hook" \
-    'any(.hooks.SessionStart[].hooks[]?; (.command // "")|endswith("sandbox-verify.sh"))
-     and any(.hooks.UserPromptSubmit[].hooks[]?; (.command // "")|endswith("sandbox-gate.sh"))' "$MGD"
-
-# Re-merge dedup: running again must NOT duplicate our entries.
-INSTALL_PREFIX="$MGD_PREFIX" INSTALL_USER_HOME="$(mktemp -d)" \
-    bash "$REPO_ROOT/.devcontainer/claude-sandbox/install.sh" >/dev/null 2>&1
-V_COUNT="$(jq '[.hooks.SessionStart[].hooks[] | select(.command|endswith("sandbox-verify.sh"))] | length' "$MGD")"
-G_COUNT="$(jq '[.hooks.UserPromptSubmit[].hooks[] | select(.command|endswith("sandbox-gate.sh"))] | length' "$MGD")"
-if [ "$V_COUNT" = "1" ] && [ "$G_COUNT" = "1" ]; then
-    pass
-else
-    fail "duplicate managed guard entries after re-merge (verify=$V_COUNT gate=$G_COUNT)"
-fi
+jq_check "managed merge changed administrator hooks" \
+    '.hooks == {SessionStart: [{hooks: [{type: "command", command: "org-audit.sh"}]}]}' "$MGD"
 
 # Installation preserves user hooks and an existing statusline preference.
 SETTINGS_HOME="$(mktemp -d)"
@@ -269,7 +227,7 @@ cat > "$SETTINGS_HOME/.claude/settings.json" <<'JSON'
   "hooks": {
     "UserPromptSubmit": [
       {"hooks": [
-        {"type": "command", "command": "bash /custom/sandbox-gate.sh"},
+        {"type": "command", "command": "bash /custom/check-project.sh"},
         {"type": "command", "command": "their-ups.sh"}
       ]}
     ]
@@ -316,63 +274,6 @@ if [ "$(readlink "$LINK_HOME/.agents/skills" 2>/dev/null)" = "$LINK_SHARED/.agen
     pass
 else
     fail "link_terminal_config did not symlink ~/.agents/skills into $LINK_SHARED"
-fi
-
-# Guard behaviour: drive the INSTALLED scripts directly (deterministic,
-# env-only — no claude needed). The gate fail-closes when unwrapped and
-# passes when wrapped or escape-hatched; the verifier warns loudly when
-# unwrapped and never blocks.
-echo '{}' | env -u IS_SANDBOX bash "$GATE_DEST" >/dev/null 2>&1
-[ "$?" -eq 2 ] && pass || fail "gate did not block (exit 2) when unwrapped"
-
-echo '{}' | env IS_SANDBOX=1 bash "$GATE_DEST" >/dev/null 2>&1
-[ "$?" -eq 0 ] && pass || fail "gate did not pass (exit 0) when wrapped"
-
-# Escape hatch is now a ROOT-OWNED FLAG FILE, not an env var (deep-review
-# H4): a confined Claude can forge ~/.claude/settings.json's "env" block, so
-# any env-driven hatch is bypassable. The gate HARD-CODES the flag path and
-# is not env-overridable; the decision is unit-tested through the inner
-# gate_allows() (an argument seam, not a forgeable variable), reached by
-# SOURCING the gate — its BASH_SOURCE/$0 guard skips gate_main when sourced.
-GATE_FLAG_DIR="$(mktemp -d)"
-register_cleanup "$GATE_FLAG_DIR"
-GATE_FLAG="$GATE_FLAG_DIR/allow-unwrapped"
-# Absent flag → gate_allows refuses (would block).
-if ( unset IS_SANDBOX CLAUDE_CODE_REMOTE; source "$GATE_DEST"; gate_allows "$GATE_FLAG" ); then
-    fail "gate_allows passed with the allow-unwrapped flag absent"
-else
-    pass
-fi
-# Present flag → gate_allows accepts (operator escape hatch honoured).
-: > "$GATE_FLAG"
-if ( unset IS_SANDBOX CLAUDE_CODE_REMOTE; source "$GATE_DEST"; gate_allows "$GATE_FLAG" ); then
-    pass
-else
-    fail "gate_allows did not honour a present root-owned allow-unwrapped flag"
-fi
-# Executed gate, unwrapped, no real /etc flag → fail-closed default (exit 2).
-echo '{}' | env -u IS_SANDBOX -u CLAUDE_CODE_REMOTE bash "$GATE_DEST" >/dev/null 2>&1
-[ "$?" -eq 2 ] && pass || fail "gate did not fail-closed (exit 2) when unwrapped with no flag"
-echo '{}' | env -u IS_SANDBOX CLAUDE_CODE_REMOTE=true bash "$GATE_DEST" >/dev/null 2>&1
-[ "$?" -eq 0 ] && pass || fail "gate did not skip on Claude Code Web"
-
-# install.sh stamps/removes the root-owned flag from the (deliberately
-# scary) DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED install seam. The
-# base install above ran without it, so the flag must be ABSENT (gate stays
-# fail-closed by default). A re-install with the seam set must create
-# it; a subsequent re-install without it must remove it again.
-GATE_FLAG_DEST="$PREFIX/etc/claude-code/allow-unwrapped"
-[ ! -e "$GATE_FLAG_DEST" ] && pass || fail "default install left the gate escape-hatch flag present (should be fail-closed)"
-DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED=1 run_install
-[ -f "$GATE_FLAG_DEST" ] && pass || fail "DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED=1 install did not stamp $GATE_FLAG_DEST"
-run_install
-[ ! -e "$GATE_FLAG_DEST" ] && pass || fail "re-install without DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED did not remove a stale $GATE_FLAG_DEST"
-VERIFY_OUT="$(echo '{}' | env -u IS_SANDBOX bash "$VERIFY_DEST" 2>/dev/null)"
-VERIFY_RC=$?
-if [ "$VERIFY_RC" -eq 0 ] && printf '%s' "$VERIFY_OUT" | grep -q 'OUTSIDE the bwrap shadow'; then
-    pass
-else
-    fail "verifier did not emit a non-blocking warning when unwrapped (rc=$VERIFY_RC)"
 fi
 
 # /verify-sandbox phase-1 battery: drive the INSTALLED script outside any
@@ -463,34 +364,11 @@ else
     fail "codex shadow missing at $CODEX_SHADOW, or has diverged from the claude shadow"
 fi
 
-# Codex's managed layer carries the guard. requirements.toml is the hard,
-# admin-only tier — the /etc/codex analogue of managed-settings.json.
-CODEX_REQ="$PREFIX/etc/codex/requirements.toml"
+# Codex gets updater defaults, without a managed hook requirements file.
 CODEX_MGD="$PREFIX/etc/codex/managed_config.toml"
-expect_file "$CODEX_REQ" "codex requirements.toml missing at $CODEX_REQ"
-expect_file "$CODEX_MGD" "codex managed_config.toml missing at $CODEX_MGD"
-for pat in '\[\[hooks.SessionStart\]\]' '\[\[hooks.UserPromptSubmit\]\]' \
-           'sandbox-verify.sh --agent codex' 'sandbox-gate.sh --agent codex'; do
-    if grep -qE "$pat" "$CODEX_REQ" 2>/dev/null; then
-        pass
-    else
-        fail "codex requirements.toml missing: $pat"
-    fi
-done
-# Hook commands must point at the absolute /usr/libexec scripts (root-owned,
-# off-PATH, ro inside the sandbox), never at a sandbox-writable path.
-if grep -q 'command = "bash /usr/libexec/claude-sandbox/' "$CODEX_REQ" 2>/dev/null; then
-    pass
-else
-    fail "codex guard hooks do not point at /usr/libexec/claude-sandbox"
-fi
-# allow_managed_hooks_only would silence the owner's OWN hooks — same call as
-# allowManagedHooksOnly on the Claude side (Invariant 5). Must stay absent.
-if grep -q 'allow_managed_hooks_only' "$CODEX_REQ" 2>/dev/null; then
-    fail "codex requirements.toml sets allow_managed_hooks_only (silences the owner's own hooks)"
-else
-    pass
-fi
+expect_file "$CODEX_MGD"
+[ ! -e "$PREFIX/etc/codex/requirements.toml" ] && pass || fail 'installed Codex hook requirements'
+
 # Updater disabled: a self-update re-creates ~/.local/bin/codex and re-arms
 # the bypass.
 if grep -q 'check_for_update_on_startup = false' "$CODEX_MGD" 2>/dev/null; then
@@ -578,31 +456,6 @@ if [ "$(cksum < "$FOREIGN_REQ")" = "$FOREIGN_BEFORE" ]; then
     pass
 else
     fail "install clobbered a foreign /etc/codex/requirements.toml"
-fi
-
-# The gate serves codex with the same fail-closed contract: exit 2 blocks a
-# prompt (the one Codex event that can stop a turn before the model runs),
-# exit 0 when wrapped.
-echo '{}' | env -u IS_SANDBOX -u CLAUDE_CODE_REMOTE bash "$GATE_DEST" --agent codex >/dev/null 2>&1
-[ "$?" -eq 2 ] && pass || fail "gate did not fail-closed (exit 2) for an unwrapped codex"
-echo '{}' | env -u CLAUDE_CODE_REMOTE IS_SANDBOX=1 bash "$GATE_DEST" --agent codex >/dev/null 2>&1
-[ "$?" -eq 0 ] && pass || fail "gate did not pass (exit 0) for a wrapped codex"
-# The block message must name Codex, so a user knows which agent was stopped.
-# Captured, not piped: the suite runs under `pipefail`, and the gate's
-# deliberate exit 2 would otherwise decide the pipeline's status instead of
-# grep's.
-G_MSG="$(echo '{}' | env -u IS_SANDBOX -u CLAUDE_CODE_REMOTE bash "$GATE_DEST" --agent codex 2>&1 >/dev/null || true)"
-case "$G_MSG" in
-    *"Codex is running OUTSIDE"*) pass ;;
-    *) fail "gate's block message does not name Codex: $G_MSG" ;;
-esac
-# The SessionStart verifier must NOT emit Claude's JSON hook shape to codex —
-# codex would render it as literal text. stderr is the portable channel.
-V_OUT="$(env -u IS_SANDBOX -u CLAUDE_CODE_REMOTE bash "$VERIFY_DEST" --agent codex 2>/dev/null </dev/null)"
-if [ -z "$V_OUT" ]; then
-    pass
-else
-    fail "verifier wrote Claude-shaped JSON to stdout for codex: $V_OUT"
 fi
 
 finish smoke.sh

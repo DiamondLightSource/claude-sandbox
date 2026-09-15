@@ -52,4 +52,4 @@ the newest release. For a wheel installation it prints the PyPI update
 instructions. In the published image it refuses: upgrade from the host.
 
 Agent auto-updaters are disabled to preserve the sandbox wrapper.
-See [The integrity guard](../explanations/integrity-guard.md) for the rationale.
+See [Launch isolation and updates](../explanations/launch-isolation.md) for the rationale.

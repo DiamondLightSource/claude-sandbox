@@ -43,6 +43,5 @@ You can invoke that slash command from Claude in the checkout.
 Ordinary project installations get the installed battery without needing
 a clone. The full specification lives in `.claude/commands/verify-sandbox.md`.
 
-The [integrity guard](../explanations/integrity-guard.md) checks isolation
-automatically at agent startup; manual verification is useful when
-investigating an installation or changing its configuration.
+Run verification after installation or configuration changes. There are no
+automatic session or prompt hooks.

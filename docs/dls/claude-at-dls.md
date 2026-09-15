@@ -41,7 +41,7 @@ bubblewrap jail.
 
 The sandbox hides your workstation credentials, restricts which files Claude
 can change, and blocks access to internal networks unless you explicitly allow
-a destination. An integrity guard prevents Claude from running outside the
+a destination. The wrapper launches Claude inside the
 sandbox within the configured container.
 
 Claude can still access your project, its own login credentials, any forge

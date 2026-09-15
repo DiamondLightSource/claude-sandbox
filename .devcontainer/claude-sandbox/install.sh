@@ -10,8 +10,8 @@
 #   CLAUDE_SANDBOX_SMOKE=1            skip apt + the curl-install of every
 #                                    agent binary.
 #   WITH_CODEX=0                     skip fetching OpenAI's Codex CLI. The
-#                                    codex SHADOW and the managed guard are
-#                                    still installed either way — the shadow
+#                                    codex SHADOW is
+#                                    installed either way — the shadow
 #                                    has to own the name on $PATH before the
 #                                    vendor's installer can claim it
 #                                    (Invariant 1), so opting out here only
@@ -23,16 +23,6 @@
 #   STATUS=1                         force-overwrite the user-scope
 #                                    statusline script from the clone's
 #                                    copy, instead of seed-only-if-absent.
-#   DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED=1
-#                                    stamp the ROOT-OWNED gate escape-hatch
-#                                    flag (/etc/claude-code/allow-unwrapped)
-#                                    so the UserPromptSubmit gate downgrades
-#                                    to warn-only. The OPERATOR's switch for
-#                                    running claude unwrapped; a confined
-#                                    Claude can't create it (it's under /etc,
-#                                    ro in the sandbox).
-#                                    Unset/0 leaves the gate fail-closed and
-#                                    removes a stale flag.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -48,7 +38,6 @@ WITH_PI="${WITH_PI:-1}"
 # postCreate. The standalone release includes its runtime and assets.
 PI_VERSION="${PI_VERSION:-latest}"
 FORCE_STATUSLINE="${STATUS:-0}"
-ALLOW_UNWRAPPED="${DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED:-0}"
 
 # Resolve a target under $PREFIX. Stripping the leading slash lets us
 # compose relative-to-prefix paths cleanly without a `//` between root
@@ -595,78 +584,21 @@ link_terminal_config() {
     fi
 }
 
-# The GLOBAL integrity guard is delivered through Claude Code's MANAGED
-# settings layer (`/etc/claude-code/managed-settings.json`) — highest
-# precedence, and crucially NOT overridable by editing the user's own
-# `~/.claude/settings.json`. Two properties make this tamper-resistant
-# in the same spirit as Invariant 4 (config at /etc, never the rw
-# workspace):
-#   - The hook ENTRIES live in /etc — a user editing their shared
-#     ~/.claude can't remove them; only root editing /etc (or a
-#     deliberate ./install) changes the guard.
-#   - The hook SCRIPTS live in /usr/libexec/claude-sandbox (off-PATH,
-#     root-owned) — like the relocated real binary, they are ro-bound
-#     inside the sandbox (`--ro-bind / /`), so a compromised in-session
-#     Claude cannot rewrite them to `exit 0`. (Under ~/.claude they
-#     would have been rw-bound and editable.)
-# Commands are absolute /usr/libexec paths — no $HOME, resolves in any
-# cwd and in both wrapped and unwrapped launches.
-GUARD_LIBEXEC="/usr/libexec/claude-sandbox"
-VERIFY_PATH="$GUARD_LIBEXEC/sandbox-verify.sh"
-GATE_PATH="$GUARD_LIBEXEC/sandbox-gate.sh"
-# The /verify-sandbox phase-1 battery lives next to the guard scripts —
-# off-PATH, root-owned, ro inside the sandbox — so a compromised in-session
-# Claude (the workspace is rw) cannot rewrite the verifier to print PASS for
-# a broken sandbox. It is NOT a hook (not wired into managed-settings); the
-# /verify-sandbox command runs it by absolute path for the live battery.
-BATTERY_PATH="$GUARD_LIBEXEC/verify-sandbox-battery.sh"
-# Version record for `claude-sandbox version` — data, not a script, but
-# it lives with the guard scripts (root-owned, ro in the sandbox) so a
-# compromised session can't spoof what "version" reports.
-VERSION_FILE_PATH="$GUARD_LIBEXEC/version"
-# Which front door installed us: `uvx` when the PyPI wheel did (ADR 23), so
-# `claude-sandbox update` can point at the wheel instead of a git clone that
-# would step past the wheel's pin. Absent for a clone install.
-INSTALLER_FILE_PATH="$GUARD_LIBEXEC/installer"
-VERIFY_CMD="bash $VERIFY_PATH"
-GATE_CMD="bash $GATE_PATH"
+# Runtime helpers and managed updater settings.
+LIBEXEC="/usr/libexec/claude-sandbox"
+BATTERY_PATH="$LIBEXEC/verify-sandbox-battery.sh"
+VERSION_FILE_PATH="$LIBEXEC/version"
+INSTALLER_FILE_PATH="$LIBEXEC/installer"
 MANAGED_SETTINGS="/etc/claude-code/managed-settings.json"
-# Root-owned escape-hatch flag the gate checks (keep in sync with
-# sandbox-gate.sh's hard-coded ALLOW_UNWRAPPED_FLAG). Under /etc — ro inside
-# the sandbox, not host-shared — so only root (or a deliberate ./install) can
-# create it; a confined Claude cannot (H4).
-GATE_FLAG_PATH="/etc/claude-code/allow-unwrapped"
-# Codex's equivalent of Claude's managed-settings layer. requirements.toml is
-# the HARD constraint tier — admin-controlled, highest precedence, and able to
-# carry hooks inline; managed_config.toml is the SOFT default tier. Same
-# /etc-not-the-rw-workspace discipline as Invariants 4 and 5: both are
-# read-only inside the sandbox, and Codex's project-scoped `.codex/config.toml`
-# (which IS inside the rw workspace, and so is attacker-writable from inside
-# the jail) cannot override either.
-# Codex ships as a PACKAGE, not a lone binary: bin/codex plus ripgrep
-# (codex-path/rg) and its own bwrap/zsh helpers (codex-resources/) that the
-# vendor's own validity check requires to sit together. So the whole release
-# directory is relocated, and the binary is exec'd from inside it.
-CODEX_DIST_DIR="/usr/libexec/claude-sandbox/codex-dist"
+CODEX_DIST_DIR="$LIBEXEC/codex-dist"
 CODEX_REAL_PATH="$CODEX_DIST_DIR/bin/codex"
-CODEX_ETC="/etc/codex"
-CODEX_REQUIREMENTS="$CODEX_ETC/requirements.toml"
-CODEX_MANAGED_CONFIG="$CODEX_ETC/managed_config.toml"
-# First line of any file this installer owns. Its absence means the file is
-# somebody else's (a real enterprise policy), and we refuse to rewrite it.
+CODEX_MANAGED_CONFIG="/etc/codex/managed_config.toml"
 CODEX_MARKER="# Managed by claude-sandbox — do not edit by hand."
 USER_SL_CMD='bash $HOME/.claude/statusline-command.sh'
 
-# install_guard_scripts: place the guard scripts off the user's PATH and
-# off the sandbox rw set (same neighbourhood as the relocated real
-# binary). Root-owned, ro inside the sandbox. The /verify-sandbox phase-1
-# battery rides along for the same tamper-resistance (it's not a hook,
-# just an off-PATH script the command invokes by absolute path).
-install_guard_scripts() {
-    install_file "$SCRIPT_DIR/codex-launch" "$(prefixed "$GUARD_LIBEXEC/codex-launch")"
-    install_file "$SCRIPT_DIR/sandbox-verify.sh"          "$(prefixed "$VERIFY_PATH")"
-    install_file "$SCRIPT_DIR/sandbox-gate.sh"            "$(prefixed "$GATE_PATH")"
-    install_file "$SCRIPT_DIR/verify-sandbox-battery.sh"  "$(prefixed "$BATTERY_PATH")"
+install_runtime_scripts() {
+    install_file "$SCRIPT_DIR/codex-launch" "$(prefixed "$LIBEXEC/codex-launch")"
+    install_file "$SCRIPT_DIR/verify-sandbox-battery.sh" "$(prefixed "$BATTERY_PATH")"
 }
 
 # install_shipped_skills: place the repo's top-level skills/ tree (the skills
@@ -678,7 +610,7 @@ install_guard_scripts() {
 # removed from the repo must disappear on re-install, or a stale copy keeps
 # shipping with no source to audit. Root-owned, world-readable, scripts
 # executable (mode as checked in; the wheel preserves it).
-SKILLS_LIBEXEC="$GUARD_LIBEXEC/skills"
+SKILLS_LIBEXEC="$LIBEXEC/skills"
 install_shipped_skills() {
     local src="$REPO_ROOT/skills" dst; dst="$(prefixed "$SKILLS_LIBEXEC")"
     rm -rf "$dst"
@@ -692,31 +624,7 @@ install_shipped_skills() {
     chmod -R u=rwX,go=rX "$dst"
 }
 
-# Apply the operator's install-time choice to the fixed /etc opt-out flag.
-# Unset/0 removes the flag and restores the default prompt gate.
-wire_gate_flag() {
-    local flag; flag="$(prefixed "$GATE_FLAG_PATH")"
-    if [ "$ALLOW_UNWRAPPED" = "1" ]; then
-        mkdir -p "$(dirname "$flag")"
-        : > "$flag"
-        chmod 0644 "$flag"
-        echo "claude-sandbox: WARNING — gate escape hatch ENABLED ($flag); the UserPromptSubmit gate is warn-only, unwrapped claude is permitted. Re-run install with DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED unset to restore fail-closed." >&2
-    else
-        rm -f "$flag"
-    fi
-}
-
-# wire_managed_settings: idempotent jq merge of the guard into the
-# managed-settings policy file. Adds (deduped by command basename):
-#   - SessionStart    → sandbox-verify.sh (full battery + loud warn)
-#   - UserPromptSubmit → sandbox-gate.sh  (lean fail-closed gate)
-# and sets env.DISABLE_AUTOUPDATER=1 + autoUpdates=false (root-cause
-# removal: the in-container updater is what re-arms the bypass). Foreign
-# keys — e.g. a real enterprise admin's org policy — are preserved, so
-# we merge rather than own the file. A non-JSON file is warned-and-
-# skipped (never brick install over a file we don't exclusively own).
-# We deliberately do NOT set allowManagedHooksOnly — that would also
-# block the owner's own user/project hooks. Re-running is byte-stable.
+# Disable Claude updates while preserving any existing managed policy.
 wire_managed_settings() {
     local settings; settings="$(prefixed "$MANAGED_SETTINGS")"
     mkdir -p "$(dirname "$settings")"
@@ -724,10 +632,8 @@ wire_managed_settings() {
     if [ -f "$settings" ] && ! jq -e . "$settings" >/dev/null 2>&1; then
         cat >&2 <<EOF
 claude-sandbox: WARNING — $settings is not valid JSON.
-Skipping the managed integrity-guard merge. Hand-add to "hooks":
-  "SessionStart":    [{"hooks":[{"type":"command","command":"$VERIFY_CMD"}]}]
-  "UserPromptSubmit":[{"hooks":[{"type":"command","command":"$GATE_CMD"}]}]
-and set "env":{"DISABLE_AUTOUPDATER":"1"}, "autoUpdates": false.
+Skipping the updater settings. Set "env":{"DISABLE_AUTOUPDATER":"1"}
+and "autoUpdates": false in the managed policy.
 EOF
         return 0
     fi
@@ -735,81 +641,12 @@ EOF
     local input merged tmp
     if [ -f "$settings" ]; then input="$(cat "$settings")"; else input='{}'; fi
 
-    # jq program: idempotent merge of the integrity guard + updater-disable into
-    # the managed-settings policy. Dedup by command basename; foreign keys (a
-    # real admin's org policy) are preserved. $verify/$gate are jq --arg vars.
-    local merge_program='
-        .hooks //= {}
-        | .hooks.SessionStart //= []
-        | .hooks.UserPromptSubmit //= []
-        | .env //= {}
-        | .env.DISABLE_AUTOUPDATER = "1"
-        | .autoUpdates = false
-        | (if (.hooks.SessionStart | any(.[].hooks[]?; (.command // "") | endswith("sandbox-verify.sh")))
-             then . else .hooks.SessionStart += [{hooks:[{type:"command",command:$verify}]}] end)
-        | (if (.hooks.UserPromptSubmit | any(.[].hooks[]?; (.command // "") | endswith("sandbox-gate.sh")))
-             then . else .hooks.UserPromptSubmit += [{hooks:[{type:"command",command:$gate}]}] end)
-    '
-    merged="$(printf '%s' "$input" | jq --arg verify "$VERIFY_CMD" --arg gate "$GATE_CMD" "$merge_program")"
+    merged="$(printf '%s' "$input" | jq '.env.DISABLE_AUTOUPDATER = "1" | .autoUpdates = false')"
 
     tmp="$(mktemp "$settings.XXXXXX")"
     printf '%s\n' "$merged" > "$tmp"
     chmod 0644 "$tmp"
     mv "$tmp" "$settings"
-}
-
-# wire_codex_managed: deliver the SAME integrity guard to Codex through its
-# managed-configuration layer, so `codex` is guarded exactly like `claude`.
-#
-#   /etc/codex/requirements.toml   → SessionStart + UserPromptSubmit hooks
-#                                    pointing at the same two /usr/libexec
-#                                    scripts (root-owned, off-PATH, ro inside
-#                                    the sandbox — so they cannot be rewritten
-#                                    to `exit 0` from inside the jail).
-#   /etc/codex/managed_config.toml → check_for_update_on_startup = false: the
-#                                    same root-cause removal as Claude's
-#                                    DISABLE_AUTOUPDATER, because a self-update
-#                                    is what re-creates ~/.local/bin/codex and
-#                                    re-arms the bypass. Updates become a
-#                                    deliberate ./install. (The in-sandbox half
-#                                    is CODEX_UPDATE_DISABLED=1, set by the
-#                                    shadow.)
-#
-# UserPromptSubmit is the one Codex event that can stop a turn before the model
-# runs, and it blocks on exit 2 — the same contract sandbox-gate.sh already
-# implements for Claude, which is why one script serves both.
-#
-# We deliberately do NOT set allow_managed_hooks_only: it would suppress the
-# owner's own user/project hooks, exactly as allowManagedHooksOnly would on the
-# Claude side (Invariant 5).
-#
-# TOML, not JSON, and this repo is bash-only: there is no jq to merge with, so
-# rather than half-parse TOML we either own the file or we do not touch it. A
-# file we wrote (first line == CODEX_MARKER) is rewritten byte-stably; a file
-# somebody else wrote is left alone with a loud warning and the exact snippet
-# to paste. Bricking a site's real Codex policy would be worse than not wiring
-# the guard — the same call the non-JSON managed-settings path makes.
-codex_requirements_body() {
-    cat <<TOML
-$CODEX_MARKER
-#
-# claude-sandbox integrity guard for the Codex CLI. These hooks assert that
-# codex is running inside the bwrap shadow, and fail closed when it is not.
-# Removing them re-opens the silent-bypass hole; re-run claude-sandbox/install
-# to restore. See: https://diamondlightsource.github.io/claude-sandbox/
-
-[[hooks.SessionStart]]
-
-[[hooks.SessionStart.hooks]]
-type = "command"
-command = "bash $VERIFY_PATH --agent codex"
-
-[[hooks.UserPromptSubmit]]
-
-[[hooks.UserPromptSubmit.hooks]]
-type = "command"
-command = "bash $GATE_PATH --agent codex"
-TOML
 }
 
 codex_managed_config_body() {
@@ -850,43 +687,12 @@ install_owned_toml() {
 }
 
 wire_codex_managed() {
-    install_owned_toml codex_requirements_body \
-        "$(prefixed "$CODEX_REQUIREMENTS")" "codex integrity guard"
     install_owned_toml codex_managed_config_body \
-        "$(prefixed "$CODEX_MANAGED_CONFIG")" "codex updater-disable"
-}
-
-# codex_owned_or_skipped DEST: does the file at DEST actually carry OUR policy?
-# install_owned_toml deliberately refuses to overwrite a site's own Codex policy
-# file, so on such a host the guard is NOT in force — and the install summary
-# must say so rather than assert a guard that was skipped. Read back from disk
-# rather than threaded through a return code: disk is the ground truth, and
-# install_owned_toml returning non-zero would abort main() under `set -e`.
-codex_owned_or_skipped() {
-    local dest="$1"
-    if [ -f "$dest" ] && [ "$(head -n 1 "$dest")" = "$CODEX_MARKER" ]; then
-        printf 'active'
-    else
-        printf 'NOT ACTIVE — a foreign policy file is in place; merge by hand'
-    fi
-}
-
-# claude_guard_active: same disk-ground-truth check as codex_owned_or_skipped,
-# for the Claude side. wire_managed_settings warns-and-skips (rather than
-# aborting) when managed-settings.json isn't valid JSON, so the merge can
-# silently not happen; read back whether both hooks actually landed rather
-# than trusting that the merge ran.
-claude_guard_active() {
-    local settings; settings="$(prefixed "$MANAGED_SETTINGS")"
-    [ -f "$settings" ] && jq -e '
-        (.hooks.SessionStart // [] | any(.[].hooks[]?; (.command // "") | endswith("sandbox-verify.sh")))
-        and
-        (.hooks.UserPromptSubmit // [] | any(.[].hooks[]?; (.command // "") | endswith("sandbox-gate.sh")))
-    ' "$settings" >/dev/null 2>&1
+        "$(prefixed "$CODEX_MANAGED_CONFIG")" "codex updater settings"
 }
 
 # Seed the user's statusline when absent. Preserve existing preferences
-# and hooks; the integrity guard is installed separately in managed settings.
+# and hooks.
 wire_user_statusline() {
     local settings="$USER_HOME/.claude/settings.json"
     mkdir -p "$(dirname "$settings")"
@@ -968,16 +774,10 @@ main() {
     install_conf
     stamp_version
     stamp_installer
-    # GLOBAL integrity guard via the MANAGED settings layer: scripts off
-    # the rw set in /usr/libexec, hook entries + updater-disable in
-    # /etc/claude-code/managed-settings.json (highest precedence, not
-    # removable by editing ~/.claude). Fires in every cwd. The user-scope
-    # settings.json receives only the statusline preference.
-    install_guard_scripts
+    install_runtime_scripts
     install_shipped_skills
     wire_managed_settings
     wire_codex_managed
-    wire_gate_flag
     wire_user_statusline
 
     echo "claude-sandbox: install complete."
@@ -987,48 +787,15 @@ main() {
     echo "  real claude: $(prefixed /usr/libexec/claude-sandbox/claude)"
     echo "  real codex:  $(prefixed "$CODEX_REAL_PATH") $([ -x "$(prefixed "$CODEX_REAL_PATH")" ] && echo 'installed (whole package, ro in sandbox)' || echo 'NOT installed — `codex` will refuse to launch')"
     echo "  config:      $(prefixed /etc/claude-sandbox.conf)"
-    echo "  guard:       $(prefixed "$VERIFY_PATH"), $(prefixed "$GATE_PATH") (off-PATH, ro in sandbox)"
     echo "  battery:     $(prefixed "$BATTERY_PATH") (off-PATH, ro in sandbox; /verify-sandbox phase 1)"
     echo "  skills:      $(prefixed "$SKILLS_LIBEXEC") ($(ls "$(prefixed "$SKILLS_LIBEXEC")" 2>/dev/null | wc -l) shipped; ro-bound into each agent's skills dir in-session)"
-    echo "  managed:     $(prefixed "$MANAGED_SETTINGS") (SessionStart + UserPromptSubmit + DISABLE_AUTOUPDATER)"
-    echo "  codex guard: $(prefixed "$CODEX_REQUIREMENTS") (SessionStart + UserPromptSubmit) — $(codex_owned_or_skipped "$(prefixed "$CODEX_REQUIREMENTS")")"
-    echo "  codex conf:  $(prefixed "$CODEX_MANAGED_CONFIG") (updater off) — $(codex_owned_or_skipped "$(prefixed "$CODEX_MANAGED_CONFIG")")"
-    echo "  gate hatch:  $(prefixed "$GATE_FLAG_PATH") $([ "$ALLOW_UNWRAPPED" = "1" ] && echo 'PRESENT — gate warn-only (unwrapped permitted)' || echo 'absent — gate fail-closed')"
+    echo "  managed:     $(prefixed "$MANAGED_SETTINGS") (updater disabled)"
+    echo "  codex conf:  $(prefixed "$CODEX_MANAGED_CONFIG") (updater settings)"
     echo "  statusline:  $USER_HOME/.claude/settings.json (preference only)"
     echo "  workspace:   $WORKSPACE"
     echo "  run \`claude-sandbox verify\` for the live battery (or \`/verify-sandbox\` inside Claude in a claude-sandbox clone for the full audit)."
 
-    # Loud, impossible-to-miss callout when any managed-tier guard failed to
-    # wire because a foreign policy file was already in place (warn-and-skip,
-    # not brick — see wire_managed_settings / install_owned_toml). The binary
-    # relocation (Invariant 1) still holds either way, but the fail-closed
-    # gate that catches an unwrapped direct invocation does not. A one-line
-    # summary entry is easy to miss in a wall of install output; this is not.
-    local guard_gaps=()
-    claude_guard_active ||
-        guard_gaps+=("Claude integrity guard NOT ACTIVE — $(prefixed "$MANAGED_SETTINGS") could not be merged (see warning above)")
-    [ "$(codex_owned_or_skipped "$(prefixed "$CODEX_REQUIREMENTS")")" = "active" ] ||
-        guard_gaps+=("Codex integrity guard NOT ACTIVE — $(prefixed "$CODEX_REQUIREMENTS") is a foreign policy file (see warning above)")
-    [ "$(codex_owned_or_skipped "$(prefixed "$CODEX_MANAGED_CONFIG")")" = "active" ] ||
-        guard_gaps+=("Codex updater-disable NOT ACTIVE — $(prefixed "$CODEX_MANAGED_CONFIG") is a foreign policy file (see warning above)")
 
-    if [ "${#guard_gaps[@]}" -gt 0 ]; then
-        {
-            echo
-            echo "################################################################################"
-            echo "#  claude-sandbox: WARNING — SECURITY GUARD NOT FULLY ACTIVE ON THIS HOST     #"
-            echo "################################################################################"
-            for gap in "${guard_gaps[@]}"; do
-                echo "  - $gap"
-            done
-            echo
-            echo "  The sandbox binary relocation is still in force (plain claude/codex still"
-            echo "  resolve to the shadow), but the fail-closed integrity gate described above"
-            echo "  is NOT. Merge the printed policy snippet(s) by hand, then re-run install to"
-            echo "  confirm ACTIVE."
-            echo "################################################################################"
-        } >&2
-    fi
 }
 
 # Source guard: the container image build (see Dockerfile) re-uses the

@@ -21,20 +21,17 @@ message naming the fix. The PyPI host launcher adds the tun device automatically
 | Path | Source | Purpose |
 |---|---|---|
 | `/usr/libexec/claude-sandbox/claude` | Anthropic installer (`curl -fsSL https://claude.ai/install.sh \| bash`), relocated | The real Claude binary, kept off the user's PATH so the shadow always wins |
-| `/usr/local/bin/claude` | `.devcontainer/claude-sandbox/agent-shadow` (verbatim) | Shadow that wraps the real binary in `bwrap`. Falls through to the real binary when `IS_SANDBOX=1` so internal `claude` invocations from a hook don't recurse |
+| `/usr/local/bin/claude` | `.devcontainer/claude-sandbox/claude-shadow` (verbatim) | Shadow that wraps the real binary in `bwrap`. Falls through to the real binary when `IS_SANDBOX=1` so internal `claude` invocations from a hook don't recurse |
 | `/usr/libexec/claude-sandbox/codex-dist/` | OpenAI installer (`curl -fsSL https://chatgpt.com/codex/install.sh \| sh`), whole release dir relocated | The real Codex CLI package (the client for GPT-6 Astra) — `bin/codex` plus ripgrep and Codex's own bwrap/zsh helpers, which the vendor requires to sit together. Kept off the user's PATH for the same reason as Claude's, and exec'd in place so it is **read-only** inside the sandbox. Best-effort: a failed fetch warns rather than failing the install |
-| `/usr/local/bin/codex` | `.devcontainer/claude-sandbox/agent-shadow` (verbatim — the **same file**) | The same shadow under the other agent's name; it picks its profile from `argv[0]` ({ref}`ADR 18 <adr-multi-agent-shadow>`). Installed even when the Codex binary is not, so the shadow owns the name on `$PATH` before the vendor's installer can claim it — it then loud-fails with instructions rather than letting an unwrapped `codex` run |
-| `/usr/local/bin/pi` | `.devcontainer/claude-sandbox/agent-shadow` (same file) | Pi profile of the shared wrapper; always installed, even with `WITH_PI=0` |
+| `/usr/local/bin/codex` | `.devcontainer/claude-sandbox/claude-shadow` (verbatim — the **same file**) | The same shadow under the other agent's name; it picks its profile from `argv[0]` ({ref}`ADR 18 <adr-multi-agent-shadow>`). Installed even when the Codex binary is not, so the shadow owns the name on `$PATH` before the vendor's installer can claim it — it then loud-fails with instructions rather than letting an unwrapped `codex` run |
+| `/usr/local/bin/pi` | `.devcontainer/claude-sandbox/claude-shadow` (same file) | Pi profile of the shared wrapper; always installed, even with `WITH_PI=0` |
 | `/usr/libexec/claude-sandbox/pi-run` | `.devcontainer/claude-sandbox/pi-run` | Fixed launch guard that checks sandbox markers before starting Pi; see [Pi guard limitations](../how-to/use-pi.md#verify-the-sandbox) |
 | `/usr/libexec/claude-sandbox/pi-dist/` | Latest Pi standalone release on fresh install, verified against release checksums; optional `PI_VERSION` pin | Pi executable and assets, read-only inside the sandbox; Linux x64 and arm64. Existing installs are kept on re-run. No separate Node.js runtime needed |
 | `/usr/local/bin/claude-sandbox` | `.devcontainer/claude-sandbox/claude-sandbox` (verbatim) | Helper CLI (`gh-auth`, `glab-auth`, `update`, `verify`, `pi-local`, `version`) — on PATH so it works after the install clone is deleted |
 | `/usr/libexec/claude-sandbox/installer` | Stamped by `install.sh` only when the PyPI wheel ran it (`uvx`) | Lets `claude-sandbox update` point at `uvx claude-sandbox@latest install` instead of a git clone that would step past the wheel's pin. Absent after a clone install |
 | `/usr/libexec/claude-sandbox/version` | Stamped by `install.sh` (`git describe` on the installing clone, the wheel's version under `uvx`, or the `CLAUDE_SANDBOX_VERSION` build arg) | What `claude-sandbox version` reports. Normally a release tag: `install` checks the newest one out before installing, as does `claude-sandbox update`. A commit hash means the revision was chosen deliberately — `install --here` on a branch or working tree, or a team pin (see [Sandbox a team devcontainer](../how-to/sandbox-a-team-devcontainer.md)) |
 | `/etc/claude-gitconfig` | Generated | Curated gitconfig — regenerated from `git config --get user.{name,email}` on every shadow launch |
-| `/usr/libexec/claude-sandbox/sandbox-verify.sh` | `.devcontainer/claude-sandbox/sandbox-verify.sh` | `SessionStart` guard script — full integrity battery + loud warn when unwrapped. Off-PATH, root-owned, ro inside the sandbox |
-| `/usr/libexec/claude-sandbox/sandbox-gate.sh` | `.devcontainer/claude-sandbox/sandbox-gate.sh` | `UserPromptSubmit` guard script — sub-second fail-closed gate (`IS_SANDBOX=1` or block). Same protections |
-| `/etc/claude-code/managed-settings.json` | jq-merged by `install.sh` | The GLOBAL guard policy. Adds the two hooks (deduped by basename), sets `env.DISABLE_AUTOUPDATER=1` + `autoUpdates:false`. Highest-precedence + user-uneditable, so removing the hooks from `~/.claude/settings.json` does **not** disable the guard. Any real admin policy already in the file is preserved; `allowManagedHooksOnly` is deliberately **not** set (your own hooks still run) |
-| `/etc/codex/requirements.toml` | Written by `install.sh` | Codex's HARD managed tier — the `/etc/codex` analogue of `managed-settings.json`. Carries the same two guard hooks (`SessionStart` → verifier, `UserPromptSubmit` → gate), pointing at the same root-owned `/usr/libexec` scripts. Above Codex's project-scoped `.codex/config.toml`, which lives in the read-write workspace and is therefore attacker-writable. `allow_managed_hooks_only` deliberately **not** set. A file we did not write is left untouched with a warning |
+| `/etc/claude-code/managed-settings.json` | jq-merged by `install.sh` | Disables the vendor updater with `env.DISABLE_AUTOUPDATER=1` and `autoUpdates:false`; preserves existing administrator settings and hooks |
 | `/etc/codex/managed_config.toml` | Written by `install.sh` | Codex's soft managed tier — `check_for_update_on_startup = false`, the same root-cause removal as Claude's `DISABLE_AUTOUPDATER`. The in-sandbox half (`CODEX_UPDATE_DISABLED=1`) is set by the shadow |
 | `/etc/claude-sandbox.conf` | Bundled `.devcontainer/claude-sandbox.conf`, or the host launcher's read-only config mount | Sandbox config for all three agents. See [configuration](configuration.md) |
 
@@ -44,7 +41,7 @@ launch the real binary unwrapped and self-entrench. With the updater
 off, newer agents come from a deliberately updated image or fresh installation.
 Reinstalling the sandbox keeps existing agent binaries and reasserts their
 wrappers. See [Upgrade](../how-to/upgrade.md) and the
-[shadow-on-PATH explanation](../explanations/integrity-guard.md).
+[shadow-on-PATH explanation](../explanations/launch-isolation.md).
 The Codex CLI gets the same treatment through its own managed tier — the
 bypass it closes is identical.
 
@@ -63,16 +60,16 @@ sessions get the same workspace bind, the same forge credentials (unless
 
 Run `WITH_CODEX=0 uvx claude-sandbox install` in a custom devcontainer to skip
 *fetching* the Codex binary. The codex
-shadow and guard are installed either way.
+shadow is installed either way.
 
 ## User-scope `~/.claude`
 
-Preference only — the guard does **not** live here.
+The installer seeds a statusline preference.
 
 | Path | Behaviour |
 |---|---|
 | `~/.claude/statusline-command.sh` | Statusline — seeded **only if absent** (an owner-customised one survives) |
-| `~/.claude/settings.json` | `.statusLine` set only if absent. Existing settings and hooks are preserved; the integrity guard is installed in managed settings under `/etc` |
+| `~/.claude/settings.json` | `.statusLine` set only if absent. Existing settings and hooks are preserved |
 
 ## User-scope `~/.codex`
 
