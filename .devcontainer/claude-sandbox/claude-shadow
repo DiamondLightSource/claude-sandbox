@@ -92,6 +92,16 @@ filter_chrome_args() {
 # can choose a bind source.
 SHIPPED_SKILLS_DIR="/usr/libexec/claude-sandbox/skills"
 
+# Shared user skills (issue #52, ADR 25): $HOME-relative, bound READ-WRITE
+# into EVERY agent's session, unlike the per-agent config dirs. Codex and Pi
+# discover skills here natively; Claude reaches one only through a symlink
+# the user places in ~/.claude/skills. Each agent keeps its own skills dir as
+# well, so sharing a skill is a choice, not the default. Only this one
+# directory is shared — never the rest of ~/.agents, whose contents are
+# whatever third-party tools decide to write there (Codex already reads
+# ~/.agents/plugins). A constant, not a profile knob or an env seam.
+SHARED_SKILLS_REL=".agents/skills"
+
 # detect_agent ARGV0 OVERRIDE: name the agent this invocation wraps.
 # OVERRIDE (CLAUDE_SANDBOX_AGENT) exists for tests and for reaching a
 # shadow through a differently-named symlink. It is matched against a
@@ -332,8 +342,10 @@ bwrap_argv_build() {
     if [ "${CLAUDE_SANDBOX_NO_FORGE:-}" = "1" ]; then
         forge_rels=()
     fi
+    # $SHARED_SKILLS_REL joins every agent's list: it holds skills, not
+    # credentials, so it is the one home path agents deliberately share.
     local rel
-    for rel in "${AGENT_HOME_DIRS[@]}" .cache "${forge_rels[@]+"${forge_rels[@]}"}"; do
+    for rel in "${AGENT_HOME_DIRS[@]}" "$SHARED_SKILLS_REL" .cache "${forge_rels[@]+"${forge_rels[@]}"}"; do
         if [ -d "$home/$rel" ]; then
             argv+=( --bind "$home/$rel" "$home/$rel" )
         fi
@@ -1305,6 +1317,12 @@ for _skill_dir in "$SHIPPED_SKILLS_DIR"/*/; do
         echo "claude-sandbox: ~/$AGENT_SKILLS_REL/${_skill_dir##*/} is shadowed by the shipped skill for this session." >&2
     fi
 done
+# The shared skills dir must exist for its bind (the builder skips a missing
+# source). A dangling symlink — a shared store that has gone away — makes
+# mkdir fail; warn and launch without the share rather than abort.
+if ! mkdir -p "${HOME:-/root}/$SHARED_SKILLS_REL" 2>/dev/null; then
+    echo "claude-sandbox: cannot create ~/$SHARED_SKILLS_REL; shared skills are unavailable this session." >&2
+fi
 
 render_gitconfig
 
