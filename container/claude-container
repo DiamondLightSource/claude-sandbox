@@ -207,7 +207,7 @@ esac
 # CLAUDE_SANDBOX_NESTED=1 launches anyway (an engine inside a container is
 # a real setup; it is also the test seam, since CI runs in a container).
 if { [ -e /run/.containerenv ] || [ -e /.dockerenv ]; } && [ "${CLAUDE_SANDBOX_NESTED:-0}" != 1 ]; then
-    if [ -x /usr/libexec/claude-sandbox/agent-shadow ] || [ -x /usr/local/bin/claude ]; then
+    if [ -x /usr/local/bin/claude ]; then
         echo "claude-container: you are already inside an claude-sandbox container — run claude, codex or pi directly" >&2
     else
         echo "claude-container: this is a container without the sandbox — install it with: uvx claude-sandbox install" >&2

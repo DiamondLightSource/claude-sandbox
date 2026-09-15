@@ -140,8 +140,7 @@ host shell must be empty inside the sandbox.
 `OPENAI_API_KEY` is asserted alongside it, and for **both** agents
 rather than only for codex sessions: an OpenAI key sitting in the host
 environment is a credential the jail must not hand to any session,
-whichever agent is running. This mirrors the leak list that
-`sandbox-verify.sh` already checks at SessionStart.
+whichever agent is running. The installed battery checks both variables.
 
 ### Check 05 — env scrub: DISPLAY
 
