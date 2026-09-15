@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Launcher argv tests for container/claude-container — the verbs, the
-# host-network default, the pre-4.0 flag refusals, the in-container refusal
+# host-network default, the in-container refusal
 # and the uvx-aware update hint. Drives the REAL launcher against a fake
 # container engine on PATH that logs every call and answers the inspect
 # queries the launcher makes; no image, no container, no network.
@@ -129,11 +129,6 @@ case "$(exec_line)" in *" claude clear --venvs") pass ;; *) fail "typo'd verb mu
 case "$ERR" in *"not a launcher verb"*) pass ;; *) fail "no near-miss hint: $ERR" ;; esac
 run -- "fix the failing test"; case "$ERR" in *"not a launcher verb"*) fail "hint fired on an ordinary prompt" ;; *) pass ;; esac
 
-# --- pre-4.0 spellings refuse rather than leak into agent argv -------------
-for old in --agent --host-net --shell; do
-    run -- $old codex
-    [ "$RC" = 2 ] && [ -z "$(exec_line)" ] && pass || fail "$old accepted (rc=$RC)"
-done
 run -- install; [ "$RC" = 2 ] && pass || fail "install verb accepted by the script (rc=$RC)"
 
 # --- in-container refusal (seam off) ---------------------------------------

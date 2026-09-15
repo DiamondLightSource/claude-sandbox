@@ -64,23 +64,8 @@ filter_chrome_args() {
     done
 }
 
-# ── Agent profiles ────────────────────────────────────────────────────
-# The sandbox wraps more than one coding agent: Claude Code, and OpenAI's
-# Codex CLI (the client for GPT-6 Astra). They differ only in which binary
-# to exec, which $HOME paths carry their login, and which flags to inject.
-# The security-critical parts — the bwrap argv, the egress jail, the
-# script(1) pty wrap — are identical, and must stay that way.
-#
-# So: ONE file, installed under both names, dispatching on argv[0]. A
-# second 800-line shadow to keep in sync would rebuild exactly the
-# "surface too big to audit in one read" that the bash-only rewrite
-# walked back from.
-#
-# The real binaries live off the user's PATH (/usr/libexec/claude-sandbox/)
-# so plain `claude` / `codex` always resolve to the shadow in
-# /usr/local/bin. Both vendors' installers drop their binary in
-# ~/.local/bin AND prepend that dir to the user's shell rc; install.sh
-# relocates both so the rc-mutation is inert (Invariant 1).
+# Agent profiles select the binary, persistent state and injected flags.
+# All agents share the same filesystem, network and terminal isolation.
 
 # Shipped skills: the repo's top-level skills/ tree, placed by install.sh
 # under /usr/libexec next to the guard scripts (root-owned, ro in-session).
@@ -447,13 +432,7 @@ bwrap_argv_build() {
         fi
     done
 
-    # Egress-jail DNS override (ADR 0015, issue #60). On a stub-resolver host
-    # the launch path detects that /etc/resolv.conf points only at loopback
-    # resolvers (unreachable from the jail's netns) and stages a one-line
-    # resolv.conf aimed at the in-netns pasta forwarder; bind it over the
-    # host's so Claude queries the forwarder instead of the dead stub. Gated on
-    # the env var (set only on that path) so the non-jail / routable-resolver
-    # argv — and the bwrap_argv unit test — are byte-for-byte unchanged.
+    # Use the staged pasta-forwarder resolver inside the network jail.
     if [ -n "${CLAUDE_SANDBOX_JAIL_RESOLV:-}" ] && [ -r "${CLAUDE_SANDBOX_JAIL_RESOLV}" ]; then
         argv+=( --ro-bind "$CLAUDE_SANDBOX_JAIL_RESOLV" /etc/resolv.conf )
     fi
@@ -819,19 +798,9 @@ netns_holder() {
         || jail_fail "— failed to pin gateway $gw on-link (fail-closed)"
     ip route replace default via "$gw" dev "$nic" || jail_fail "— failed to restore default via $gw (fail-closed)"
 
-    # DNS — the ONLY punch is the pasta forwarder. Claude's resolv.conf always
-    # points at JAIL_DNS_FWD (jail_stage_dns), pasta answers there from inside
-    # the netns and relays to the host's real resolvers from the HOST netns, so
-    # the jail never needs a route to a real resolver.
-    #
-    # We deliberately do NOT punch /32s for the resolvers in /etc/resolv.conf
-    # any more. Those were holes through the RFC1918 blackhole aimed at real
-    # internal hosts, and a compromised agent can talk to whatever is on the
-    # far side — a DNS server is a host like any other, reachable on every port
-    # the punch allows, not just 53. Routing DNS through pasta removes that
-    # surface entirely: JAIL_DNS_FWD is RFC5737 TEST-NET, non-routable, and
-    # terminates in pasta rather than on the LAN. Punching it is always safe;
-    # fail-soft, since a failure costs resolution, not containment.
+    # Route DNS only to the pasta forwarder, which queries the host resolver
+    # outside the jail. A direct route to an internal resolver would expose
+    # every port on that host. Failure here loses DNS, not containment.
     ip route replace "${JAIL_DNS_FWD}/32" via "$gw" 2>/dev/null \
         || echo "claude-sandbox: egress jail — could not route DNS forwarder $JAIL_DNS_FWD" >&2
 
@@ -1051,25 +1020,8 @@ egress_jail_enabled() {
     [ "${CLAUDE_SANDBOX_EGRESS_JAIL:-1}" != "0" ]
 }
 
-# jail_stage_dns: point Claude's DNS at the pasta forwarder (ADR 0015, issues
-# #60 and #11). ALWAYS — there is one DNS path in the jail, not two. Stage a
-# resolv.conf naming JAIL_DNS_FWD and export its path so bwrap_argv_build binds
-# it over Claude's /etc/resolv.conf. Runs in the main flow (not the holder)
-# because the bind must be staged before the argv is built.
-#
-# Unconditional for two reasons. Security: it lets netns_holder drop the
-# per-resolver /32 punches, so no hole through the blackhole points at a real
-# internal host (see the DNS block there). Correctness: pasta's --dns-forward
-# implies --dns-host = the FIRST resolver in the host's resolv.conf, and pasta
-# reverse-translates that host's replies to come from JAIL_DNS_FWD. Anything
-# querying resolver #1 directly therefore gets a reply from an unexpected
-# source, which a connected UDP socket discards — resolver #1 reads as dead
-# from inside the jail. That silently broke the first resolver for every
-# routable-resolver host (issue #11); routing all DNS through the forwarder
-# makes the translation the intended path instead of a trap.
-#
-# search / domain / options are copied from the host resolv.conf: dropping them
-# would break short-name resolution on sites that rely on a search list.
+# Stage the resolver before building the bwrap arguments. All jailed DNS
+# uses the pasta forwarder; preserve search domains and resolver options.
 jail_stage_dns() {
     local f
     if ! f="$(mktemp "${TMPDIR:-/tmp}/claude-jail-resolv.XXXXXX" 2>/dev/null)"; then
@@ -1145,32 +1097,10 @@ netns_launch() {
     wait_for test -e "/proc/$holder/ns/net" \
         || jail_fail "— holder netns never appeared" "$holder"
 
-    # pasta attaches from OUTSIDE the netns (it needs host connectivity to
-    # proxy), configures the default route, and backgrounds itself.
-    # pasta prints an early IPv6 notice to stderr *before* it opens --log-file,
-    # so flags can't suppress it; redirect stderr to the same log so the terminal
-    # stays clean while early-startup failures are still captured.
-    # --ipv4-only (ADR 0015, H1): give the netns NO IPv6 at all. Without it pasta
-    # mirrors the host's v6 connectivity (GUA/ULA/link-local) into the netns, an
-    # entire address family the IPv4 routing allowlist does not cover — a lateral-
-    # movement path around the v4 blackholes. The DNS forwarder JAIL_DNS_FWD is
-    # IPv4 (192.0.2.53), so --dns-forward is unaffected.
-    # --dns-forward makes pasta listen on JAIL_DNS_FWD inside the netns and
-    # relay DNS to the host's real resolvers (issue #60). It is the ONLY way
-    # Claude resolves in the jail: jail_stage_dns always points resolv.conf
-    # here, and netns_holder punches no route to any real resolver.
-    #
-    # NOT side-effect-free, which is why nothing may query a real resolver
-    # directly: --dns-forward implies --dns-host = the first resolver in the
-    # host's resolv.conf, and pasta reverse-translates that host's port-53
-    # replies to come from JAIL_DNS_FWD. A direct query to resolver #1 gets a
-    # reply from an unexpected source and the kernel drops it on a connected
-    # socket (issue #11).
-    # pasta defaults to automatic port forwarding in BOTH directions and maps
-    # the gateway to host loopback. Neither is part of the route allowlist:
-    # -T auto would expose unrelated localhost services (and occupy our relay's
-    # port), while gateway mapping reaches host services through the pinned gw.
-    # Disable those shortcuts for every agent; the optional relay is explicit.
+    # Attach pasta from the outer namespace. IPv4-only keeps all traffic
+    # within the routing policy. Disable automatic port forwarding and
+    # gateway-to-loopback mapping; loopback access uses explicit relays.
+    # Capture startup diagnostics as well as pasta's regular log.
     if ! pasta --config-net --ipv4-only --no-map-gw -t none -u none -T none -U none \
         --dns-forward "$JAIL_DNS_FWD" --quiet --log-file /tmp/claude-pasta.log "$holder" 2>>/tmp/claude-pasta.log; then
         jail_fail "— pasta failed to attach to the netns (see /tmp/claude-pasta.log)" "$holder"
@@ -1327,10 +1257,7 @@ fi
 render_gitconfig
 
 parse_config "$CONFIG_PATH"
-# Stage the jail's DNS override (issue #60) before the argv is built — on a
-# stub-resolver host this exports CLAUDE_SANDBOX_JAIL_RESOLV so bwrap_argv_build
-# binds a forwarder-pointed resolv.conf. No-op when the jail is off or routable
-# resolvers exist (keeps the office path byte-for-byte unchanged).
+# Stage the DNS forwarder configuration before building the arguments.
 if egress_jail_enabled; then
     jail_stage_dns
 fi

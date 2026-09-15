@@ -3,19 +3,10 @@
 # devcontainer rebuild re-establish container state without disturbing
 # workspace edits.
 #
-# Three configurable seams for tests:
-#   INSTALL_PREFIX    (default /)   — root of file placement, so
-#                                    tests/smoke.sh can drop everything
-#                                    into a tmpdir.
-#   INSTALL_WORKSPACE (default $PWD) — workspace whose `.claude/` is the
-#                                    rw bind root (still used by the
-#                                    shadow); no longer carries the
-#                                    integrity guard, which is global.
-#   INSTALL_USER_HOME (default $HOME) — home whose user-scope
-#                                    `~/.claude/settings.json` gets the
-#                                    GLOBAL integrity guard merged in.
-#                                    Tests point it at a tmpdir so the
-#                                    real ~/.claude is never touched.
+# Test paths:
+#   INSTALL_PREFIX    (default /)     — root of installed files
+#   INSTALL_WORKSPACE (default $PWD)  — workspace reported by the installer
+#   INSTALL_USER_HOME (default $HOME) — user settings and credential dirs
 #   CLAUDE_SANDBOX_SMOKE=1            skip apt + the curl-install of every
 #                                    agent binary.
 #   WITH_CODEX=0                     skip fetching OpenAI's Codex CLI. The
@@ -39,7 +30,7 @@
 #                                    to warn-only. The OPERATOR's switch for
 #                                    running claude unwrapped; a confined
 #                                    Claude can't create it (it's under /etc,
-#                                    ro in the sandbox — deep-review H4).
+#                                    ro in the sandbox).
 #                                    Unset/0 leaves the gate fail-closed and
 #                                    removes a stale flag.
 set -euo pipefail
@@ -323,12 +314,8 @@ install_codex_binary() {
     codex_purge_vendor_tree "$stage"
 }
 
-# Download only into a private staging dir. Unlike vendor installers this
-# never puts an unwrapped pi on PATH or mutates the user's shell startup files.
-# --retry 6: curl backs off 1,2,4,8,16,32s, so a GitHub release-CDN blip
-# (504s for a minute or more, seen three times on 2026-09-14) no longer
-# leaves an image without Pi. Best-effort still: a real outage warns and
-# moves on, and the image test catches the missing binary.
+# Download Pi into a private staging directory and verify its checksum.
+# Retry transient failures; preserve an existing installation on failure.
 install_pi_binary() (
     [ "$SMOKE" != 1 ] && [ "$WITH_PI" = 1 ] || return 0
     local arch asset stage dest base checksum version release_url
@@ -705,16 +692,8 @@ install_shipped_skills() {
     chmod -R u=rwX,go=rX "$dst"
 }
 
-# wire_gate_flag: stamp (DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED=1) or remove the ROOT-OWNED gate
-# escape-hatch flag the UserPromptSubmit gate checks. The flag REPLACES the
-# old CLAUDE_SANDBOX_ALLOW_UNWRAPPED env hatch, which a confined Claude could
-# forge by writing ~/.claude/settings.json's "env" block (deep-review H4).
-# Living under /etc — root-owned, ro inside the sandbox, NOT host-shared —
-# the flag can only be created by the operator (or a deliberate ./install),
-# never from inside the jail. State is fully driven by the env seam so a
-# re-install with it unset removes a previously-stamped flag (fail-closed
-# default restored). Mode 0644 — it's a presence marker; only existence
-# matters.
+# Apply the operator's install-time choice to the fixed /etc opt-out flag.
+# Unset/0 removes the flag and restores the default prompt gate.
 wire_gate_flag() {
     local flag; flag="$(prefixed "$GATE_FLAG_PATH")"
     if [ "$ALLOW_UNWRAPPED" = "1" ]; then
@@ -906,13 +885,8 @@ claude_guard_active() {
     ' "$settings" >/dev/null 2>&1
 }
 
-# wire_user_statusline: the user-scope ~/.claude/settings.json now holds
-# only the statusline PREFERENCE (set-only-if-absent + script seeded
-# only-if-absent — never stomp an owner's own). The integrity guard does
-# NOT live here anymore. To migrate an earlier install that DID put the
-# guard in user-scope, prune any of our guard-hook entries so the guard
-# has a single authoritative home (managed settings) and never double-
-# fires. Foreign hooks are preserved. Non-JSON → warn-and-skip.
+# Seed the user's statusline when absent. Preserve existing preferences
+# and hooks; the integrity guard is installed separately in managed settings.
 wire_user_statusline() {
     local settings="$USER_HOME/.claude/settings.json"
     mkdir -p "$(dirname "$settings")"
@@ -929,7 +903,7 @@ wire_user_statusline() {
     fi
 
     if [ -f "$settings" ] && ! jq -e . "$settings" >/dev/null 2>&1; then
-        echo "claude-sandbox: WARNING — $settings is not valid JSON; skipping statusline wiring + interim-guard prune." >&2
+        echo "claude-sandbox: WARNING — $settings is not valid JSON; skipping statusline wiring." >&2
         return 0
     fi
 
@@ -938,15 +912,9 @@ wire_user_statusline() {
     if [ "$had_file" = true ]; then input="$(cat "$settings")"; else input='{}'; fi
     if [ -f "$USER_HOME/.claude/statusline-command.sh" ]; then sl_present=true; fi
 
-    # jq program: prune any legacy user-scope guard hooks (the guard now lives
-    # only in managed settings, so it never double-fires) and set the statusline
-    # preference if absent. Foreign hooks survive. $sl/$slp are jq vars.
-    local prune_program='
-        (if .hooks.SessionStart    then .hooks.SessionStart    |= map(select((any(.hooks[]?; (.command // "") | endswith("sandbox-verify.sh"))) | not)) else . end)
-        | (if .hooks.UserPromptSubmit then .hooks.UserPromptSubmit |= map(select((any(.hooks[]?; (.command // "") | endswith("sandbox-gate.sh"))) | not)) else . end)
-        | (if ($slp and .statusLine == null) then .statusLine = {type:"command",command:$sl} else . end)
-    '
-    merged="$(printf '%s' "$input" | jq --arg sl "$USER_SL_CMD" --argjson slp "$sl_present" "$prune_program")"
+    merged="$(printf '%s' "$input" | jq --arg sl "$USER_SL_CMD" --argjson slp "$sl_present" '
+        if ($slp and .statusLine == null) then .statusLine = {type:"command",command:$sl} else . end
+    ')"
 
     # Don't create an empty {} settings on a fresh home that has no
     # statusline source to wire.
@@ -994,8 +962,7 @@ main() {
     # the rw set in /usr/libexec, hook entries + updater-disable in
     # /etc/claude-code/managed-settings.json (highest precedence, not
     # removable by editing ~/.claude). Fires in every cwd. The user-scope
-    # settings.json keeps only the statusline preference (and is migrated
-    # off any earlier user-scope guard).
+    # settings.json receives only the statusline preference.
     install_guard_scripts
     install_shipped_skills
     wire_managed_settings

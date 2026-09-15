@@ -1,21 +1,9 @@
 #!/usr/bin/env bash
-# SessionStart hook (user-scope, GLOBAL). Verifies the claude-sandbox
-# bwrap shadow is actually in effect and warns LOUDLY when it is not.
-#
-# Why user-scope and not a project .claude/ hook: this guard must fire
-# in EVERY folder, including ones with no project .claude/. User-scope
-# hooks are read by the real `claude` binary in every cwd — even when a
-# Claude Code self-update has re-created ~/.local/bin/claude and the
-# shadow has been bypassed. installed at an ABSOLUTE path under
-# ~/.claude (relative hook commands break once cwd != project root).
-#
-# SessionStart CANNOT block a session — it can only inject context /
-# messages. The companion UserPromptSubmit gate (sandbox-gate.sh) is
-# what actually fail-closes when unwrapped. This script does the heavy
-# lifting (the full integrity battery) once per session; the gate stays
-# lean. Skips on Claude Code Web (CLAUDE_CODE_REMOTE=true) — that
-# runtime is already sandboxed by Anthropic and IS_SANDBOX is never set
-# there.
+# Managed SessionStart hook for Claude and Codex; also called by Pi at launch.
+# Installed under /usr/libexec, read-only inside the sandbox. Reports isolation
+# problems once per session. The companion UserPromptSubmit gate blocks
+# unwrapped sessions; this verifier only warns.
+# Claude Code Web (CLAUDE_CODE_REMOTE=true) skips these checks.
 set -uo pipefail
 
 # Which agent invoked us. Claude Code reaches this hook through

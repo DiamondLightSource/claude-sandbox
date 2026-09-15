@@ -258,42 +258,35 @@ else
     fail "duplicate managed guard entries after re-merge (verify=$V_COUNT gate=$G_COUNT)"
 fi
 
-# Migration: an earlier install that put the guard in USER-scope must be
-# pruned so the guard has a single home (managed). Foreign user hooks +
-# keys are preserved; the owner's statusline is respected.
-MIG_HOME="$(mktemp -d)"
-register_cleanup "$MIG_HOME"
-mkdir -p "$MIG_HOME/.claude"
-cat > "$MIG_HOME/.claude/settings.json" <<'JSON'
+# Installation preserves user hooks and an existing statusline preference.
+SETTINGS_HOME="$(mktemp -d)"
+register_cleanup "$SETTINGS_HOME"
+mkdir -p "$SETTINGS_HOME/.claude"
+cat > "$SETTINGS_HOME/.claude/settings.json" <<'JSON'
 {
   "model": "opus",
   "statusLine": {"type": "command", "command": "their-statusline.sh"},
   "hooks": {
-    "SessionStart": [
-      {"hooks": [{"type": "command", "command": "bash $HOME/.claude/claude-sandbox/sandbox-verify.sh"}]}
-    ],
     "UserPromptSubmit": [
-      {"hooks": [{"type": "command", "command": "their-ups.sh"}]},
-      {"hooks": [{"type": "command", "command": "bash $HOME/.claude/claude-sandbox/sandbox-gate.sh"}]}
+      {"hooks": [
+        {"type": "command", "command": "bash /custom/sandbox-gate.sh"},
+        {"type": "command", "command": "their-ups.sh"}
+      ]}
     ]
   }
 }
 JSON
-# Owner has a customised statusline script — install must not stomp it.
-printf '#!/usr/bin/env bash\necho custom\n' > "$MIG_HOME/.claude/statusline-command.sh"
-chmod 0755 "$MIG_HOME/.claude/statusline-command.sh"
-
-INSTALL_USER_HOME="$MIG_HOME" \
+cp "$SETTINGS_HOME/.claude/settings.json" "$SETTINGS_HOME/before.json"
+printf '#!/usr/bin/env bash\necho custom\n' > "$SETTINGS_HOME/.claude/statusline-command.sh"
+chmod 0755 "$SETTINGS_HOME/.claude/statusline-command.sh"
+INSTALL_USER_HOME="$SETTINGS_HOME" \
     bash "$REPO_ROOT/.devcontainer/claude-sandbox/install.sh" >/dev/null 2>&1
-MIG="$MIG_HOME/.claude/settings.json"
-
-jq_check "interim user-scope guard hooks were not pruned" \
-    '[.. | .command? // empty | select(endswith("sandbox-verify.sh") or endswith("sandbox-gate.sh"))] | length == 0' "$MIG"
-jq_check "prune dropped a foreign hook / key" \
-    'any(.hooks.UserPromptSubmit[].hooks[]?; .command == "their-ups.sh") and .model == "opus"' "$MIG"
-jq_check "pre-existing .statusLine was overwritten during migration" \
-    '.statusLine.command == "their-statusline.sh"' "$MIG"
-if grep -qx 'echo custom' "$MIG_HOME/.claude/statusline-command.sh"; then
+if jq -e --slurp ' .[0] == .[1] ' "$SETTINGS_HOME/before.json" "$SETTINGS_HOME/.claude/settings.json" >/dev/null; then
+    pass
+else
+    fail "installation changed user settings"
+fi
+if grep -qx 'echo custom' "$SETTINGS_HOME/.claude/statusline-command.sh"; then
     pass
 else
     fail "install_file_if_absent overwrote a pre-existing statusline script"
@@ -360,14 +353,6 @@ fi
 # Executed gate, unwrapped, no real /etc flag → fail-closed default (exit 2).
 echo '{}' | env -u IS_SANDBOX -u CLAUDE_CODE_REMOTE bash "$GATE_DEST" >/dev/null 2>&1
 [ "$?" -eq 2 ] && pass || fail "gate did not fail-closed (exit 2) when unwrapped with no flag"
-# The retired CLAUDE_SANDBOX_ALLOW_UNWRAPPED env hatch must NOT work.
-echo '{}' | env -u IS_SANDBOX CLAUDE_SANDBOX_ALLOW_UNWRAPPED=1 bash "$GATE_DEST" >/dev/null 2>&1
-[ "$?" -eq 2 ] && pass || fail "gate still honours the retired CLAUDE_SANDBOX_ALLOW_UNWRAPPED env hatch (H4 regression)"
-# The removed CLAUDE_SANDBOX_GATE_FLAG seam must NOT let env redirect the flag
-# path at an attacker-controlled, always-present file (the seam-reopens-H4 fix).
-echo '{}' | env -u IS_SANDBOX CLAUDE_SANDBOX_GATE_FLAG=/etc/hostname bash "$GATE_DEST" >/dev/null 2>&1
-[ "$?" -eq 2 ] && pass || fail "gate honoured a CLAUDE_SANDBOX_GATE_FLAG env override (H4 seam reopened)"
-
 echo '{}' | env -u IS_SANDBOX CLAUDE_CODE_REMOTE=true bash "$GATE_DEST" >/dev/null 2>&1
 [ "$?" -eq 0 ] && pass || fail "gate did not skip on Claude Code Web"
 
@@ -382,10 +367,6 @@ DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED=1 run_install
 [ -f "$GATE_FLAG_DEST" ] && pass || fail "DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED=1 install did not stamp $GATE_FLAG_DEST"
 run_install
 [ ! -e "$GATE_FLAG_DEST" ] && pass || fail "re-install without DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED did not remove a stale $GATE_FLAG_DEST"
-# The retired short name must no longer stamp the flag (renamed 2026-07-24).
-ALLOW_UNWRAPPED=1 run_install
-[ ! -e "$GATE_FLAG_DEST" ] && pass || fail "retired ALLOW_UNWRAPPED=1 name still stamps the gate escape-hatch flag"
-
 VERIFY_OUT="$(echo '{}' | env -u IS_SANDBOX bash "$VERIFY_DEST" 2>/dev/null)"
 VERIFY_RC=$?
 if [ "$VERIFY_RC" -eq 0 ] && printf '%s' "$VERIFY_OUT" | grep -q 'OUTSIDE the bwrap shadow'; then

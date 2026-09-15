@@ -1,49 +1,14 @@
 #!/usr/bin/env bash
-# UserPromptSubmit hook (GLOBAL). Fail-closed gate: blocks every prompt
-# unless the claude-sandbox bwrap shadow is in effect (IS_SANDBOX=1, set only
-# by the bwrap launcher).
+# Managed UserPromptSubmit hook for Claude and Codex. Exit 2 blocks an
+# unwrapped prompt; sandbox-verify.sh supplies the deeper session checks.
+# Installed under /usr/libexec, read-only inside the sandbox.
 #
-# Serves BOTH agents. Claude Code reaches it through managed-settings
-# (/etc/claude-code/managed-settings.json); the Codex CLI reaches it through
-# its managed requirements (/etc/codex/requirements.toml, passing
-# `--agent codex`). The contract is identical on both sides — UserPromptSubmit
-# is the one event that can stop a turn before the model runs, and exit 2
-# blocks it with stderr shown to the user — which is why one script serves
-# both rather than two that can drift apart.
-#
-# This is the ONE mechanism that can actually STOP work when Claude is
-# running unwrapped — SessionStart hooks can only warn. It is lean by
-# design: the deep integrity battery lives in the SessionStart verifier
-# (sandbox-verify.sh), which runs once per session. Here we do a single
-# string compare so the per-prompt cost is ~zero.
-#
-# Installed at an ABSOLUTE path under /usr/libexec (root-owned, off-PATH,
-# ro inside the sandbox) so it resolves from any cwd and cannot be
-# rewritten from inside the jail.
-#
-# Escape hatch: the OPERATOR creates the ROOT-OWNED flag file
-# /etc/claude-code/allow-unwrapped to downgrade to warn-only (the
-# SessionStart hook still warns loudly). This is deliberately a flag
-# under /etc — NOT an environment variable — because a confined Claude
-# can write ~/.claude/settings.json (host-shared, persistent), and
-# Claude Code exports that file's "env" block into later sessions. An
-# env-var hatch (CLAUDE_SANDBOX_ALLOW_UNWRAPPED) was therefore forgeable
-# from inside the jail and would silently, persistently neutralise the
-# gate on a later UNWRAPPED launch (deep-review H4, issue #63). /etc is
-# ro inside the bwrap shadow (`--ro-bind / /`) and not host-shared, so
-# only root on the host (or a deliberate ./install) can create the flag
-# — the same /etc-not-the-rw-workspace discipline as ADR 0012/0013.
-#
-# Skips on Claude Code Web (CLAUDE_CODE_REMOTE=true) — already sandboxed
-# by Anthropic.
+# The operator can allow unwrapped sessions with the root-owned /etc flag.
+# Keep this opt-out outside user settings: the agent can persist environment
+# values there. Claude Code Web skips the gate.
 set -uo pipefail
 
-# Root-owned escape-hatch flag. HARD-CODED, never read from the environment:
-# the whole point of the H4 fix is that a confined Claude can forge the gate's
-# environment via ~/.claude/settings.json's "env" block, so ANY env-driven flag
-# path (or env hatch) is bypassable. Tests exercise the decision through
-# gate_allows() with the path passed as an ARGUMENT (see the source guard
-# below), not via a forgeable variable.
+# Fixed operator flag; tests pass a fixture path to gate_allows directly.
 ALLOW_UNWRAPPED_FLAG="/etc/claude-code/allow-unwrapped"
 
 # gate_allows FLAG: succeed (return 0) when the prompt should be let through —

@@ -72,11 +72,8 @@ later install without that variable).
 It is deliberately a flag under `/etc`, **not** an environment variable.
 A confined Claude can write `~/.claude/settings.json` — a host-shared,
 persistent file — and Claude Code exports that file's `env` block into
-later sessions. The earlier `CLAUDE_SANDBOX_ALLOW_UNWRAPPED=1` env hatch
-was therefore *forgeable from inside the jail*: a compromised session
-could persist it and silently neutralise the gate on a later **unwrapped**
-launch (deep-review **H4**). `/etc` is read-only inside the bwrap shadow
-(`--ro-bind / /`) and is not part of the host-shared config, so only
+later sessions. An environment-based opt-out would let a compromised session
+persist permission to run unwrapped. `/etc` is read-only inside the sandbox, so only
 `root` on the host (or a deliberate `./install`) can create the flag —
 the same "security inputs live outside the rw workspace" discipline as
 {ref}`the untrusted-workspace model <adr-untrusted-workspace>` and the
@@ -117,21 +114,17 @@ the file. It deliberately does **not** set `allowManagedHooksOnly`:
 doing so would suppress the owner's own user and project hooks, which the
 guard has no reason to block.
 
-User-scope `~/.claude/settings.json` keeps only the statusline
-preference; the guard no longer lives anywhere you might edit it away by
-accident. (An earlier install that put the guard in user scope is
-migrated — those entries are pruned so the guard has a single
-authoritative home in `/etc` and never double-fires.)
+The installer seeds a statusline preference in `~/.claude/settings.json`
+when absent. Existing user settings and hooks are preserved. The integrity
+guard lives in managed settings under `/etc`.
 
 The result: short of `root` deleting the `/etc` policy file, you cannot
 accidentally disable the guard. Any devcontainer whose `postCreate` runs
 the installer is safe-by-construction.
 
-## Open follow-up: are `IS_SANDBOX` / `CLAUDE_CODE_REMOTE` themselves forgeable? (deep-review H4)
+## Open question: can settings forge the sandbox signals?
 
-Moving the escape hatch out of the environment (above) closes the
-`CLAUDE_SANDBOX_ALLOW_UNWRAPPED` forgery. But the gate's two *positive*
-pass conditions are still environment variables:
+The gate's two positive pass conditions are environment variables:
 
 ```sh
 [ "${CLAUDE_CODE_REMOTE:-}" = "true" ] && exit 0   # skip on Claude Code Web
@@ -146,10 +139,9 @@ A confined Claude can write `~/.claude/settings.json` (host-shared,
 persistent). **If** that user-scope `env` block can inject
 `IS_SANDBOX=1` (or `CLAUDE_CODE_REMOTE=true`) into a later *unwrapped*
 session's hook environment, the gate would pass even though no bwrap jail
-exists — a bypass **graver** than the escape-hatch one, because it forges
-the core "wrapped" proof rather than an opt-out.
+exists. This would forge the core "wrapped" signal.
 
-Why this is *not* fixed in the same PR, and what's needed:
+Verification needed:
 
 > **Provisional — unverified.** Both options below hinge on Claude Code's
 > env-var precedence (does managed `env` outrank a real process-environment

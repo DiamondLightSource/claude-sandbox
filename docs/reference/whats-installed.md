@@ -72,7 +72,7 @@ Preference only — the guard does **not** live here.
 | Path | Behaviour |
 |---|---|
 | `~/.claude/statusline-command.sh` | Statusline — seeded **only if absent** (an owner-customised one survives) |
-| `~/.claude/settings.json` | `.statusLine` set only if absent; otherwise untouched. If an earlier install put the guard here, those hook entries are pruned so the guard has a single authoritative home (`/etc`). All other keys — yours — preserved |
+| `~/.claude/settings.json` | `.statusLine` set only if absent. Existing settings and hooks are preserved; the integrity guard is installed in managed settings under `/etc` |
 
 ## User-scope `~/.codex`
 

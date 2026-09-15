@@ -136,9 +136,7 @@ warn_if_outdated() {
     fi
 }
 
-# The container's PID 1. Matched by is_keeper below to recognise a container
-# this launcher model created; a container from launcher <= 0.3 baked an
-# agent command instead and must be recreated.
+# Idle PID 1, also used to identify containers owned by this launcher.
 KEEPER_CMD='trap "exit 0" TERM INT; while :; do sleep 60 & wait $!; done'
 
 recreate=0
@@ -156,13 +154,6 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --recreate) recreate=1; shift ;;
         --bridge) host_net=0; create_opts+=( --bridge ); shift ;;
-        --host-net|--shell|--agent)
-            # Pre-4.0 spellings. Not aliased: an unknown option would fall
-            # through to the agent's argv and fail there, obscurely.
-            echo "claude-container: $1 was replaced by verbs in 4.0: $SELF [OPTIONS] [claude|codex|pi|shell] [AGENT_ARGS...]" >&2
-            echo "  host networking is now the default; --bridge opts out" >&2
-            exit 2
-            ;;
         --mount|--mount-rw)
             if [ $# -lt 2 ]; then
                 echo "claude-container: $1 needs a PATH" >&2
@@ -463,9 +454,7 @@ fi
 
 if container_exists; then
     if ! is_keeper; then
-        # Created by launcher <= 0.3, which baked the agent as PID 1; starting
-        # it would run that agent detached, alongside our session.
-        echo "claude-container: $NAME was created by an older launcher and cannot be reused;" >&2
+        echo "claude-container: $NAME does not have the expected keeper command;" >&2
         echo "  run: $SELF --recreate (forge logins must be re-done)" >&2
         exit 1
     fi
