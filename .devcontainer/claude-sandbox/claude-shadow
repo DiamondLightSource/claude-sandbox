@@ -1168,6 +1168,18 @@ EOF
     } > "$CLAUDE_SANDBOX_GITCONFIG_PATH"
 }
 
+# Run in a fresh terminal, preserving the wrapped command's exit status.
+sandbox_launch() {
+    local command
+    printf -v command '%q ' "$@"
+    local -a terminal=( script --return -q -E never -c "$command" /dev/null )
+    if egress_jail_enabled; then
+        netns_launch "${terminal[@]}"
+    else
+        exec "${terminal[@]}"
+    fi
+}
+
 # Guard: tests source this file with CLAUDE_SHADOW_SOURCE_ONLY=1 so
 # only the function definitions are pulled into scope.
 if [ "$CLAUDE_SHADOW_SOURCE_ONLY" = "1" ]; then
@@ -1269,13 +1281,4 @@ mapfile -t ARGV < <(bwrap_argv_build "$WORKSPACE_ROOT" "$AGENT_REAL" "$@")
 # is defanged (an ioctl inside the sandbox lands in script's pty, which
 # script reads and writes back as bytes — not keystrokes — to the host
 # terminal). Build the script(1) command once for both launch paths.
-SANDBOX_CMD="$(printf '%q ' "${ARGV[@]}")"
-if egress_jail_enabled; then
-    # ADR 0015 (on by default): run the sandbox inside a pasta-bridged netns
-    # with a routing allowlist. netns_launch cannot `exec` — it must stay
-    # foreground to drive the holder/pasta handshake — so it exits with the
-    # sandbox's status. Disable per host with CLAUDE_SANDBOX_EGRESS_JAIL=0.
-    netns_launch script -q -E never -c "$SANDBOX_CMD" /dev/null
-else
-    exec script -q -E never -c "$SANDBOX_CMD" /dev/null
-fi
+sandbox_launch "${ARGV[@]}"
