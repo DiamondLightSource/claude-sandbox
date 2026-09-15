@@ -141,6 +141,8 @@ jobs:
             -v "$RUNNER_TEMP/terminal-config:/user-terminal-config" \
             -v "$RUNNER_TEMP/project:/work" -w /work \
             claude-sandbox:test bash -c '
+              git config --global user.name "Sandbox integration test" || exit "$?"
+              git config --global user.email "sandbox-test@example.invalid" || exit "$?"
               claude --version || {
                 rc=$?
                 echo "=== jail diagnostics (launch failed, rc=$rc) ==="
