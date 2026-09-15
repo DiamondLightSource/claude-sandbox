@@ -1,12 +1,16 @@
 #!/bin/sh
 # Install what vscode-headless (this directory) needs to run VS Code inside the agent
-# sandbox: Xvfb, the Electron libraries and a VS Code tarball.
+# sandbox: Xvfb, the Electron libraries, the X11 client libraries a Qt (PyQt)
+# debuggee needs to open a window on that display, and a VS Code tarball.
 #
 # Run this OUTSIDE the sandbox, as root in the container: `claude-sandbox
 # shell` or a plain devcontainer terminal. The sandbox binds the container
 # root read-only, so it sees the packages at once, and they last until the
 # container is recreated. VS Code itself goes on the /cache volume, which
 # survives recreation.
+#
+# The agent should have copied this file to /cache or the workspace before
+# naming it: its own skills directory is a bind that exists only in the jail.
 #
 # Review before running: this script runs unsandboxed as root.
 set -eu
@@ -17,7 +21,9 @@ apt-get install -y --no-install-recommends \
     libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 libgtk-3-0t64 \
     libgbm1 libasound2t64 libxkbfile1 libsecret-1-0 libxss1 libxcomposite1 \
     libxdamage1 libxrandr2 libxshmfence1 libx11-xcb1 libdbus-1-3 libxkbcommon0 \
-    fonts-dejavu-core
+    fonts-dejavu-core \
+    libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
+    libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0 libxcb-util1 libxcb-cursor0
 
 prefix=${VSCODE_PREFIX:-/cache/vscode}
 if [ ! -x "$prefix/bin/code" ]; then

@@ -52,8 +52,46 @@ The script also writes a `code` shim to `/usr/local/bin` that adds the
 arguments root needs and keeps settings on `/cache/vscode-home`, so `code`
 works in an outer-container terminal. The sandbox launcher does not use it.
 
+**Copy the script out before asking.** This skill directory is a read-only
+bind that exists only inside the jail; the outer container has no
+`~/.claude/skills/vscode-headless`, so a path under it is useless to the
+user. Copy the script somewhere both sides see, `/cache` when it is
+writable, else the workspace, and give the user that path:
+
+```sh
+cp ~/.claude/skills/vscode-headless/scripts/install-vscode-driver-deps.sh /cache/
+# then ask for:  sh /cache/install-vscode-driver-deps.sh
+```
+
 Say what the script does before asking. It runs unsandboxed as root, so the
 user must read it first. Do not extend it beyond package installs.
+
+The package list also covers the X11 client libraries a Qt application
+needs to open a window on the Xvfb display (`libxcb-icccm4`, `libxcb-xkb1`,
+`libxkbcommon-x11-0` and friends). Without them PyQt exits with
+`Could not load the Qt platform plugin "xcb"`, which shows up as an
+exception pause at the first Qt import instead of at your breakpoint.
+
+### Missing libraries the user cannot install right now
+
+`apt-get download` also fails in the jail (it drops privileges with
+`setgroups`), but plain HTTP works. Fetch the `.deb` files with `curl` and
+unpack them under `/cache`, then point the program at them:
+
+```sh
+mkdir -p /cache/xlibs/debs && cd /cache/xlibs/debs
+apt-get download --print-uris libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+    libxcb-render-util0 libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0 \
+    libxcb-util1 | awk '{gsub(/\x27/,"",$1); print $1}' | xargs -n1 curl -sfLO
+for d in *.deb; do dpkg-deb -x "$d" /cache/xlibs/root; done
+export LD_LIBRARY_PATH=/cache/xlibs/root/usr/lib/x86_64-linux-gnu
+```
+
+A program VS Code launches under the debugger does not inherit that export.
+The Python debugger reads `${workspaceFolder}/.env` by default, so put the
+`LD_LIBRARY_PATH` line there and leave the tracked `launch.json` alone; tell
+the user the file is untracked and why. `DISPLAY` is already inherited from
+the launcher.
 
 ## Driving VS Code
 
@@ -65,6 +103,23 @@ user must read it first. Do not extend it beyond package installs.
   palette with `key Ctrl+Shift+p`, type the command with `text`, then `key Enter`.
 - Screenshots and other files must land in the workspace. The sandbox `/tmp`
   is a private tmpfs that nothing outside can read.
+- `screenshot` captures the VS Code window only. For a window the debuggee
+  opened, find it with `xdotool search --name '<title>'` on the same
+  `DISPLAY`, raise it with `xdotool windowraise`, and grab it with the
+  application's own toolkit (for Qt, `QApplication.primaryScreen()
+  .grabWindow(<id>).save(...)` from a second process). `xwininfo -root
+  -tree` lists what is on the display.
+- The agent may be unable to open a PNG it just wrote (an image reader
+  outside the jail does not see it). Confirm state from `snapshot` text such
+  as `paused, reason breakpoint, file.py:48`, and treat the file as the
+  deliverable for the user.
+- After a debug run ends, `snapshot` still shows the old Call Stack text
+  (`paused, reason exception`). Check for a live debuggee with `pgrep`
+  before trusting it, and read the failure from the Python Debug Console
+  section of the snapshot.
+- A shell that is not bash (zsh) does not word-split `U="node driver.mjs";
+  $U windows`. Define a function instead: `u(){ node .../vscode-ui.mjs
+  "$@"; }`.
 - Stop VS Code with the DevTools call `Browser.close` through `eval` or a short
   Node script when `kill` does not reach the process.
 - On a fresh profile the chat box may hold focus, so focus or create a terminal
