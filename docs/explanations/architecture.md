@@ -109,7 +109,7 @@ restores ADR 0005's shared-host-netns world. See
 ## 2. Launch sequence
 
 A plain `claude` triggers the shadow, which does three host-side reads
-(regenerate the gitconfig from your live git identity, read the `/etc` config,
+(read the `/etc` config, regenerate the gitconfig from your live git identity,
 build the argv). By default it then sets up the egress jail (`netns_launch`): it
 forks an `unshare -rn` holder that owns a fresh user+network namespace, attaches
 `pasta` from outside by PID, and has the holder lock the routing allowlist
@@ -140,8 +140,8 @@ sequenceDiagram
         S->>R: exec ~/.local/bin/claude --no-chrome (no re-wrap)
     else normal launch from host shell
         S->>S: touch ~/.claude.json (bind-back target)
-        S->>FS: regenerate /etc/claude-gitconfig<br/>from host user.name / user.email
         S->>FS: parse_config /etc/claude-sandbox.conf
+        S->>FS: regenerate /etc/claude-gitconfig<br/>from host user.name / user.email
         S->>S: resolve_workspace_root ($PWD or override)
         S->>S: bwrap_argv_build(argv, workspace, real, args)
         alt egress jail enabled (default) — netns_launch

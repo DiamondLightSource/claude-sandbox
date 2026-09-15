@@ -34,8 +34,9 @@ skips placing it if the clone carries no conf. File mode is `0644`.
 - One directive per line.
 - `key = value`, or a bare `key` for boolean flags.
 - Blank lines and `#` comments are ignored.
-- Environment variables already set take precedence — the config
-  supplies defaults.
+- Environment variables take precedence for scalar settings such as
+  `workspace-root`. Repeatable lists such as `allow-write` and `local-port`
+  append config entries to the environment values.
 
 ### Keys
 
@@ -68,6 +69,7 @@ These names are ignored, and the sandbox's own value always wins:
 | Names | Why |
 |---|---|
 | `PATH`, `HOME`, `USER`, `IS_SANDBOX`, `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM` | The sandbox sets each of these itself. Forwarding `PATH` would undo the shadow's PATH discipline; `IS_SANDBOX` would trip the recursion guard into skipping the jail |
+| `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `CLAUDE_SANDBOX_AGENT`, `IS_SANDBOX_AGENT` | Agent configuration locations and profile selection remain controlled by the wrapper |
 | `LD_*`, `BASH_ENV`, `ENV`, `SHELLOPTS`, `BASHOPTS`, `IFS` | Loader and shell startup hooks — they execute code in every process the session spawns |
 
 ## Environment variables

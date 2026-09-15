@@ -601,7 +601,7 @@ install_runtime_scripts() {
 
 # install_shipped_skills: place the repo's top-level skills/ tree (the skills
 # every sandboxed agent gets, as opposed to .claude/skills/, which is for
-# developing this repo) under /usr/libexec next to the guard scripts. The
+# developing this repo) under /usr/libexec next to the runtime helpers. The
 # shadow ro-binds each one into the agent's skills dir INSIDE the jail, so
 # the user's shared ~/.claude is never written to and a compromised session
 # cannot rewrite a skill's scripts. The tree is REPLACED, not merged: a skill
@@ -653,7 +653,7 @@ $CODEX_MARKER
 #
 # Root-cause removal of the update-driven sandbox bypass: a Codex self-update
 # re-creates ~/.local/bin/codex, which would then resolve ahead of the shadow.
-# Updating is a deliberate \`claude-sandbox update\` / ./install instead.
+# Upgrade the image or rebuild the devcontainer to update the agent.
 check_for_update_on_startup = false
 TOML
 }
@@ -795,9 +795,7 @@ main() {
 
 }
 
-# Source guard: the container image build (see Dockerfile) re-uses the
-# install functions by sourcing this file. The guard keeps main() from
-# auto-running in that case.
+# The container entrypoint and tests source these functions without installing.
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     main "$@"
 fi
