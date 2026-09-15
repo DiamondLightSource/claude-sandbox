@@ -69,11 +69,13 @@ not a fault to work around.
 
 When you need one of those things, stop and ask. Give the exact command,
 say it runs outside the sandbox, and say what it will change. A script the
-user must run has to live somewhere both sides see: copy it to `/cache`
-(or the workspace if `/cache` is not writable) and hand the user that path.
-A path under `~/.claude/skills` is useless to them because the skill
-binds exist only inside the jail. Do not extend such a script beyond
-package installs.
+user must run has to live somewhere both sides see. For shipped skills,
+give the installed path under `/usr/libexec/claude-sandbox/skills/`;
+it already exists in the outer container and needs no copy. For scripts
+that exist only inside the jail, copy them to `/cache` (or the workspace
+if `/cache` is not writable). A path under `~/.claude/skills` is useless
+to the user because those mounts exist only inside the jail. Do not
+extend such a script beyond package installs.
 
 When the user is away, do the parts that need nothing from the outer
 container, then report what is left and the command to run. Do not

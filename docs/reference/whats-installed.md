@@ -5,6 +5,9 @@ prebuilt image containing the files below. A custom devcontainer gets the
 same files through `uvx claude-sandbox install`.
 For the configuration they read, see [configuration](configuration.md).
 
+The published image also includes Vim for terminal editing. Installing the
+sandbox into a custom devcontainer leaves the choice of editor to that project.
+
 ## Container-scoped
 
 Preinstalled in the published image. In a custom devcontainer, re-established

@@ -44,15 +44,13 @@ restart. They persist until the container is recreated. VS Code lands on
 `/cache/vscode-home`, so `code` works in an outer-container terminal for the
 user's own testing. The sandbox launcher does not use it.
 
-**Copy the script out before asking.** This skill directory is a read-only
-bind that exists only inside the jail; the outer container has no
-`~/.claude/skills/vscode-headless`, so a path under it is useless to the
-user. Copy the script somewhere both sides see, `/cache` when it is
-writable, else the workspace, and give the user that path:
+For the shipped skill, give the user the installed path below. It exists
+in the outer container and is read-only inside the sandbox. The agent's
+`~/.claude/skills` (or equivalent) mount exists only inside the jail;
+the installed source is available on both sides. No copy is needed:
 
 ```sh
-cp ~/.claude/skills/vscode-headless/scripts/install-vscode-driver-deps.sh /cache/
-# then ask for:  sh /cache/install-vscode-driver-deps.sh
+sh /usr/libexec/claude-sandbox/skills/vscode-headless/scripts/install-vscode-driver-deps.sh
 ```
 
 Say what the script does before asking. It runs unsandboxed as root, so the

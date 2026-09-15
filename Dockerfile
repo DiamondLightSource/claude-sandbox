@@ -55,6 +55,7 @@ WORKDIR /opt/claude-sandbox
 # Install the same files as a devcontainer. Runtime mounts and the namespace
 # probe are handled by the entrypoint when the image starts on its host.
 RUN bash .devcontainer/claude-sandbox/install.sh --image-build \
+    && apt-get install -y --no-install-recommends vim \
     && rm -rf /var/lib/apt/lists/*
 
 # Python for the agent — IMAGE-ONLY by design. The devcontainer stage and
