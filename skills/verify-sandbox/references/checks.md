@@ -300,4 +300,3 @@ one level down would pass unnoticed.
 
 Claude sessions have nothing to assert here and PASS with a note, so the
 check count stays constant across agents.
-
