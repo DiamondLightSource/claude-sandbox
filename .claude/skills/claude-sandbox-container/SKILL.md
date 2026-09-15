@@ -137,6 +137,18 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   the name; a rename would not stop the host launcher swallowing the
   verb as an agent arg anyway). Everything else after the options is
   still agent argv (`uvx claude-sandbox --resume` must keep working).
+- **Testing a branch end to end (2026-09-15, PR #49)** — the two-command
+  naming is a recurring foot-gun: on the HOST, `claude-sandbox verify`
+  forwards into the *published image*, so it never tests a branch. Always
+  say which terminal. The branch path is: devcontainer terminal →
+  `./install --here` → start a FRESH agent session from a scratch dir
+  (binds are fixed at launch; an existing session never sees new ones) →
+  check inside it → `claude-sandbox verify` from the same devcontainer
+  terminal (`which claude-sandbox` = `/usr/local/bin/...`, `version`
+  shows `-dirty`). To exercise the WHEEL path from a branch without a
+  release, in another devcontainer:
+  `uvx --from "git+https://github.com/DiamondLightSource/claude-sandbox@<branch>#subdirectory=packaging/pypi" claude-sandbox install`
+  (the `#subdirectory=` is mandatory — pyproject is not at the repo root).
 - **`clean [--force] [--images]` (PR #42)**: removes the launcher's
   project containers — stopped only by default, running too with
   `--force`, unused `*/diamondlightsource/claude-sandbox` image tags with
@@ -144,11 +156,14 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   command, never the name alone. Why it exists: reconnecting keeps the
   image a container was created from, so after a pull it is unclear
   which image a session runs; `--recreate` is one project at a time.
-- **Devcontainer-like filesystem view (2026-09-14)**: the launcher binds
-  the project's PARENT read-only at its host path (siblings readable, as
-  the devcontainer's `/workspaces` mount) and the project rw, nested
-  over it; `--mount` is now READ-ONLY and `--mount-rw` is the old rw +
-  allow-write behaviour. The parent bind is skipped when the parent is
+- **Devcontainer-like filesystem view (2026-09-14; parent rw 2026-09-15)**:
+  the launcher binds the project's PARENT read-write at its host path, as
+  the devcontainer's `/workspaces` mount does, and the project rw nested
+  over it. First cut made the parent ro; user reversed that 2026-09-15 so
+  a shell can start a new sandboxed session in any sibling — not a hazard
+  because the shadow binds only `$PWD` rw per session, and the parent is
+  NOT added to allow-write. `--mount` is READ-ONLY and `--mount-rw` is
+  the old rw + allow-write behaviour. The parent bind is skipped when the parent is
   `/` or contains `$HOME` (a project directly under `~` would hand
   `~/.ssh` and every host token to the container, ro or not — the
   launcher says so). `shell` execs the shell the launcher was run FROM

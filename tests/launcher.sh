@@ -87,12 +87,13 @@ assert_not_contains "container git config remains writable" "$(create_line)" ":/
 run --; case "$(create_line)" in *"--network=host"*) pass ;; *) fail "host net not default: $(create_line)" ;; esac
 run -- --bridge; case "$(create_line)" in *"--network=host"*) fail "--bridge still host net" ;; *) pass ;; esac
 
-# --- filesystem view: parent ro, project rw, --mount ro, --mount-rw ---------
+# --- filesystem view: parent rw, project rw, --mount ro, --mount-rw ---------
 mkdir -p "$TMP/ws/project" "$TMP/ro" "$TMP/rw"
 PROJECT="$TMP/ws/project" run --
-case "$(create_line)" in *"--mount type=bind,src=$TMP/ws,dst=$TMP/ws,ro,bind-propagation=slave -v $TMP/ws/project:$TMP/ws/project -w"*) pass ;; *) fail "parent not ro before project rw: $(create_line)" ;; esac
+case "$(create_line)" in *"--mount type=bind,src=$TMP/ws,dst=$TMP/ws,bind-propagation=slave -v $TMP/ws/project:$TMP/ws/project -w"*) pass ;; *) fail "parent not rw before project: $(create_line)" ;; esac
+assert_not_contains "parent not in allow-write" "$(create_line)" "ALLOW_WRITE=$TMP/ws "
 run --   # project directly under $HOME: parent holds ~, must not be mounted
-assert_not_contains "parent containing HOME is not mounted" "$(create_line)" "--mount type=bind,src=$TMP,dst=$TMP,ro,bind-propagation=slave"
+assert_not_contains "parent containing HOME is not mounted" "$(create_line)" "src=$TMP,dst=$TMP,"
 case "$ERR" in *"contains your home directory"*) pass ;; *) fail "HOME guard silent: $ERR" ;; esac
 run -- --mount "$TMP/ro" --mount-rw "$TMP/rw"
 case "$(create_line)" in *"src=$TMP/ro,dst=$TMP/ro,ro,bind-propagation=slave"*) pass ;; *) fail "--mount not ro: $(create_line)" ;; esac

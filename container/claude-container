@@ -15,11 +15,12 @@
 # (--recreate to change them). The container stops when its last session
 # exits.
 #
-# Filesystem view, like a devcontainer's: the project dir is bound at its
-# host path read-write and is the only place agents may write; its PARENT
-# is bound read-only at its host path so sibling checkouts are readable
-# (skipped when the parent is / or contains $HOME, which would expose
-# ~/.ssh and every other host secret to the container).
+# Filesystem view, like a devcontainer's: the project dir and its PARENT
+# are bound read-write at their host paths, so sibling checkouts can be
+# opened as sessions of their own (skipped when the parent is / or
+# contains $HOME, which would expose ~/.ssh and every other host secret
+# to the container). Each agent session still writes only to its own
+# project: the sandbox binds $PWD, not the parent.
 #
 # Usage: claude-container [OPTIONS] [VERB] [ARGS...]
 #
@@ -359,8 +360,10 @@ create_container() {
         -e "TERM=${TERM:-xterm-256color}"
     )
     # Siblings, as a devcontainer's /workspaces mount gives them: the
-    # parent dir read-only at its host path, listed BEFORE the project so
-    # the project's rw bind nests over it. Slave propagation (here and on
+    # parent dir read-write at its host path, so a shell can start a
+    # sandboxed session in any sibling; the sandbox still confines each
+    # agent to its own $PWD. The project bind below is kept for when the
+    # parent is skipped. Slave propagation (here and on
     # --mount/--mount-rw) is for autofs trees such as /dls_sw: a process in
     # the container's user namespace may not TRIGGER an automount (EPERM on
     # readdir), but mounts the host automounter makes propagate in. Not when the parent is / (that
@@ -372,8 +375,8 @@ create_container() {
         /) ;;
         *)
             case "$HOME/" in
-                "$parent"/*) echo "claude-container: not mounting $parent read-only: it contains your home directory" >&2 ;;
-                *) args+=( --mount "type=bind,src=$parent,dst=$parent,ro,bind-propagation=slave" ) ;;
+                "$parent"/*) echo "claude-container: not mounting $parent: it contains your home directory" >&2 ;;
+                *) args+=( --mount "type=bind,src=$parent,dst=$parent,bind-propagation=slave" ) ;;
             esac
             ;;
     esac
