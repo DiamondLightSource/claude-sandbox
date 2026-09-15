@@ -48,3 +48,4 @@ packages = ["src/claude_sandbox"]
 "../../.devcontainer/claude-sandbox" = "claude_sandbox/tree/.devcontainer/claude-sandbox"
 "../../.devcontainer/claude-sandbox.conf" = "claude_sandbox/tree/.devcontainer/claude-sandbox.conf"
 "../../.claude/statusline-command.sh" = "claude_sandbox/tree/.claude/statusline-command.sh"
+"../../skills" = "claude_sandbox/tree/skills"

@@ -675,4 +675,52 @@ ARGV14E="$(HOME=/root CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
 assert_eq scenario14e-once 1 "$(grep -cx 'IS_SANDBOX_AGENT' <<<"$ARGV14E")"
 assert_pair scenario14e "$ARGV14E" "IS_SANDBOX_AGENT" "claude"
 
+
+# --- Scenario 15: shipped skills are ro-bound per skill into the agent's ---
+# --- own skills dir; nothing is written to the host ~/.claude by the builder ---
+# The installed tree under /usr/libexec/claude-sandbox/skills/<name>/ lands at
+# ~/<agent skills dir>/<name> inside the jail. One bind per skill (agents
+# discover skills exactly one level deep, and a per-skill bind leaves the
+# user's own skills in the same dir visible); --ro-bind so a compromised
+# session cannot rewrite the bundled scripts.
+SKILLSFIX="$(mktemp -d)"
+register_cleanup "$SKILLSFIX"
+mkdir -p "$SKILLSFIX/shipped/alpha" "$SKILLSFIX/shipped/beta/scripts" "$SKILLSFIX/home/.claude" "$SKILLSFIX/home/.codex" "$SKILLSFIX/home/.pi"
+touch "$SKILLSFIX/shipped/alpha/SKILL.md" "$SKILLSFIX/shipped/beta/SKILL.md" "$SKILLSFIX/home/.claude.json"
+_saved_skills_dir="$SHIPPED_SKILLS_DIR"
+SHIPPED_SKILLS_DIR="$SKILLSFIX/shipped"
+ARGV15="$(HOME="$SKILLSFIX/home" CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
+    bwrap_argv_build "$SKILLSFIX/home" /test/.local/bin/claude)"
+assert_pair scenario15-alpha "$ARGV15" "--ro-bind" "$SKILLSFIX/shipped/alpha"
+assert_pair scenario15-alpha "$ARGV15" "$SKILLSFIX/shipped/alpha" "$SKILLSFIX/home/.claude/skills/alpha"
+assert_pair scenario15-beta  "$ARGV15" "$SKILLSFIX/shipped/beta"  "$SKILLSFIX/home/.claude/skills/beta"
+# Never rw: the shipped tree must not be reachable through a --bind.
+assert_eq scenario15-ro 0 "$(printf '%s\n' "$ARGV15" | grep -B1 -x "$SKILLSFIX/shipped/alpha" | grep -cx -- '--bind')"
+# Per skill, not per tree.
+assert_not_contains scenario15-tree "$ARGV15" "$SKILLSFIX/home/.claude/skills"
+# The builder is pure: it does not create the host skills dir (the launch
+# body does that, explicitly, just before launch).
+if [ -e "$SKILLSFIX/home/.claude/skills" ]; then
+    fail "scenario15-pure — bwrap_argv_build created the host skills dir"
+else
+    pass
+fi
+# Each agent gets the same skills at ITS OWN discovery path.
+agent_profile codex
+ARGV15C="$(HOME="$SKILLSFIX/home" CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
+    bwrap_argv_build "$SKILLSFIX/home" "$AGENT_REAL")"
+assert_pair scenario15-codex "$ARGV15C" "$SKILLSFIX/shipped/alpha" "$SKILLSFIX/home/.codex/skills/alpha"
+assert_not_contains scenario15-codex "$ARGV15C" "$SKILLSFIX/home/.claude/skills/alpha"
+agent_profile pi
+ARGV15P="$(HOME="$SKILLSFIX/home" CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
+    bwrap_argv_build "$SKILLSFIX/home" "$AGENT_REAL")"
+assert_pair scenario15-pi "$ARGV15P" "$SKILLSFIX/shipped/alpha" "$SKILLSFIX/home/.pi/agent/skills/alpha"
+agent_profile claude
+# An empty or absent shipped tree emits nothing.
+SHIPPED_SKILLS_DIR="$SKILLSFIX/nonexistent"
+ARGV15N="$(HOME="$SKILLSFIX/home" CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
+    bwrap_argv_build "$SKILLSFIX/home" /test/.local/bin/claude)"
+assert_not_contains scenario15-none "$ARGV15N" "$SKILLSFIX/nonexistent/*"
+SHIPPED_SKILLS_DIR="$_saved_skills_dir"
+
 finish bwrap_argv.sh

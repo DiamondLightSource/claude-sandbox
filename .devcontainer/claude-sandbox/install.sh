@@ -678,6 +678,29 @@ install_guard_scripts() {
     install_file "$SCRIPT_DIR/verify-sandbox-battery.sh"  "$(prefixed "$BATTERY_PATH")"
 }
 
+# install_shipped_skills: place the repo's top-level skills/ tree (the skills
+# every sandboxed agent gets, as opposed to .claude/skills/, which is for
+# developing this repo) under /usr/libexec next to the guard scripts. The
+# shadow ro-binds each one into the agent's skills dir INSIDE the jail, so
+# the user's shared ~/.claude is never written to and a compromised session
+# cannot rewrite a skill's scripts. The tree is REPLACED, not merged: a skill
+# removed from the repo must disappear on re-install, or a stale copy keeps
+# shipping with no source to audit. Root-owned, world-readable, scripts
+# executable (mode as checked in; the wheel preserves it).
+SKILLS_LIBEXEC="$GUARD_LIBEXEC/skills"
+install_shipped_skills() {
+    local src="$REPO_ROOT/skills" dst; dst="$(prefixed "$SKILLS_LIBEXEC")"
+    rm -rf "$dst"
+    [ -d "$src" ] || return 0
+    mkdir -p "$dst"
+    local skill
+    for skill in "$src"/*/; do
+        [ -f "$skill/SKILL.md" ] || continue
+        cp -R "$skill" "$dst/"
+    done
+    chmod -R u=rwX,go=rX "$dst"
+}
+
 # wire_gate_flag: stamp (DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED=1) or remove the ROOT-OWNED gate
 # escape-hatch flag the UserPromptSubmit gate checks. The flag REPLACES the
 # old CLAUDE_SANDBOX_ALLOW_UNWRAPPED env hatch, which a confined Claude could
@@ -970,6 +993,7 @@ main() {
     # settings.json keeps only the statusline preference (and is migrated
     # off any earlier user-scope guard).
     install_guard_scripts
+    install_shipped_skills
     wire_managed_settings
     wire_codex_managed
     wire_gate_flag
@@ -984,6 +1008,7 @@ main() {
     echo "  config:      $(prefixed /etc/claude-sandbox.conf)"
     echo "  guard:       $(prefixed "$VERIFY_PATH"), $(prefixed "$GATE_PATH") (off-PATH, ro in sandbox)"
     echo "  battery:     $(prefixed "$BATTERY_PATH") (off-PATH, ro in sandbox; /verify-sandbox phase 1)"
+    echo "  skills:      $(prefixed "$SKILLS_LIBEXEC") ($(ls "$(prefixed "$SKILLS_LIBEXEC")" 2>/dev/null | wc -l) shipped; ro-bound into each agent's skills dir in-session)"
     echo "  managed:     $(prefixed "$MANAGED_SETTINGS") (SessionStart + UserPromptSubmit + DISABLE_AUTOUPDATER)"
     echo "  codex guard: $(prefixed "$CODEX_REQUIREMENTS") (SessionStart + UserPromptSubmit) — $(codex_owned_or_skipped "$(prefixed "$CODEX_REQUIREMENTS")")"
     echo "  codex conf:  $(prefixed "$CODEX_MANAGED_CONFIG") (updater off) — $(codex_owned_or_skipped "$(prefixed "$CODEX_MANAGED_CONFIG")")"
