@@ -64,6 +64,12 @@ system-wide skills directory and no managed key that adds a skills path
 `extraKnownMarketplaces` still installs into the user's plugin cache, needs
 network at first use, and is Claude-only. The bind is harness-agnostic.
 
+Shipped 2026-09-15 as 4.2.0 (PR #49). Verified live in all three agents,
+check 03 of the battery, and the wheel path from a branch. Parked issue
+**#79** (ship `/verify-sandbox` machine-wide) predates this pattern and
+assumed a plugin marketplace was the only channel; a `~/.claude/commands`
+ro-bind on the same model is the cheaper candidate to re-evaluate first.
+
 ## Adding a shipped skill
 
 - Put it at `skills/<name>/SKILL.md` (+ `scripts/` if needed). Scripts are

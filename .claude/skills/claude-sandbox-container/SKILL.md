@@ -137,6 +137,18 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   the name; a rename would not stop the host launcher swallowing the
   verb as an agent arg anyway). Everything else after the options is
   still agent argv (`uvx claude-sandbox --resume` must keep working).
+- **Testing a branch end to end (2026-09-15, PR #49)** — the two-command
+  naming is a recurring foot-gun: on the HOST, `claude-sandbox verify`
+  forwards into the *published image*, so it never tests a branch. Always
+  say which terminal. The branch path is: devcontainer terminal →
+  `./install --here` → start a FRESH agent session from a scratch dir
+  (binds are fixed at launch; an existing session never sees new ones) →
+  check inside it → `claude-sandbox verify` from the same devcontainer
+  terminal (`which claude-sandbox` = `/usr/local/bin/...`, `version`
+  shows `-dirty`). To exercise the WHEEL path from a branch without a
+  release, in another devcontainer:
+  `uvx --from "git+https://github.com/DiamondLightSource/claude-sandbox@<branch>#subdirectory=packaging/pypi" claude-sandbox install`
+  (the `#subdirectory=` is mandatory — pyproject is not at the repo root).
 - **`clean [--force] [--images]` (PR #42)**: removes the launcher's
   project containers — stopped only by default, running too with
   `--force`, unused `*/diamondlightsource/claude-sandbox` image tags with
