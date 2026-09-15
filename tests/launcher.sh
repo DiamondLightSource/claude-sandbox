@@ -32,6 +32,7 @@ case "$*" in
         [ -n "${FAKE_IMG_VER:-}" ] && echo "$FAKE_IMG_VER" ;;
     "image inspect -f {{index .Config.Labels \"org.opencontainers.image.revision\"}} "*) echo abc123 ;;
     "image inspect -f {{.Id}} "*) echo img1 ;;
+    "start "*) touch "$MARK" ;;
     "create "*)
         touch "$MARK"
         for arg in "$@"; do
@@ -99,6 +100,23 @@ mkdir -p "$TMP/ws/project" "$TMP/ro" "$TMP/rw"
 PROJECT="$TMP/ws/project" run --
 case "$(create_line)" in *"--mount type=bind,src=$TMP/ws,dst=$TMP/ws,bind-propagation=slave -v $TMP/ws/project:$TMP/ws/project -w"*) pass ;; *) fail "parent not rw before project: $(create_line)" ;; esac
 assert_not_contains "parent not in allow-write" "$(create_line)" "ALLOW_WRITE=$TMP/ws "
+PROJECT="$TMP/ws/project" run -- --no-peers
+assert_parse 'no-peers skips parent mount' grep -Fvq -- "src=$TMP/ws,dst=$TMP/ws," <<< "$(create_line)"
+assert_parse 'no-peers retains project mount' grep -Fq -- "-v $TMP/ws/project:$TMP/ws/project -w $TMP/ws/project" <<< "$(create_line)"
+assert_parse 'no-peers is not an agent argument' grep -Fvq -- '--no-peers' <<< "$(exec_line)"
+PROJECT="$TMP/ws/project" run -- --no-peers --mount "$TMP/ro" --mount-rw "$TMP/rw"
+assert_parse 'no-peers retains explicit read-only mount' grep -Fq -- "src=$TMP/ro,dst=$TMP/ro,ro,bind-propagation=slave" <<< "$(create_line)"
+assert_parse 'no-peers retains explicit writable mount' grep -Fq -- "src=$TMP/rw,dst=$TMP/rw,bind-propagation=slave" <<< "$(create_line)"
+assert_eq 'no-peers retains sandbox write permission' "$TMP/rw" "$(cat "$LOG.mount-env")"
+# Reuse an existing container: create-time options must not silently imply
+# that an existing parent mount has been removed.
+printf '%s\n' "claude-sandbox-project-$(printf '%s' "$TMP/ws/project" | cksum | awk '{print $1}')" > "$TMP/ps"
+PROJECT="$TMP/ws/project" run -- --no-peers
+assert_eq 'no-peers reuse does not recreate' '' "$(create_line)"
+assert_eq 'no-peers reuse completes normally' 0 "$RC"
+assert_parse 'no-peers reuse warns option was ignored' grep -Fq -- 'create-time option(s) ignored on an existing container: --no-peers' <<< "$ERR"
+assert_parse 'no-peers reuse explains recreation' grep -Fq -- 'use --recreate to apply them' <<< "$ERR"
+rm -f "$TMP/ps"
 run --   # project directly under $HOME: parent holds ~, must not be mounted
 assert_not_contains "parent containing HOME is not mounted" "$(create_line)" "src=$TMP,dst=$TMP,"
 case "$ERR" in *"contains your home directory"*) pass ;; *) fail "HOME guard silent: $ERR" ;; esac

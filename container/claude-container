@@ -11,7 +11,7 @@
 # devcontainer (re-authenticate after --recreate), never a host-credential
 # mount. The container's own process is an idle keeper; every session is
 # an exec into it, so the verb and AGENT_ARGS apply on every run.
-# Only --bridge, --mount and --mount-rw are fixed at create time
+# Only --bridge, --no-peers, --mount and --mount-rw are fixed at create time
 # (--recreate to change them). The container stops when its last session
 # exits.
 #
@@ -20,7 +20,8 @@
 # opened as sessions of their own (skipped when the parent is / or
 # contains $HOME, which would expose ~/.ssh and every other host secret
 # to the container). Each agent session still writes only to its own
-# project: the sandbox binds $PWD, not the parent.
+# project: the sandbox binds $PWD, not the parent. Siblings remain readable
+# by agents; --no-peers skips the automatic parent mount.
 #
 # Usage: claude-container [OPTIONS] [VERB] [ARGS...]
 #
@@ -61,6 +62,9 @@
 #                   agents can read it, nothing in the container can write it
 #   --mount-rw PATH bind PATH read-write into the container AND the
 #                   sandbox (repeatable; becomes an allow-write entry)
+#   --no-peers      skip the automatic parent-directory mount; sibling
+#                   projects are otherwise readable by sandboxed agents.
+#                   Explicit --mount and --mount-rw paths still apply.
 #   --version       print launcher version and exit
 #   -h | --help     this text
 #
@@ -141,6 +145,7 @@ KEEPER_CMD='trap "exit 0" TERM INT; while :; do sleep 60 & wait $!; done'
 
 recreate=0
 host_net=1
+peers=1
 agent=claude
 shell=0
 inner=0
@@ -154,6 +159,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --recreate) recreate=1; shift ;;
         --bridge) host_net=0; create_opts+=( --bridge ); shift ;;
+        --no-peers) peers=0; create_opts+=( --no-peers ); shift ;;
         --mount|--mount-rw)
             if [ $# -lt 2 ]; then
                 echo "claude-container: $1 needs a PATH" >&2
@@ -342,7 +348,7 @@ create_container() {
     # Siblings, as a devcontainer's /workspaces mount gives them: the
     # parent dir read-write at its host path, so a shell can start a
     # sandboxed session in any sibling; the sandbox still confines each
-    # agent to its own $PWD. The project bind below is kept for when the
+    # agent's writes to its own $PWD. The project bind below is kept for when the
     # parent is skipped. Slave propagation (here and on
     # --mount/--mount-rw) is for autofs trees such as /dls_sw: a process in
     # the container's user namespace may not TRIGGER an automount (EPERM on
@@ -351,15 +357,17 @@ create_container() {
     # and every host token to the container, ro or not).
     local parent
     parent="$(dirname "$PWD")"
-    case "$parent" in
-        /) ;;
-        *)
-            case "$HOME/" in
-                "$parent"/*) echo "claude-container: not mounting $parent: it contains your home directory" >&2 ;;
-                *) args+=( --mount "type=bind,src=$parent,dst=$parent,bind-propagation=slave" ) ;;
-            esac
-            ;;
-    esac
+    if [ "$peers" = 1 ]; then
+        case "$parent" in
+            /) ;;
+            *)
+                case "$HOME/" in
+                    "$parent"/*) echo "claude-container: not mounting $parent: it contains your home directory" >&2 ;;
+                    *) args+=( --mount "type=bind,src=$parent,dst=$parent,bind-propagation=slave" ) ;;
+                esac
+                ;;
+        esac
+    fi
     args+=( -v "$PWD:$PWD" -w "$PWD" )
     if [ "$host_net" = 1 ]; then
         args+=( --network=host )

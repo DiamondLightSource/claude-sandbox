@@ -131,7 +131,21 @@ devcontainer mounts `/workspaces`, so from `claude-sandbox shell` you can
 is skipped when it is your home directory). Each agent can still write
 only to the directory it was started in. Automounted trees such as `/dls_sw`
 work: the binds use slave propagation, so mounts the host automounter makes
-appear inside without the container triggering them. To add more:
+appear inside without the container triggering them.
+
+Sibling projects are **readable by agents**, including any credentials they
+contain. Read-only access prevents changes, not disclosure. To skip the
+automatic parent mount, use `--no-peers` when creating the container:
+
+```bash
+claude-sandbox --no-peers
+# For an existing project container:
+claude-sandbox --recreate --no-peers
+```
+
+This affects containers created by the host launcher. It does not change
+workspace mounts supplied by an existing devcontainer. Explicit `--mount`
+and `--mount-rw` paths still apply with `--no-peers`. To add specific paths:
 
 ```bash
 claude-sandbox --mount ~/src/shared-lib       # read-only
