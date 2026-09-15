@@ -22,35 +22,26 @@ shadow masks `/tmp/.X11-unix`, `/run/user` and `~/.Xauthority` on purpose.
 Scripts live in this skill's `scripts/` directory. Call them by absolute path
 from there, or copy them into a project.
 
-## Quick start
+## Step 1: ask the user to run the install script
 
-```sh
-scripts/vscode-headless /path/to/workspace &
-node scripts/vscode-ui.mjs windows
-node scripts/vscode-ui.mjs screenshot ./ide.png
-```
+Always start here. Do not probe for Xvfb, VS Code or the Electron libraries
+first, and do not try to work around a missing one: a partial check is
+misleading (the container is recreated without warning and keeps only
+`/cache`), and any package fetched or unpacked by the agent bypasses the
+review the user gets from running the script themselves. If the install is
+already done, the script confirms that in a few seconds and changes nothing,
+so asking costs the user almost nothing.
 
-`vscode-headless` starts Xvfb on `:99` when no display answers, then starts VS
-Code from `/cache/vscode` with a private data directory under
-`/tmp/vscode-headless` and DevTools on `127.0.0.1:9222`. A second call reuses
-both the display and the running VS Code, so it also serves as the `code`
-binary for any tool that takes one.
-
-Environment overrides: `VSCODE_HEADLESS_BINARY`, `VSCODE_HEADLESS_DISPLAY`,
-`VSCODE_HEADLESS_PORT`, `VSCODE_HEADLESS_DATA`, and for the driver
-`VSCODE_HEADLESS_WINDOW`.
-
-## When the sandbox lacks Xvfb or VS Code
-
-The sandbox root is read-only and nested namespaces are refused, so `apt-get
-install` fails inside it. Ask the user to run
+Ask the user to run
 [scripts/install-vscode-driver-deps.sh](scripts/install-vscode-driver-deps.sh)
 outside the sandbox, in `claude-sandbox shell` or a devcontainer terminal. The
-sandbox sees the packages immediately without a restart. They persist until the
-container is recreated. VS Code lands on `/cache`, which survives recreation.
-The script also writes a `code` shim to `/usr/local/bin` that adds the
-arguments root needs and keeps settings on `/cache/vscode-home`, so `code`
-works in an outer-container terminal. The sandbox launcher does not use it.
+sandbox root is read-only and nested namespaces are refused, so `apt-get
+install` fails inside it. The sandbox sees the packages immediately without a
+restart. They persist until the container is recreated. VS Code lands on
+`/cache`, which survives recreation. The script also writes a `code` shim to
+`/usr/local/bin` that adds the arguments root needs and keeps settings on
+`/cache/vscode-home`, so `code` works in an outer-container terminal for the
+user's own testing. The sandbox launcher does not use it.
 
 **Copy the script out before asking.** This skill directory is a read-only
 bind that exists only inside the jail; the outer container has no
@@ -76,7 +67,30 @@ Other toolkits (Tk, GTK via PyGObject, SDL, wxPython's HTML widget) need
 their own packages; the traceback names the missing library. Fetch it with
 the fallback below rather than growing the install script.
 
+## Step 2: quick start
+
+```sh
+scripts/vscode-headless /path/to/workspace &
+node scripts/vscode-ui.mjs windows
+node scripts/vscode-ui.mjs screenshot ./ide.png
+```
+
+`vscode-headless` starts Xvfb on `:99` when no display answers, then starts VS
+Code from `/cache/vscode` with a private data directory under
+`/tmp/vscode-headless` and DevTools on `127.0.0.1:9222`. A second call reuses
+both the display and the running VS Code, so it also serves as the `code`
+binary for any tool that takes one.
+
+Environment overrides: `VSCODE_HEADLESS_BINARY`, `VSCODE_HEADLESS_DISPLAY`,
+`VSCODE_HEADLESS_PORT`, `VSCODE_HEADLESS_DATA`, and for the driver
+`VSCODE_HEADLESS_WINDOW`.
+
 ### Missing libraries the user cannot install right now
+
+Only with the user's explicit go-ahead, and only for a library outside the
+install script's list. Never use this route to stand in for the install
+script itself: unpacking Xvfb or the Electron stack this way works, but it
+is fragile (archive versions drift) and hides from the user what is running.
 
 `apt-get download` also fails in the jail (it drops privileges with
 `setgroups`), but plain HTTP works. Fetch the `.deb` files with `curl` and
