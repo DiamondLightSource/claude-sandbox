@@ -148,12 +148,6 @@ assert_not_contains "volume name not baked as env" "$(create_line)" "-e CLAUDE_S
 run CLAUDE_SANDBOX_CACHE= --
 case "$(create_line)" in *":/cache "*) fail "empty name should disable the volume: $(create_line)" ;; *) pass ;; esac
 
-# --- a typo'd verb still goes to claude, with a hint ------------------------
-run -- clear --venvs
-case "$(exec_line)" in *" claude clear --venvs") pass ;; *) fail "typo'd verb must still be agent argv: $(exec_line)" ;; esac
-case "$ERR" in *"not a launcher verb"*) pass ;; *) fail "no near-miss hint: $ERR" ;; esac
-run -- "fix the failing test"; case "$ERR" in *"not a launcher verb"*) fail "hint fired on an ordinary prompt" ;; *) pass ;; esac
-
 run -- install; [ "$RC" = 2 ] && pass || fail "install verb accepted by the script (rc=$RC)"
 
 # --- in-container refusal (seam off) ---------------------------------------

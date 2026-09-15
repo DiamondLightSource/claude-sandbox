@@ -201,17 +201,6 @@ case "${1:-}" in
         ;;
 esac
 
-# A bare first word that is not a verb is the agent's own argv (a prompt,
-# say) and must stay so — but a typo'd verb would launch claude with the
-# typo as its prompt and fail obscurely. Hint on a near miss, then carry on.
-if [ "$inner" = 0 ] && [ "$shell" = 0 ] && [ "$clean" = 0 ] && [ "$agent" = claude ] && [ $# -gt 0 ]; then
-    case "$1" in
-        -*) ;;
-        clear|cleanup|cleam|claen|clena|sh|zsh|bash|sehll|shel|verifiy|verfy|updat|upgrade|gh-login|login|auth)
-            echo "claude-container: note: '$1' is not a launcher verb, so it goes to claude as its argument (verbs: clean | shell | verify | update | gh-auth | glab-auth | version | pi-local)" >&2 ;;
-    esac
-fi
-
 # Inside a container there is nothing for this launcher to do: an installed
 # sandbox is run by its own command names, and a bare container wants the
 # installer. (Podman writes /run/.containerenv; docker writes /.dockerenv.)
