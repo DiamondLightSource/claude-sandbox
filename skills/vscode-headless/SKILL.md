@@ -30,7 +30,8 @@ misleading (the container is recreated without warning and keeps only
 `/cache`), and any package fetched or unpacked by the agent bypasses the
 review the user gets from running the script themselves. If the install is
 already done, the script confirms that in a few seconds and changes nothing,
-so asking costs the user almost nothing.
+so asking costs the user almost nothing. The `claude-sandbox-user` skill
+describes the outer container and how the user reaches it.
 
 Ask the user to run
 [scripts/install-vscode-driver-deps.sh](scripts/install-vscode-driver-deps.sh)

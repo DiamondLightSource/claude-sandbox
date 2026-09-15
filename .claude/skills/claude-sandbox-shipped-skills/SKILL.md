@@ -5,8 +5,8 @@ description: How agent skills ship to claude-sandbox users (ADR 24). The top-lev
 
 # claude-sandbox-shipped-skills
 
-Skills that sandboxed agents should have in every workspace (the first is
-`vscode-headless`) reach users through the **sandbox itself**, not through
+Skills that sandboxed agents should have in every workspace (currently
+`vscode-headless` and `claude-sandbox-user`) reach users through the **sandbox itself**, not through
 their `~/.claude`. This skill records the pattern; the `claude-sandbox`
 skill records the invariants it rests on (4 and 5: trust anchors live in
 `/etc` and `/usr/libexec`, ro in-session, never in a host-shared or
