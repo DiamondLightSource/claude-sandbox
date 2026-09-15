@@ -1117,16 +1117,13 @@ check_config_persistence() {
 # dev.containers.copyGitConfig fires AFTER postCreate, so an install-time render
 # can have an empty user.name; by the time the user types `claude`, copyGitConfig
 # has run, and this re-render makes the [user] block reflect the real identity.
-render_gitconfig() {
-    local git_name git_email
+render_gitconfig() (
+    local git_name git_email tmp
     git_name=$(git config --get user.name 2>/dev/null || true)
     git_email=$(git config --get user.email 2>/dev/null || true)
+    tmp="$(mktemp "$CLAUDE_SANDBOX_GITCONFIG_PATH.XXXXXX")"
+    trap 'rm -f "$tmp"' EXIT
     {
-        cat <<EOF
-[user]
-    name = $git_name
-    email = $git_email
-EOF
         if [ "${CLAUDE_SANDBOX_NO_FORGE:-}" != "1" ]; then
             cat <<'EOF'
 [credential "https://github.com"]
@@ -1147,8 +1144,12 @@ EOF
 [safe]
     directory = *
 EOF
-    } > "$CLAUDE_SANDBOX_GITCONFIG_PATH"
-}
+    } > "$tmp"
+    git config --file "$tmp" user.name "$git_name"
+    git config --file "$tmp" user.email "$git_email"
+    chmod 0644 "$tmp"
+    mv "$tmp" "$CLAUDE_SANDBOX_GITCONFIG_PATH"
+)
 
 # Run in a fresh terminal, preserving the wrapped command's exit status.
 sandbox_launch() {
