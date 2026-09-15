@@ -47,15 +47,9 @@ The installer keeps existing agent binaries. Updating the sandbox does not
 itself guarantee a newer agent; a fresh devcontainer installs the current
 agents. The published image supplies the agents baked into that image.
 
-For a legacy clone installation, `claude-sandbox update` fetches and installs
+For a clone installation, `claude-sandbox update` fetches and installs
 the newest release. For a wheel installation it prints the PyPI update
 instructions. In the published image it refuses: upgrade from the host.
 
-## Migrating from the copied launcher
-
-Replace `claude-container` with the PyPI tool install above. The old
-`--agent NAME` and `--shell` flags are now verbs (`codex`, `pi`, `shell`);
-host networking is the default, with `--bridge` as the alternative.
-
 Agent auto-updaters are disabled to preserve the sandbox wrapper.
-See [The integrity guard](../explanations/integrity-guard.md) for the rationale.
+See [Launch isolation and updates](../explanations/launch-isolation.md) for the rationale.

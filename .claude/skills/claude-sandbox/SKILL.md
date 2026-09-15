@@ -1,6 +1,6 @@
 ---
 name: claude-sandbox
-description: Architecture invariants, refuse-lists, and walked-back paths for this repo's bwrap sandbox core (shadow, installer, integrity guard). Surface before editing `.devcontainer/claude-sandbox/*`, `install`, `tests/`, `.github/workflows/ci.yml`, or `.claude/commands/verify-sandbox.md` — or before any suggestion to re-add Python tooling, persist gh/glab PATs, auto-edit devcontainer.json, read conf from the workspace, move the integrity guard out of managed-settings, re-enable the auto-updater, expose a host container-engine socket, or pass-env secrets. Container-image/launcher topics: claude-sandbox-container skill. Network/egress topics: claude-sandbox-networking skill.
+description: Architecture invariants, refuse-lists, and walked-back paths for this repo's bwrap sandbox core (shadow, installer, integrity guard). Surface before editing `.devcontainer/claude-sandbox/*`, `install`, `tests/`, `.github/workflows/ci.yml`, or `skills/verify-sandbox/SKILL.md` — or before any suggestion to re-add Python tooling, persist gh/glab PATs, auto-edit devcontainer.json, read conf from the workspace, move the integrity guard out of managed-settings, re-enable the auto-updater, expose a host container-engine socket, or pass-env secrets. Container-image/launcher topics: claude-sandbox-container skill. Network/egress topics: claude-sandbox-networking skill.
 ---
 
 # claude-sandbox
@@ -8,8 +8,9 @@ description: Architecture invariants, refuse-lists, and walked-back paths for th
 Project-specific architecture decisions. The code documents *what*;
 this skill documents *why* and *what regressions to refuse*. Threat
 model: [threat model](https://diamondlightsource.github.io/claude-sandbox/explanations/threat-model.html); live verification: `/verify-sandbox`
-(the command markdown `.claude/commands/verify-sandbox.md` documents the
-*why* of each check; the phase-1 PASS/FAIL battery is the committed
+(the shipped skill `skills/verify-sandbox/SKILL.md` defines the audit;
+its `references/checks.md` documents the *why* of each check;
+the phase-1 PASS/FAIL battery is the committed
 script `.devcontainer/claude-sandbox/verify-sandbox-battery.sh`, run by
 absolute path from `/usr/libexec/claude-sandbox`).
 
@@ -615,7 +616,7 @@ image/launcher topics. Touch the root `Dockerfile`, `container/*`, or
 | End-to-end install smoke test | `tests/smoke.sh`                                    |
 | CI workflow                   | `.github/workflows/ci.yml`                          |
 | Container image / launcher design | `claude-sandbox-container` skill (root `Dockerfile`, `container/*`, `.github/workflows/container.yml`) |
-| Live verification spec (why)  | `.claude/commands/verify-sandbox.md`                |
+| Live verification spec (why)  | `skills/verify-sandbox/SKILL.md`                |
 | Phase-1 battery script (what) | `.devcontainer/claude-sandbox/verify-sandbox-battery.sh` |
 | Global SessionStart verifier  | `.devcontainer/claude-sandbox/sandbox-verify.sh`    |
 | Global UserPromptSubmit gate  | `.devcontainer/claude-sandbox/sandbox-gate.sh`      |

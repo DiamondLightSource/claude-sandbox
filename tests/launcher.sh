@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Launcher argv tests for container/claude-container — the verbs, the
-# host-network default, the pre-4.0 flag refusals, the in-container refusal
+# host-network default, the in-container refusal
 # and the uvx-aware update hint. Drives the REAL launcher against a fake
 # container engine on PATH that logs every call and answers the inspect
 # queries the launcher makes; no image, no container, no network.
@@ -32,7 +32,15 @@ case "$*" in
         [ -n "${FAKE_IMG_VER:-}" ] && echo "$FAKE_IMG_VER" ;;
     "image inspect -f {{index .Config.Labels \"org.opencontainers.image.revision\"}} "*) echo abc123 ;;
     "image inspect -f {{.Id}} "*) echo img1 ;;
-    "create "*) touch "$MARK" ;;
+    "start "*) touch "$MARK" ;;
+    "create "*)
+        touch "$MARK"
+        for arg in "$@"; do
+            case "$arg" in
+                CLAUDE_SANDBOX_ALLOW_WRITE=*) printf '%s' "${arg#*=}" > "$LOG.mount-env" ;;
+            esac
+        done
+        ;;
     "run --rm --entrypoint find -v "*" /cache/venv-for "*) cat "$VENVS" 2>/dev/null ;;
     "ps -a --filter name=^claude-sandbox- --format {{.Names}}") cat "$PS" 2>/dev/null ;;
     "images --filter reference=*/diamondlightsource/claude-sandbox --format {{.Repository}}:{{.Tag}}") cat "$IMAGES" 2>/dev/null ;;
@@ -46,7 +54,7 @@ chmod +x "$TMP/bin/podman"
 run() {
     local -a envs=()
     while [ "$1" != "--" ]; do envs+=( "$1" ); shift; done; shift
-    : > "$LOG"; rm -f "$TMP/mark"
+    : > "$LOG"; rm -f "$TMP/mark" "$LOG.mount-env"
     ( cd "${PROJECT:-$TMP/project}" && env -i PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP" \
         LOG="$LOG" MARK="$TMP/mark" PS="$TMP/ps" IMAGES="$TMP/images" VENVS="$TMP/venvs" CLAUDE_SANDBOX_NESTED=1 "${envs[@]}" \
         bash "$LAUNCHER" "$@" 2>"$TMP/err" ); RC=$?
@@ -92,6 +100,23 @@ mkdir -p "$TMP/ws/project" "$TMP/ro" "$TMP/rw"
 PROJECT="$TMP/ws/project" run --
 case "$(create_line)" in *"--mount type=bind,src=$TMP/ws,dst=$TMP/ws,bind-propagation=slave -v $TMP/ws/project:$TMP/ws/project -w"*) pass ;; *) fail "parent not rw before project: $(create_line)" ;; esac
 assert_not_contains "parent not in allow-write" "$(create_line)" "ALLOW_WRITE=$TMP/ws "
+PROJECT="$TMP/ws/project" run -- --no-peers
+assert_parse 'no-peers skips parent mount' grep -Fvq -- "src=$TMP/ws,dst=$TMP/ws," <<< "$(create_line)"
+assert_parse 'no-peers retains project mount' grep -Fq -- "-v $TMP/ws/project:$TMP/ws/project -w $TMP/ws/project" <<< "$(create_line)"
+assert_parse 'no-peers is not an agent argument' grep -Fvq -- '--no-peers' <<< "$(exec_line)"
+PROJECT="$TMP/ws/project" run -- --no-peers --mount "$TMP/ro" --mount-rw "$TMP/rw"
+assert_parse 'no-peers retains explicit read-only mount' grep -Fq -- "src=$TMP/ro,dst=$TMP/ro,ro,bind-propagation=slave" <<< "$(create_line)"
+assert_parse 'no-peers retains explicit writable mount' grep -Fq -- "src=$TMP/rw,dst=$TMP/rw,bind-propagation=slave" <<< "$(create_line)"
+assert_eq 'no-peers retains sandbox write permission' "$TMP/rw" "$(cat "$LOG.mount-env")"
+# Reuse an existing container: create-time options must not silently imply
+# that an existing parent mount has been removed.
+printf '%s\n' "claude-sandbox-project-$(printf '%s' "$TMP/ws/project" | cksum | awk '{print $1}')" > "$TMP/ps"
+PROJECT="$TMP/ws/project" run -- --no-peers
+assert_eq 'no-peers reuse does not recreate' '' "$(create_line)"
+assert_eq 'no-peers reuse completes normally' 0 "$RC"
+assert_parse 'no-peers reuse warns option was ignored' grep -Fq -- 'create-time option(s) ignored on an existing container: --no-peers' <<< "$ERR"
+assert_parse 'no-peers reuse explains recreation' grep -Fq -- 'use --recreate to apply them' <<< "$ERR"
+rm -f "$TMP/ps"
 run --   # project directly under $HOME: parent holds ~, must not be mounted
 assert_not_contains "parent containing HOME is not mounted" "$(create_line)" "src=$TMP,dst=$TMP,"
 case "$ERR" in *"contains your home directory"*) pass ;; *) fail "HOME guard silent: $ERR" ;; esac
@@ -101,6 +126,24 @@ case "$(create_line)" in *"src=$TMP/rw,dst=$TMP/rw,bind-propagation=slave"*) pas
 case "$(create_line)" in *"-e CLAUDE_SANDBOX_ALLOW_WRITE=$TMP/rw "*) pass ;; *) fail "allow-write missing rw mount: $(create_line)" ;; esac
 assert_not_contains "ro mount not in allow-write" "$(create_line)" "ALLOW_WRITE=$TMP/rw:$TMP/ro"
 run -- --mount; [ "$RC" = 1 ] && pass || fail "--mount without PATH accepted (rc=$RC)"
+
+# Exercise the format handed from the host launcher to the actual shadow.
+mkdir -p "$TMP/rw second" "$TMP/from-env"
+run CLAUDE_SANDBOX_ALLOW_WRITE="$TMP/from-env" -- --mount-rw "$TMP/rw" --mount-rw "$TMP/rw second"
+assert_eq 'merge writable mount paths as lines' \
+    "$TMP/from-env"$'\n'"$TMP/rw"$'\n'"$TMP/rw second" "$(cat "$LOG.mount-env")"
+binds="$(
+    export CLAUDE_SHADOW_SOURCE_ONLY=1
+    source "$HERE/../.devcontainer/claude-sandbox/claude-shadow"
+    CLAUDE_SANDBOX_ALLOW_WRITE="$(cat "$LOG.mount-env")"
+    bwrap_argv_build built "$TMP/project" /fake/claude
+    printf '%s\n' "${built[@]}"
+)"
+for path in "$TMP/from-env" "$TMP/rw" "$TMP/rw second"; do
+    assert_pair 'host writable path reaches sandbox' "$binds" --bind "$path"
+done
+run CLAUDE_SANDBOX_ALLOW_WRITE="$TMP/from-env" --
+assert_eq 'forward writable environment without mount flags' "$TMP/from-env" "$(cat "$LOG.mount-env")"
 
 # --- env: locale always, X11 only when the host has a DISPLAY --------------
 run --; case "$(create_line)" in *"-e LANG=en_US.UTF-8"*) pass ;; *) fail "LANG default: $(create_line)" ;; esac
@@ -123,17 +166,6 @@ assert_not_contains "volume name not baked as env" "$(create_line)" "-e CLAUDE_S
 run CLAUDE_SANDBOX_CACHE= --
 case "$(create_line)" in *":/cache "*) fail "empty name should disable the volume: $(create_line)" ;; *) pass ;; esac
 
-# --- a typo'd verb still goes to claude, with a hint ------------------------
-run -- clear --venvs
-case "$(exec_line)" in *" claude clear --venvs") pass ;; *) fail "typo'd verb must still be agent argv: $(exec_line)" ;; esac
-case "$ERR" in *"not a launcher verb"*) pass ;; *) fail "no near-miss hint: $ERR" ;; esac
-run -- "fix the failing test"; case "$ERR" in *"not a launcher verb"*) fail "hint fired on an ordinary prompt" ;; *) pass ;; esac
-
-# --- pre-4.0 spellings refuse rather than leak into agent argv -------------
-for old in --agent --host-net --shell; do
-    run -- $old codex
-    [ "$RC" = 2 ] && [ -z "$(exec_line)" ] && pass || fail "$old accepted (rc=$RC)"
-done
 run -- install; [ "$RC" = 2 ] && pass || fail "install verb accepted by the script (rc=$RC)"
 
 # --- in-container refusal (seam off) ---------------------------------------

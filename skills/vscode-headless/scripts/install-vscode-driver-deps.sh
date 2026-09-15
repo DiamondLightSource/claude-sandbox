@@ -9,8 +9,8 @@
 # container is recreated. VS Code itself goes on the /cache volume, which
 # survives recreation.
 #
-# The agent should have copied this file to /cache or the workspace before
-# naming it: its own skills directory is a bind that exists only in the jail.
+# Run the installed copy under /usr/libexec/claude-sandbox/skills/vscode-headless/
+# scripts/ directly; that source exists in the outer container too.
 #
 # Review before running: this script runs unsandboxed as root.
 set -eu

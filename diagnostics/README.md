@@ -17,5 +17,5 @@ container.
 | `probe-network-jail.sh` | Full surgical-routing policy end-to-end: IPv4-only netns (no IPv6 address family); RFC1918, CGNAT (100.64/10), and every connected subnet blackholed; gateway, DNS, and allow-ip devices reachable; routes immutable from inside the jail. |
 | `probe-network-jail-caps.sh` | Cap-ceiling diligence: confirms the full `CapBnd` (present because the jail nests a userns) cannot be re-raised to weaken the read-only mounts. |
 
-These complement — they do not replace — the in-sandbox integrity battery
-(`/verify-sandbox`, `sandbox-verify.sh`), which runs *inside* the jail.
+The in-sandbox integrity battery (`claude-sandbox verify`) runs inside the
+jail. These diagnostics inspect the surrounding namespace setup.

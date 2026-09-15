@@ -46,6 +46,7 @@ JAIL_DNS_FWD="192.0.2.53"
 # scope without running the launch body (nor the recursion guard, which
 # would exec the real binary inside an already-sandboxed session).
 : "${CLAUDE_SHADOW_SOURCE_ONLY:=0}"
+SANDBOX_VERIFY=0
 
 # filter_chrome_args OUTVAR ARGS...: set array OUTVAR to ARGS with any
 # `--chrome` removed. Stripping it stops a user-supplied flag from overriding
@@ -64,26 +65,11 @@ filter_chrome_args() {
     done
 }
 
-# ── Agent profiles ────────────────────────────────────────────────────
-# The sandbox wraps more than one coding agent: Claude Code, and OpenAI's
-# Codex CLI (the client for GPT-6 Astra). They differ only in which binary
-# to exec, which $HOME paths carry their login, and which flags to inject.
-# The security-critical parts — the bwrap argv, the egress jail, the
-# script(1) pty wrap — are identical, and must stay that way.
-#
-# So: ONE file, installed under both names, dispatching on argv[0]. A
-# second 800-line shadow to keep in sync would rebuild exactly the
-# "surface too big to audit in one read" that the bash-only rewrite
-# walked back from.
-#
-# The real binaries live off the user's PATH (/usr/libexec/claude-sandbox/)
-# so plain `claude` / `codex` always resolve to the shadow in
-# /usr/local/bin. Both vendors' installers drop their binary in
-# ~/.local/bin AND prepend that dir to the user's shell rc; install.sh
-# relocates both so the rc-mutation is inert (Invariant 1).
+# Agent profiles select the binary, persistent state and injected flags.
+# All agents share the same filesystem, network and terminal isolation.
 
 # Shipped skills: the repo's top-level skills/ tree, placed by install.sh
-# under /usr/libexec next to the guard scripts (root-owned, ro in-session).
+# under /usr/libexec next to the runtime helpers (root-owned, ro in-session).
 # The argv builder binds each one read-only onto the agent's own skills
 # directory INSIDE the sandbox, so the user's host ~/.claude (or ~/.codex,
 # ~/.pi) is never written to and the skill's scripts cannot be rewritten by
@@ -230,31 +216,34 @@ agent_profile() {
     esac
 }
 
-# agent_inner_path HOME: where the agent is exec'd from INSIDE the sandbox.
-# Bind-back agents (claude) run from the conventional $HOME/.local/bin/<agent>
-# that the argv builder binds the real binary onto; the rest run in place from
-# their root-owned, read-only /usr/libexec path, which is already visible via
-# --ro-bind / /.
-agent_inner_path() {
-    if [ "$AGENT_BIND_BACK" = "1" ]; then
-        printf '%s/%s\n' "$1" "$AGENT_INNER_REL"
-    else
-        printf '%s\n' "$AGENT_REAL"
-    fi
-}
-
-# One dispatch path for both fresh sandboxes and already-sandboxed spawns.
-# Pass the real executable explicitly so the launcher has no relocation path.
+# agent_exec_argv OUT HOME: build the command for fresh and nested launches.
 agent_exec_argv() {
-    if [ "$AGENT" = codex ]; then
-        printf '%s\n' /usr/libexec/claude-sandbox/codex-launch "$AGENT_REAL"
-    else
-        agent_inner_path "$1"
+    local -n _command_out="$1"
+    local agent_home="$2"
+    if [ "$SANDBOX_VERIFY" = 1 ]; then
+        _command_out=( /bin/bash /usr/libexec/claude-sandbox/verify-sandbox-battery.sh )
+        return 0
     fi
+    if [ "$AGENT" = codex ]; then
+        _command_out=( /usr/libexec/claude-sandbox/codex-launch "$AGENT_REAL" )
+    elif [ "$AGENT_BIND_BACK" = 1 ]; then
+        _command_out=( "$agent_home/$AGENT_INNER_REL" )
+    else
+        _command_out=( "$AGENT_REAL" )
+    fi
+    _command_out+=( "${AGENT_INJECT[@]}" )
 }
 
 AGENT="$(detect_agent "${0:-claude}" "${CLAUDE_SANDBOX_AGENT:-}")" || exit 1
 agent_profile "$AGENT" || exit 1
+
+# Internal command used by the helper CLI. Runs the battery through the same
+# profile and isolation setup without starting a model or asking for input.
+if [ "$CLAUDE_SHADOW_SOURCE_ONLY" != 1 ] && [ "${1:-}" = --sandbox-verify ]; then
+    shift
+    [ "$#" = 0 ] || { echo 'claude-sandbox: --sandbox-verify takes no arguments' >&2; exit 2; }
+    SANDBOX_VERIFY=1
+fi
 
 # Recursion guard: if IS_SANDBOX=1 is already set we are inside the
 # sandbox (e.g. a hook or skill spawned the agent), so use the same agent
@@ -269,27 +258,19 @@ if [ "$CLAUDE_SHADOW_SOURCE_ONLY" != "1" ] && [ "${IS_SANDBOX:-}" = "1" ]; then
     else
         _filtered=( "$@" )
     fi
-    mapfile -t _agent_command < <(agent_exec_argv "${HOME:-/root}")
-    exec "${_agent_command[@]}" \
-        "${AGENT_INJECT[@]+"${AGENT_INJECT[@]}"}" "${_filtered[@]+"${_filtered[@]}"}"
+    agent_exec_argv _agent_command "${HOME:-/root}"
+    exec "${_agent_command[@]}" "${_filtered[@]}"
 fi
 
 # Export so the inlined bwrap_argv_build picks up the gitconfig path.
 export CLAUDE_SANDBOX_GITCONFIG_PATH="$GITCONFIG_PATH"
 
-# BwrapArgvBuilder: pure-function emitting the bwrap argv. Deterministic
-# given (workspace, real_claude, "$@") and ($HOME,
-# $CLAUDE_SANDBOX_GITCONFIG_PATH, $CLAUDE_SANDBOX_NO_FORGE,
-# $CLAUDE_SANDBOX_ALLOW_WRITE, $CLAUDE_SANDBOX_PASS_ENV — plus whatever
-# variables that last one names). No I/O, no subprocesses — sourced by
-# tests/bwrap_argv.sh and called in isolation.
-#
-# Procfs is always `--ro-bind /proc /proc` (no per-launch probe). Trade-
-# off: host PIDs are enumerable from inside the sandbox (info-disclosure),
-# but credential-bearing procfs entries stay gated by YAMA
-# ptrace_scope=1. Kernel-level pidns isolation (kill/ptrace scoping)
-# remains intact via --unshare-pid.
+# bwrap_argv_build OUT WORKSPACE REAL ARGS...: fill OUT with the bwrap command.
+# Reads configuration and source-path availability without creating files.
+# Keep arguments as arrays so newlines and empty strings survive unchanged.
+# Host procfs is read-only; PID namespace isolation still scopes kill/ptrace.
 bwrap_argv_build() {
+    local -n _bwrap_out="$1"; shift
     local workspace="$1"; shift
     local real_agent="$1"; shift
 
@@ -401,9 +382,8 @@ bwrap_argv_build() {
     # agent-spawns-agent path lookups see the path they expect.
     # Unconditional — the shadow's loud-fail upstream catches a missing
     # real binary.
-    local inner; inner="$(agent_inner_path "$home")"
     if [ "$AGENT_BIND_BACK" = "1" ]; then
-        argv+=( --bind "$real_agent" "$inner" )
+        argv+=( --bind "$real_agent" "$home/$AGENT_INNER_REL" )
     fi
 
     if [ -n "$workspace" ] && [ -d "$workspace" ]; then
@@ -447,13 +427,7 @@ bwrap_argv_build() {
         fi
     done
 
-    # Egress-jail DNS override (ADR 0015, issue #60). On a stub-resolver host
-    # the launch path detects that /etc/resolv.conf points only at loopback
-    # resolvers (unreachable from the jail's netns) and stages a one-line
-    # resolv.conf aimed at the in-netns pasta forwarder; bind it over the
-    # host's so Claude queries the forwarder instead of the dead stub. Gated on
-    # the env var (set only on that path) so the non-jail / routable-resolver
-    # argv — and the bwrap_argv unit test — are byte-for-byte unchanged.
+    # Use the staged pasta-forwarder resolver inside the network jail.
     if [ -n "${CLAUDE_SANDBOX_JAIL_RESOLV:-}" ] && [ -r "${CLAUDE_SANDBOX_JAIL_RESOLV}" ]; then
         argv+=( --ro-bind "$CLAUDE_SANDBOX_JAIL_RESOLV" /etc/resolv.conf )
     fi
@@ -595,10 +569,9 @@ bwrap_argv_build() {
     # Exec via the in-sandbox conventional path so the agent's argv[0]
     # matches what its official installer would have placed.
     local -a agent_command=()
-    mapfile -t agent_command < <(agent_exec_argv "$home")
-    argv+=( -- "${agent_command[@]}" \
-        "${AGENT_INJECT[@]+"${AGENT_INJECT[@]}"}" "${user_args[@]+"${user_args[@]}"}" )
-    printf '%s\n' "${argv[@]}"
+    agent_exec_argv agent_command "$home"
+    argv+=( -- "${agent_command[@]}" "${user_args[@]}" )
+    _bwrap_out=( "${argv[@]}" )
 }
 
 # resolve_workspace_root: pure function picking the rw bind-mount root.
@@ -819,19 +792,9 @@ netns_holder() {
         || jail_fail "— failed to pin gateway $gw on-link (fail-closed)"
     ip route replace default via "$gw" dev "$nic" || jail_fail "— failed to restore default via $gw (fail-closed)"
 
-    # DNS — the ONLY punch is the pasta forwarder. Claude's resolv.conf always
-    # points at JAIL_DNS_FWD (jail_stage_dns), pasta answers there from inside
-    # the netns and relays to the host's real resolvers from the HOST netns, so
-    # the jail never needs a route to a real resolver.
-    #
-    # We deliberately do NOT punch /32s for the resolvers in /etc/resolv.conf
-    # any more. Those were holes through the RFC1918 blackhole aimed at real
-    # internal hosts, and a compromised agent can talk to whatever is on the
-    # far side — a DNS server is a host like any other, reachable on every port
-    # the punch allows, not just 53. Routing DNS through pasta removes that
-    # surface entirely: JAIL_DNS_FWD is RFC5737 TEST-NET, non-routable, and
-    # terminates in pasta rather than on the LAN. Punching it is always safe;
-    # fail-soft, since a failure costs resolution, not containment.
+    # Route DNS only to the pasta forwarder, which queries the host resolver
+    # outside the jail. A direct route to an internal resolver would expose
+    # every port on that host. Failure here loses DNS, not containment.
     ip route replace "${JAIL_DNS_FWD}/32" via "$gw" 2>/dev/null \
         || echo "claude-sandbox: egress jail — could not route DNS forwarder $JAIL_DNS_FWD" >&2
 
@@ -1051,25 +1014,8 @@ egress_jail_enabled() {
     [ "${CLAUDE_SANDBOX_EGRESS_JAIL:-1}" != "0" ]
 }
 
-# jail_stage_dns: point Claude's DNS at the pasta forwarder (ADR 0015, issues
-# #60 and #11). ALWAYS — there is one DNS path in the jail, not two. Stage a
-# resolv.conf naming JAIL_DNS_FWD and export its path so bwrap_argv_build binds
-# it over Claude's /etc/resolv.conf. Runs in the main flow (not the holder)
-# because the bind must be staged before the argv is built.
-#
-# Unconditional for two reasons. Security: it lets netns_holder drop the
-# per-resolver /32 punches, so no hole through the blackhole points at a real
-# internal host (see the DNS block there). Correctness: pasta's --dns-forward
-# implies --dns-host = the FIRST resolver in the host's resolv.conf, and pasta
-# reverse-translates that host's replies to come from JAIL_DNS_FWD. Anything
-# querying resolver #1 directly therefore gets a reply from an unexpected
-# source, which a connected UDP socket discards — resolver #1 reads as dead
-# from inside the jail. That silently broke the first resolver for every
-# routable-resolver host (issue #11); routing all DNS through the forwarder
-# makes the translation the intended path instead of a trap.
-#
-# search / domain / options are copied from the host resolv.conf: dropping them
-# would break short-name resolution on sites that rely on a search list.
+# Stage the resolver before building the bwrap arguments. All jailed DNS
+# uses the pasta forwarder; preserve search domains and resolver options.
 jail_stage_dns() {
     local f
     if ! f="$(mktemp "${TMPDIR:-/tmp}/claude-jail-resolv.XXXXXX" 2>/dev/null)"; then
@@ -1145,32 +1091,10 @@ netns_launch() {
     wait_for test -e "/proc/$holder/ns/net" \
         || jail_fail "— holder netns never appeared" "$holder"
 
-    # pasta attaches from OUTSIDE the netns (it needs host connectivity to
-    # proxy), configures the default route, and backgrounds itself.
-    # pasta prints an early IPv6 notice to stderr *before* it opens --log-file,
-    # so flags can't suppress it; redirect stderr to the same log so the terminal
-    # stays clean while early-startup failures are still captured.
-    # --ipv4-only (ADR 0015, H1): give the netns NO IPv6 at all. Without it pasta
-    # mirrors the host's v6 connectivity (GUA/ULA/link-local) into the netns, an
-    # entire address family the IPv4 routing allowlist does not cover — a lateral-
-    # movement path around the v4 blackholes. The DNS forwarder JAIL_DNS_FWD is
-    # IPv4 (192.0.2.53), so --dns-forward is unaffected.
-    # --dns-forward makes pasta listen on JAIL_DNS_FWD inside the netns and
-    # relay DNS to the host's real resolvers (issue #60). It is the ONLY way
-    # Claude resolves in the jail: jail_stage_dns always points resolv.conf
-    # here, and netns_holder punches no route to any real resolver.
-    #
-    # NOT side-effect-free, which is why nothing may query a real resolver
-    # directly: --dns-forward implies --dns-host = the first resolver in the
-    # host's resolv.conf, and pasta reverse-translates that host's port-53
-    # replies to come from JAIL_DNS_FWD. A direct query to resolver #1 gets a
-    # reply from an unexpected source and the kernel drops it on a connected
-    # socket (issue #11).
-    # pasta defaults to automatic port forwarding in BOTH directions and maps
-    # the gateway to host loopback. Neither is part of the route allowlist:
-    # -T auto would expose unrelated localhost services (and occupy our relay's
-    # port), while gateway mapping reaches host services through the pinned gw.
-    # Disable those shortcuts for every agent; the optional relay is explicit.
+    # Attach pasta from the outer namespace. IPv4-only keeps all traffic
+    # within the routing policy. Disable automatic port forwarding and
+    # gateway-to-loopback mapping; loopback access uses explicit relays.
+    # Capture startup diagnostics as well as pasta's regular log.
     if ! pasta --config-net --ipv4-only --no-map-gw -t none -u none -T none -U none \
         --dns-forward "$JAIL_DNS_FWD" --quiet --log-file /tmp/claude-pasta.log "$holder" 2>>/tmp/claude-pasta.log; then
         jail_fail "— pasta failed to attach to the netns (see /tmp/claude-pasta.log)" "$holder"
@@ -1195,7 +1119,7 @@ check_config_persistence() {
     mountpoint -q "$cfg_dir" 2>/dev/null && return 0
     printf '\n\033[33mWARNING\033[0m: ~/%s is not host-mounted.\n' "${AGENT_HOME_DIRS[0]}" >&2
     printf '%s memory, settings, and login state will be lost on devcontainer rebuild.\n' "$AGENT_LABEL" >&2
-    printf 'See https://diamondlightsource.github.io/claude-sandbox/how-to/persist-login-and-memory.html\n\n' >&2
+    printf 'See https://diamondlightsource.github.io/claude-sandbox/how-to/use-the-container-image.html#authentication-and-persistence\n\n' >&2
     read -rsp "Press any key to continue..." -n 1 _key </dev/tty
     printf '\n\n' >&2
 }
@@ -1205,16 +1129,13 @@ check_config_persistence() {
 # dev.containers.copyGitConfig fires AFTER postCreate, so an install-time render
 # can have an empty user.name; by the time the user types `claude`, copyGitConfig
 # has run, and this re-render makes the [user] block reflect the real identity.
-render_gitconfig() {
-    local git_name git_email
+render_gitconfig() (
+    local git_name git_email tmp
     git_name=$(git config --get user.name 2>/dev/null || true)
     git_email=$(git config --get user.email 2>/dev/null || true)
+    tmp="$(mktemp "$CLAUDE_SANDBOX_GITCONFIG_PATH.XXXXXX")"
+    trap 'rm -f "$tmp"' EXIT
     {
-        cat <<EOF
-[user]
-    name = $git_name
-    email = $git_email
-EOF
         if [ "${CLAUDE_SANDBOX_NO_FORGE:-}" != "1" ]; then
             cat <<'EOF'
 [credential "https://github.com"]
@@ -1235,7 +1156,31 @@ EOF
 [safe]
     directory = *
 EOF
-    } > "$CLAUDE_SANDBOX_GITCONFIG_PATH"
+    } > "$tmp"
+    git config --file "$tmp" user.name "$git_name"
+    git config --file "$tmp" user.email "$git_email"
+    chmod 0644 "$tmp"
+    mv "$tmp" "$CLAUDE_SANDBOX_GITCONFIG_PATH"
+)
+
+# Resolve configuration before creating credential dirs or building mounts.
+configure_launch() {
+    parse_config "$CONFIG_PATH"
+    render_gitconfig
+}
+
+# Run in a fresh terminal, preserving the wrapped command's exit status.
+sandbox_launch() {
+    local command
+    printf -v command '%q ' "$@"
+    # printf %q uses Bash quoting, including $'...' for embedded newlines.
+    local -x SHELL=/bin/bash
+    local -a terminal=( script --return -q -E never -c "$command" /dev/null )
+    if egress_jail_enabled; then
+        netns_launch "${terminal[@]}"
+    else
+        exec "${terminal[@]}"
+    fi
 }
 
 # Guard: tests source this file with CLAUDE_SHADOW_SOURCE_ONLY=1 so
@@ -1284,7 +1229,10 @@ if cmp -s "$AGENT_REAL" "$0"; then
     exit 1
 fi
 
-check_config_persistence
+configure_launch
+if [ "$SANDBOX_VERIFY" != 1 ]; then
+    check_config_persistence
+fi
 
 # Pre-create forge credential dirs so the argv builder's --bind succeeds
 # on first run. Skipped when CLAUDE_SANDBOX_NO_FORGE=1 since those binds
@@ -1324,31 +1272,16 @@ if ! mkdir -p "${HOME:-/root}/$SHARED_SKILLS_REL" 2>/dev/null; then
     echo "claude-sandbox: cannot create ~/$SHARED_SKILLS_REL; shared skills are unavailable this session." >&2
 fi
 
-render_gitconfig
-
-parse_config "$CONFIG_PATH"
-# Stage the jail's DNS override (issue #60) before the argv is built — on a
-# stub-resolver host this exports CLAUDE_SANDBOX_JAIL_RESOLV so bwrap_argv_build
-# binds a forwarder-pointed resolv.conf. No-op when the jail is off or routable
-# resolvers exist (keeps the office path byte-for-byte unchanged).
+# Stage the DNS forwarder configuration before building the arguments.
 if egress_jail_enabled; then
     jail_stage_dns
 fi
 WORKSPACE_ROOT="$(resolve_workspace_root "$PWD")"
-mapfile -t ARGV < <(bwrap_argv_build "$WORKSPACE_ROOT" "$AGENT_REAL" "$@")
+bwrap_argv_build ARGV "$WORKSPACE_ROOT" "$AGENT_REAL" "$@"
 
 # Wrap bwrap in script(1) so the sandbox runs inside a freshly-allocated
 # pseudo-terminal. SIGWINCH propagates, job control works, and TIOCSTI
 # is defanged (an ioctl inside the sandbox lands in script's pty, which
 # script reads and writes back as bytes — not keystrokes — to the host
 # terminal). Build the script(1) command once for both launch paths.
-SANDBOX_CMD="$(printf '%q ' "${ARGV[@]}")"
-if egress_jail_enabled; then
-    # ADR 0015 (on by default): run the sandbox inside a pasta-bridged netns
-    # with a routing allowlist. netns_launch cannot `exec` — it must stay
-    # foreground to drive the holder/pasta handshake — so it exits with the
-    # sandbox's status. Disable per host with CLAUDE_SANDBOX_EGRESS_JAIL=0.
-    netns_launch script -q -E never -c "$SANDBOX_CMD" /dev/null
-else
-    exec script -q -E never -c "$SANDBOX_CMD" /dev/null
-fi
+sandbox_launch "${ARGV[@]}"

@@ -55,6 +55,12 @@ jobs:
       - name: Run Codex launcher lifecycle tests
         run: bash tests/codex_launch.sh
 
+      - name: Run shadow terminal wrapper tests
+        run: bash tests/shadow_launch.sh
+
+      - name: Run direct sandbox verification tests
+        run: bash tests/verify.sh
+
       # Which git ref `install` selects, and when it refuses to select one.
       # Hermetic — builds its own throwaway origin+clone with synthetic tags,
       # so it never touches this checkout. `sudo` only to clear the shim's own
@@ -73,13 +79,18 @@ jobs:
       - name: Run Pi profile and configuration tests
         run: bash tests/pi.sh
 
-      # The container launcher's verbs, host-net default, pre-4.0 refusals
-      # and in-container refusal, against a fake engine (no image needed).
+      - name: Compare container and image installation modes
+        run: bash tests/install_modes.sh
+
+      # Launcher verbs and host-network default against a fake engine.
       - name: Run container launcher tests
         run: bash tests/launcher.sh
 
       - name: Run container Git configuration tests
         run: bash tests/container_git.sh
+
+      - name: Run shadow Git configuration tests
+        run: bash tests/shadow_git.sh
 
   wheel:
     # The PyPI front door (ADR 23) is the one Python packaging in the repo:
@@ -218,14 +229,14 @@ jobs:
     uses: ./.github/workflows/_dist.yml
 
   pypi:
-    needs: [dist, test, wheel]
+    needs: [dist, test, wheel, egress-jail, lint]
     if: github.ref_type == 'tag'
     uses: ./.github/workflows/_pypi.yml
     permissions:
       id-token: write
 
   release:
-    needs: [dist, test, wheel]
+    needs: [dist, test, wheel, egress-jail, lint]
     if: github.ref_type == 'tag'
     uses: ./.github/workflows/_release.yml
     permissions:

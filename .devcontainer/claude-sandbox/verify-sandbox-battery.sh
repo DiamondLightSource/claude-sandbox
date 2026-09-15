@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # verify-sandbox phase-1 battery — the 21 deterministic PASS/FAIL checks
-# behind the /verify-sandbox command (.claude/commands/verify-sandbox.md).
+# behind the /verify-sandbox command (skills/verify-sandbox/SKILL.md).
 #
 # WHY THIS IS A COMMITTED SCRIPT, NOT INLINE IN THE COMMAND MARKDOWN:
 #   - Slash-command loading substitutes $1..$9 as POSITIONAL ARGUMENTS.
@@ -18,8 +18,7 @@
 #
 # WHERE IT LIVES: installed to /usr/libexec/claude-sandbox (off the
 # user's PATH, root-owned, ro-bound inside the sandbox via `--ro-bind /
-# /`) — same neighbourhood and tamper-resistance as sandbox-verify.sh /
-# sandbox-gate.sh and the relocated real binary. A compromised in-session
+# /`) — alongside the relocated real binary. A compromised in-session
 # Claude (workspace is rw) therefore cannot rewrite the verifier to print
 # PASS for a broken sandbox.
 #
@@ -137,7 +136,7 @@ fi
 # 04 — env scrub: host API/forge credentials must not survive --clearenv.
 # OPENAI_API_KEY is asserted for BOTH agents, not just codex: an OpenAI key on
 # the host is a credential the jail must not hand to any session, whichever
-# agent is running. Mirrors sandbox-verify.sh's leak list.
+# agent is running.
 scrub_leaks=""
 [ -z "${GH_TOKEN:-}" ]        || scrub_leaks="$scrub_leaks GH_TOKEN"
 [ -z "${OPENAI_API_KEY:-}" ]  || scrub_leaks="$scrub_leaks OPENAI_API_KEY"

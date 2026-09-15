@@ -46,7 +46,7 @@ unset VIRTUAL_ENV UV_PROJECT_ENVIRONMENT UV_CACHE_DIR UV_PYTHON_CACHE_DIR \
 # --- Scenario 1: vanilla (workspace=/workspaces/foo, $HOME=/root) ---
 unset TERM LANG LC_ALL LC_CTYPE LC_MESSAGES LC_TIME LC_COLLATE LC_NUMERIC LC_MONETARY
 ARGV1="$(HOME=/root CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build /workspaces/foo /test/.local/bin/claude)"
+    bwrap_argv_lines /workspaces/foo /test/.local/bin/claude)"
 
 assert_contains scenario1 "$ARGV1" "bwrap"
 assert_contains scenario1 "$ARGV1" "--ro-bind"
@@ -97,7 +97,7 @@ fi
 
 # --- Scenario 2: workspace empty string → no workspace bind line ---
 ARGV2="$(HOME=/root CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build "" /test/.local/bin/claude)"
+    bwrap_argv_lines "" /test/.local/bin/claude)"
 # No bind for an empty workspace. The argv is otherwise intact.
 assert_contains scenario2 "$ARGV2" "bwrap"
 assert_contains scenario2 "$ARGV2" "--clearenv"
@@ -107,7 +107,7 @@ assert_contains scenario2 "$ARGV2" "--clearenv"
 
 # --- Scenario 3: workspace at an unusual non-existent path ---
 ARGV3="$(HOME=/root CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build /srv/weird-workspace-path /test/.local/bin/claude)"
+    bwrap_argv_lines /srv/weird-workspace-path /test/.local/bin/claude)"
 assert_not_contains scenario3 "$ARGV3" "/srv/weird-workspace-path"
 
 # --- Scenario 4: bind-back loop over $HOME (tmpdir-based fixture) ---
@@ -116,7 +116,7 @@ register_cleanup "$TMPHOME"
 mkdir -p "$TMPHOME/.claude" "$TMPHOME/.config/gh"
 
 ARGV4a="$(HOME="$TMPHOME" CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+    bwrap_argv_lines "$TMPHOME" /test/.local/bin/claude)"
 assert_contains scenario4a "$ARGV4a" "$TMPHOME/.claude"
 assert_contains scenario4a "$ARGV4a" "$TMPHOME/.config/gh"
 # Absent paths must NOT appear.
@@ -140,7 +140,7 @@ touch "$TMPHOME/.claude.json" "$TMPHOME/.local/bin/uv" "$TMPHOME/.local/bin/uvx"
 mkdir -p "$TMPHOME/.config/Code"
 
 ARGV4b="$(HOME="$TMPHOME" CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+    bwrap_argv_lines "$TMPHOME" /test/.local/bin/claude)"
 assert_contains scenario4b "$ARGV4b" "$TMPHOME/.claude"
 assert_contains scenario4b "$ARGV4b" "$TMPHOME/.cache"
 assert_contains scenario4b "$ARGV4b" "$TMPHOME/.config/gh"
@@ -160,7 +160,7 @@ assert_not_contains scenario4b "$ARGV4b" "$TMPHOME/.config/Code"
 # --- Scenario 5: pass-through env (TERM, LANG) appear as --setenv pairs ---
 ARGV5="$(HOME=/root CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
     TERM=xterm-256color LANG=en_US.UTF-8 \
-    bwrap_argv_build /workspaces/foo /test/.local/bin/claude)"
+    bwrap_argv_lines /workspaces/foo /test/.local/bin/claude)"
 assert_contains scenario5 "$ARGV5" "TERM"
 assert_contains scenario5 "$ARGV5" "xterm-256color"
 assert_contains scenario5 "$ARGV5" "LANG"
@@ -180,7 +180,7 @@ assert_pair scenario7-default "$ARGV1" "/root/.local/bin/claude" "--no-chrome"
 
 # User passes --chrome — it must be filtered out, --no-chrome stays.
 ARGV7="$(HOME=/root CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build /workspaces/foo /test/.local/bin/claude --chrome --version)"
+    bwrap_argv_lines /workspaces/foo /test/.local/bin/claude --chrome --version)"
 assert_contains scenario7-strip "$ARGV7" "--no-chrome"
 assert_not_contains scenario7-strip "$ARGV7" "--chrome"
 # User's legit args still pass through.
@@ -230,7 +230,7 @@ assert_eq scenario8-empty-override-fallback "/tmp/bar" \
 mkdir -p "$TMPHOME/venv/bin"
 ARGV8B="$(HOME="$TMPHOME" VIRTUAL_ENV="$TMPHOME/venv" \
     CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+    bwrap_argv_lines "$TMPHOME" /test/.local/bin/claude)"
 assert_contains scenario8b-venv-appended "$ARGV8B" \
     "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$TMPHOME/.local/bin:$TMPHOME/venv/bin"
 assert_pair scenario8b-venv-passthrough "$ARGV8B" '--setenv' 'VIRTUAL_ENV'
@@ -239,7 +239,7 @@ assert_pair scenario8b-venv-passthrough "$ARGV8B" '--setenv' 'VIRTUAL_ENV'
 # re-installs tools into the ephemeral home every session.
 ARGV8C="$(HOME="$TMPHOME" UV_PYTHON_INSTALL_DIR=/opt/uv/python UV_TOOL_DIR=/cache/uv-tools \
     CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+    bwrap_argv_lines "$TMPHOME" /test/.local/bin/claude)"
 assert_pair scenario8c-uv-python-dir "$ARGV8C" '--setenv' 'UV_PYTHON_INSTALL_DIR'
 assert_pair scenario8c-uv-tool-dir "$ARGV8C" '--setenv' 'UV_TOOL_DIR'
 
@@ -247,7 +247,7 @@ assert_pair scenario8c-uv-tool-dir "$ARGV8C" '--setenv' 'UV_TOOL_DIR'
 # $TMPHOME/.config/gh and glab-cli were created in scenario 4b.
 ARGV9="$(HOME="$TMPHOME" CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
     CLAUDE_SANDBOX_NO_FORGE=1 \
-    bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+    bwrap_argv_lines "$TMPHOME" /test/.local/bin/claude)"
 assert_not_contains scenario9-no-gh   "$ARGV9" "$TMPHOME/.config/gh"
 assert_not_contains scenario9-no-glab "$ARGV9" "$TMPHOME/.config/glab-cli"
 assert_contains     scenario9-claude  "$ARGV9" "$TMPHOME/.claude"
@@ -257,21 +257,21 @@ assert_contains     scenario9-cache   "$ARGV9" "$TMPHOME/.cache"
 mkdir -p "$TMPHOME/extra-rw" "$TMPHOME/extra-rw2"
 ARGV10a="$(HOME="$TMPHOME" CLAUDE_SANDBOX_ALLOW_WRITE="$TMPHOME/extra-rw" \
     CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+    bwrap_argv_lines "$TMPHOME" /test/.local/bin/claude)"
 assert_contains scenario10-single "$ARGV10a" "$TMPHOME/extra-rw"
 
 ARGV10b="$(HOME="$TMPHOME" \
     CLAUDE_SANDBOX_ALLOW_WRITE="$TMPHOME/extra-rw
 $TMPHOME/extra-rw2" \
     CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+    bwrap_argv_lines "$TMPHOME" /test/.local/bin/claude)"
 assert_contains scenario10-multi-a "$ARGV10b" "$TMPHOME/extra-rw"
 assert_contains scenario10-multi-b "$ARGV10b" "$TMPHOME/extra-rw2"
 
 # Non-existent allow-write path must NOT appear (silently skipped).
 ARGV10c="$(HOME="$TMPHOME" CLAUDE_SANDBOX_ALLOW_WRITE="/nonexistent/path" \
     CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+    bwrap_argv_lines "$TMPHOME" /test/.local/bin/claude)"
 assert_not_contains scenario10-absent "$ARGV10c" "/nonexistent/path"
 
 # Non-regular files must be bound, not silently dropped. The guard was
@@ -282,7 +282,7 @@ assert_not_contains scenario10-absent "$ARGV10c" "/nonexistent/path"
 mkfifo "$TMPHOME/extra.fifo"
 ARGV10d="$(HOME="$TMPHOME" CLAUDE_SANDBOX_ALLOW_WRITE="$TMPHOME/extra.fifo" \
     CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+    bwrap_argv_lines "$TMPHOME" /test/.local/bin/claude)"
 assert_contains scenario10-fifo "$ARGV10d" "$TMPHOME/extra.fifo"
 
 # The real thing, when the host has a perl to mint a socket with. Guarded
@@ -293,7 +293,7 @@ if command -v perl >/dev/null 2>&1 && perl -e 'use IO::Socket::UNIX;
         or exit 1' "$TMPHOME/podman.sock" 2>/dev/null; then
     ARGV10e="$(HOME="$TMPHOME" CLAUDE_SANDBOX_ALLOW_WRITE="$TMPHOME/podman.sock" \
         CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-        bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+        bwrap_argv_lines "$TMPHOME" /test/.local/bin/claude)"
     assert_contains scenario10-socket "$ARGV10e" "$TMPHOME/podman.sock"
 else
     echo "note: scenario10-socket skipped (no perl to create a unix socket)" >&2
@@ -313,7 +313,7 @@ assert_order scenario10-mask-before-bind "$ARGV10d" "--tmpfs" "$TMPHOME/extra.fi
 ARGV10p="$(HOME="$TMPHOME" CLAUDE_SANDBOX_PASS_ENV="DOCKER_HOST" \
     DOCKER_HOST="unix:///run/user/1000/podman/podman.sock" \
     CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+    bwrap_argv_lines "$TMPHOME" /test/.local/bin/claude)"
 assert_contains scenario10p-name "$ARGV10p" "DOCKER_HOST"
 assert_contains scenario10p-value "$ARGV10p" "unix:///run/user/1000/podman/podman.sock"
 assert_pair scenario10p-pair "$ARGV10p" "--setenv" "DOCKER_HOST"
@@ -322,7 +322,7 @@ assert_pair scenario10p-pair "$ARGV10p" "--setenv" "DOCKER_HOST"
 ARGV10q="$(HOME="$TMPHOME" CLAUDE_SANDBOX_PASS_ENV="FOO_A, FOO_B
 FOO_C" FOO_A=a FOO_B=b FOO_C=c \
     CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+    bwrap_argv_lines "$TMPHOME" /test/.local/bin/claude)"
 assert_contains scenario10q-comma "$ARGV10q" "FOO_A"
 assert_contains scenario10q-space "$ARGV10q" "FOO_B"
 assert_contains scenario10q-newline "$ARGV10q" "FOO_C"
@@ -330,7 +330,7 @@ assert_contains scenario10q-newline "$ARGV10q" "FOO_C"
 # A named-but-unset var emits nothing (no empty --setenv).
 ARGV10r="$(HOME="$TMPHOME" CLAUDE_SANDBOX_PASS_ENV="DEFINITELY_UNSET_VAR" \
     CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+    bwrap_argv_lines "$TMPHOME" /test/.local/bin/claude)"
 assert_not_contains scenario10r-unset "$ARGV10r" "DEFINITELY_UNSET_VAR"
 
 # Deny-list: pass-env must never override what the sandbox sets itself,
@@ -340,7 +340,7 @@ ARGV10s="$(HOME="$TMPHOME" \
     PATH="/evil/bin" IS_SANDBOX="0" LD_PRELOAD="/evil/x.so" BASH_ENV="/evil/rc" \
     GIT_CONFIG_SYSTEM="/evil/gitconfig" \
     CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+    bwrap_argv_lines "$TMPHOME" /test/.local/bin/claude)"
 assert_not_contains scenario10s-path "$ARGV10s" "/evil/bin"
 assert_not_contains scenario10s-preload "$ARGV10s" "LD_PRELOAD"
 assert_not_contains scenario10s-preload-val "$ARGV10s" "/evil/x.so"
@@ -359,7 +359,7 @@ assert_contains scenario10s-real-gitconfig "$ARGV10s" "/etc/claude-gitconfig"
 ARGV10t="$(HOME="$TMPHOME" CLAUDE_SANDBOX_PASS_ENV="9BAD,has-dash,has.dot,ok_name" \
     ok_name=fine \
     CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build "$TMPHOME" /test/.local/bin/claude)"
+    bwrap_argv_lines "$TMPHOME" /test/.local/bin/claude)"
 assert_not_contains scenario10t-leading-digit "$ARGV10t" "9BAD"
 assert_not_contains scenario10t-dash "$ARGV10t" "has-dash"
 assert_not_contains scenario10t-dot "$ARGV10t" "has.dot"
@@ -508,7 +508,7 @@ RESOLV_OVERRIDE="$(mktemp)"
 printf 'nameserver 192.0.2.53\n' > "$RESOLV_OVERRIDE"
 ARGV12="$(HOME=/root CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
     CLAUDE_SANDBOX_JAIL_RESOLV="$RESOLV_OVERRIDE" \
-    bwrap_argv_build /workspaces/foo /test/.local/bin/claude)"
+    bwrap_argv_lines /workspaces/foo /test/.local/bin/claude)"
 assert_pair scenario12-resolv-bind "$ARGV12" "--ro-bind" "$RESOLV_OVERRIDE"
 assert_contains scenario12-resolv-dest "$ARGV12" "/etc/resolv.conf"
 # Default scenario (env unset) must NOT bind /etc/resolv.conf.
@@ -516,7 +516,7 @@ assert_not_contains scenario12-default-no-bind "$ARGV1" "/etc/resolv.conf"
 # A non-readable path is ignored (no bind, no crash).
 ARGV12b="$(HOME=/root CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
     CLAUDE_SANDBOX_JAIL_RESOLV="/nonexistent/resolv.conf" \
-    bwrap_argv_build /workspaces/foo /test/.local/bin/claude)"
+    bwrap_argv_lines /workspaces/foo /test/.local/bin/claude)"
 assert_not_contains scenario12-missing-no-bind "$ARGV12b" "/etc/resolv.conf"
 rm -f "$RESOLV_OVERRIDE"
 
@@ -600,7 +600,7 @@ touch "$CODEXHOME/.claude.json"
 # of the scenario so later scenarios keep the default contract.
 agent_profile codex
 ARGV14="$(HOME="$CODEXHOME" CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build "$CODEXHOME" "$AGENT_REAL")"
+    bwrap_argv_lines "$CODEXHOME" "$AGENT_REAL")"
 
 # Codex is exec'd IN PLACE from its root-owned /usr/libexec package, which is
 # already visible via --ro-bind / /. Two things follow, and both are the point:
@@ -657,7 +657,7 @@ agent_profile claude
 ARGV14D="$(HOME=/root CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
     CODEX_HOME=/tmp/evil CLAUDE_SANDBOX_AGENT=codex \
     CLAUDE_SANDBOX_PASS_ENV="CODEX_HOME,CLAUDE_SANDBOX_AGENT" \
-    bwrap_argv_build /workspaces/foo /usr/libexec/claude-sandbox/codex)"
+    bwrap_argv_lines /workspaces/foo /usr/libexec/claude-sandbox/codex)"
 assert_not_contains scenario14d "$ARGV14D" "CODEX_HOME"
 assert_not_contains scenario14d "$ARGV14D" "/tmp/evil"
 
@@ -670,7 +670,7 @@ assert_not_contains scenario14d "$ARGV14D" "/tmp/evil"
 ARGV14E="$(HOME=/root CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
     IS_SANDBOX_AGENT=codex \
     CLAUDE_SANDBOX_PASS_ENV="IS_SANDBOX_AGENT" \
-    bwrap_argv_build /workspaces/foo /usr/libexec/claude-sandbox/claude)"
+    bwrap_argv_lines /workspaces/foo /usr/libexec/claude-sandbox/claude)"
 # Exactly one --setenv for it, carrying the sandbox's own value (claude).
 assert_eq scenario14e-once 1 "$(grep -cx 'IS_SANDBOX_AGENT' <<<"$ARGV14E")"
 assert_pair scenario14e "$ARGV14E" "IS_SANDBOX_AGENT" "claude"
@@ -690,7 +690,7 @@ touch "$SKILLSFIX/shipped/alpha/SKILL.md" "$SKILLSFIX/shipped/beta/SKILL.md" "$S
 _saved_skills_dir="$SHIPPED_SKILLS_DIR"
 SHIPPED_SKILLS_DIR="$SKILLSFIX/shipped"
 ARGV15="$(HOME="$SKILLSFIX/home" CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build "$SKILLSFIX/home" /test/.local/bin/claude)"
+    bwrap_argv_lines "$SKILLSFIX/home" /test/.local/bin/claude)"
 assert_pair scenario15-alpha "$ARGV15" "--ro-bind" "$SKILLSFIX/shipped/alpha"
 assert_pair scenario15-alpha "$ARGV15" "$SKILLSFIX/shipped/alpha" "$SKILLSFIX/home/.claude/skills/alpha"
 assert_pair scenario15-beta  "$ARGV15" "$SKILLSFIX/shipped/beta"  "$SKILLSFIX/home/.claude/skills/beta"
@@ -708,18 +708,18 @@ fi
 # Each agent gets the same skills at ITS OWN discovery path.
 agent_profile codex
 ARGV15C="$(HOME="$SKILLSFIX/home" CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build "$SKILLSFIX/home" "$AGENT_REAL")"
+    bwrap_argv_lines "$SKILLSFIX/home" "$AGENT_REAL")"
 assert_pair scenario15-codex "$ARGV15C" "$SKILLSFIX/shipped/alpha" "$SKILLSFIX/home/.codex/skills/alpha"
 assert_not_contains scenario15-codex "$ARGV15C" "$SKILLSFIX/home/.claude/skills/alpha"
 agent_profile pi
 ARGV15P="$(HOME="$SKILLSFIX/home" CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build "$SKILLSFIX/home" "$AGENT_REAL")"
+    bwrap_argv_lines "$SKILLSFIX/home" "$AGENT_REAL")"
 assert_pair scenario15-pi "$ARGV15P" "$SKILLSFIX/shipped/alpha" "$SKILLSFIX/home/.pi/agent/skills/alpha"
 agent_profile claude
 # An empty or absent shipped tree emits nothing.
 SHIPPED_SKILLS_DIR="$SKILLSFIX/nonexistent"
 ARGV15N="$(HOME="$SKILLSFIX/home" CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build "$SKILLSFIX/home" /test/.local/bin/claude)"
+    bwrap_argv_lines "$SKILLSFIX/home" /test/.local/bin/claude)"
 assert_not_contains scenario15-none "$ARGV15N" "$SKILLSFIX/nonexistent/*"
 SHIPPED_SKILLS_DIR="$_saved_skills_dir"
 
@@ -736,7 +736,7 @@ touch "$SHAREDFIX/.claude.json"
 for _agent in claude codex pi; do
     agent_profile "$_agent"
     ARGV16="$(HOME="$SHAREDFIX" CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-        bwrap_argv_build "$SHAREDFIX" "$AGENT_REAL")"
+        bwrap_argv_lines "$SHAREDFIX" "$AGENT_REAL")"
     assert_pair "scenario16-$_agent-rw"  "$ARGV16" "--bind" "$SHAREDFIX/.agents/skills"
     assert_pair "scenario16-$_agent-dst" "$ARGV16" "$SHAREDFIX/.agents/skills" "$SHAREDFIX/.agents/skills"
     # Narrow: the parent and its other entries stay on the tmpfs.
@@ -751,7 +751,7 @@ agent_profile claude
 # Absent on the host: no bind, and the builder does not create it.
 rm -rf "$SHAREDFIX/.agents"
 ARGV16N="$(HOME="$SHAREDFIX" CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
-    bwrap_argv_build "$SHAREDFIX" /test/.local/bin/claude)"
+    bwrap_argv_lines "$SHAREDFIX" /test/.local/bin/claude)"
 assert_not_contains scenario16-absent "$ARGV16N" "$SHAREDFIX/.agents/skills"
 if [ -e "$SHAREDFIX/.agents" ]; then
     fail "scenario16-pure — bwrap_argv_build created ~/.agents"

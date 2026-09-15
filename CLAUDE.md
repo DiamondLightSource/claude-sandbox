@@ -39,7 +39,7 @@ implementation or tests.
   Open the PR if asked, but wait for the user's explicit OK before merging —
   don't merge on a green build alone.
 - Threat model + sandbox model: https://diamondlightsource.github.io/claude-sandbox/explanations/threat-model.html
-- Sandbox-integrity spec: `.claude/commands/verify-sandbox.md`
+- Sandbox-integrity spec: `skills/verify-sandbox/SKILL.md`
 - Network egress jail (lateral-movement isolation, ADR 0015):
   `docs/explanations/decisions/0015-network-egress-jail.md`; operational skill:
   `.claude/skills/claude-sandbox-networking/SKILL.md`

@@ -11,7 +11,7 @@
 # devcontainer (re-authenticate after --recreate), never a host-credential
 # mount. The container's own process is an idle keeper; every session is
 # an exec into it, so the verb and AGENT_ARGS apply on every run.
-# Only --bridge, --mount and --mount-rw are fixed at create time
+# Only --bridge, --no-peers, --mount and --mount-rw are fixed at create time
 # (--recreate to change them). The container stops when its last session
 # exits.
 #
@@ -20,7 +20,8 @@
 # opened as sessions of their own (skipped when the parent is / or
 # contains $HOME, which would expose ~/.ssh and every other host secret
 # to the container). Each agent session still writes only to its own
-# project: the sandbox binds $PWD, not the parent.
+# project: the sandbox binds $PWD, not the parent. Siblings remain readable
+# by agents; --no-peers skips the automatic parent mount.
 #
 # Usage: claude-container [OPTIONS] [VERB] [ARGS...]
 #
@@ -61,6 +62,9 @@
 #                   agents can read it, nothing in the container can write it
 #   --mount-rw PATH bind PATH read-write into the container AND the
 #                   sandbox (repeatable; becomes an allow-write entry)
+#   --no-peers      skip the automatic parent-directory mount; sibling
+#                   projects are otherwise readable by sandboxed agents.
+#                   Explicit --mount and --mount-rw paths still apply.
 #   --version       print launcher version and exit
 #   -h | --help     this text
 #
@@ -136,13 +140,12 @@ warn_if_outdated() {
     fi
 }
 
-# The container's PID 1. Matched by is_keeper below to recognise a container
-# this launcher model created; a container from launcher <= 0.3 baked an
-# agent command instead and must be recreated.
+# Idle PID 1, also used to identify containers owned by this launcher.
 KEEPER_CMD='trap "exit 0" TERM INT; while :; do sleep 60 & wait $!; done'
 
 recreate=0
 host_net=1
+peers=1
 agent=claude
 shell=0
 inner=0
@@ -156,13 +159,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --recreate) recreate=1; shift ;;
         --bridge) host_net=0; create_opts+=( --bridge ); shift ;;
-        --host-net|--shell|--agent)
-            # Pre-4.0 spellings. Not aliased: an unknown option would fall
-            # through to the agent's argv and fail there, obscurely.
-            echo "claude-container: $1 was replaced by verbs in 4.0: $SELF [OPTIONS] [claude|codex|pi|shell] [AGENT_ARGS...]" >&2
-            echo "  host networking is now the default; --bridge opts out" >&2
-            exit 2
-            ;;
+        --no-peers) peers=0; create_opts+=( --no-peers ); shift ;;
         --mount|--mount-rw)
             if [ $# -lt 2 ]; then
                 echo "claude-container: $1 needs a PATH" >&2
@@ -210,24 +207,13 @@ case "${1:-}" in
         ;;
 esac
 
-# A bare first word that is not a verb is the agent's own argv (a prompt,
-# say) and must stay so — but a typo'd verb would launch claude with the
-# typo as its prompt and fail obscurely. Hint on a near miss, then carry on.
-if [ "$inner" = 0 ] && [ "$shell" = 0 ] && [ "$clean" = 0 ] && [ "$agent" = claude ] && [ $# -gt 0 ]; then
-    case "$1" in
-        -*) ;;
-        clear|cleanup|cleam|claen|clena|sh|zsh|bash|sehll|shel|verifiy|verfy|updat|upgrade|gh-login|login|auth)
-            echo "claude-container: note: '$1' is not a launcher verb, so it goes to claude as its argument (verbs: clean | shell | verify | update | gh-auth | glab-auth | version | pi-local)" >&2 ;;
-    esac
-fi
-
 # Inside a container there is nothing for this launcher to do: an installed
 # sandbox is run by its own command names, and a bare container wants the
 # installer. (Podman writes /run/.containerenv; docker writes /.dockerenv.)
 # CLAUDE_SANDBOX_NESTED=1 launches anyway (an engine inside a container is
 # a real setup; it is also the test seam, since CI runs in a container).
 if { [ -e /run/.containerenv ] || [ -e /.dockerenv ]; } && [ "${CLAUDE_SANDBOX_NESTED:-0}" != 1 ]; then
-    if [ -x /usr/libexec/claude-sandbox/agent-shadow ] || [ -x /usr/local/bin/claude ]; then
+    if [ -x /usr/local/bin/claude ]; then
         echo "claude-container: you are already inside an claude-sandbox container — run claude, codex or pi directly" >&2
     else
         echo "claude-container: this is a container without the sandbox — install it with: uvx claude-sandbox install" >&2
@@ -362,7 +348,7 @@ create_container() {
     # Siblings, as a devcontainer's /workspaces mount gives them: the
     # parent dir read-write at its host path, so a shell can start a
     # sandboxed session in any sibling; the sandbox still confines each
-    # agent to its own $PWD. The project bind below is kept for when the
+    # agent's writes to its own $PWD. The project bind below is kept for when the
     # parent is skipped. Slave propagation (here and on
     # --mount/--mount-rw) is for autofs trees such as /dls_sw: a process in
     # the container's user namespace may not TRIGGER an automount (EPERM on
@@ -371,15 +357,17 @@ create_container() {
     # and every host token to the container, ro or not).
     local parent
     parent="$(dirname "$PWD")"
-    case "$parent" in
-        /) ;;
-        *)
-            case "$HOME/" in
-                "$parent"/*) echo "claude-container: not mounting $parent: it contains your home directory" >&2 ;;
-                *) args+=( --mount "type=bind,src=$parent,dst=$parent,bind-propagation=slave" ) ;;
-            esac
-            ;;
-    esac
+    if [ "$peers" = 1 ]; then
+        case "$parent" in
+            /) ;;
+            *)
+                case "$HOME/" in
+                    "$parent"/*) echo "claude-container: not mounting $parent: it contains your home directory" >&2 ;;
+                    *) args+=( --mount "type=bind,src=$parent,dst=$parent,bind-propagation=slave" ) ;;
+                esac
+                ;;
+        esac
+    fi
     args+=( -v "$PWD:$PWD" -w "$PWD" )
     if [ "$host_net" = 1 ]; then
         args+=( --network=host )
@@ -420,15 +408,15 @@ create_container() {
     fi
     # --mount PATH: read-only at the same path. The sandbox's --ro-bind / /
     # shows it to agents as-is; nothing in the container can write it.
-    local m allow_write=""
+    local m allow_write="${CLAUDE_SANDBOX_ALLOW_WRITE:-}"
     for m in "${mounts_ro[@]+"${mounts_ro[@]}"}"; do
         args+=( --mount "type=bind,src=$m,dst=$m,ro,bind-propagation=slave" )
     done
     # --mount-rw PATH: read-write at the same path, and tell the sandbox to
-    # bind it rw too (allow-write, joined with ':').
+    # bind it rw too. The shadow reads one allow-write path per line.
     for m in "${mounts_rw[@]+"${mounts_rw[@]}"}"; do
         args+=( --mount "type=bind,src=$m,dst=$m,bind-propagation=slave" )
-        allow_write="${allow_write:+$allow_write:}$m"
+        allow_write="${allow_write:+$allow_write$'\n'}$m"
     done
     if [ -n "$allow_write" ]; then
         args+=( -e "CLAUDE_SANDBOX_ALLOW_WRITE=$allow_write" )
@@ -463,9 +451,7 @@ fi
 
 if container_exists; then
     if ! is_keeper; then
-        # Created by launcher <= 0.3, which baked the agent as PID 1; starting
-        # it would run that agent detached, alongside our session.
-        echo "claude-container: $NAME was created by an older launcher and cannot be reused;" >&2
+        echo "claude-container: $NAME does not have the expected keeper command;" >&2
         echo "  run: $SELF --recreate (forge logins must be re-done)" >&2
         exit 1
     fi

@@ -1,6 +1,6 @@
 # Verification checks
 
-`/verify-sandbox` runs two phases against the live Claude process: a
+The shipped `verify-sandbox` skill runs two phases in the current agent sandbox: a
 deterministic **21-check PASS/FAIL battery**, then — only when all 21
 pass — **10 adversarial breakout probes**. The battery exits non-zero on
 failure. The slash command is an agent-driven audit: inspect its reported
@@ -13,7 +13,7 @@ The exact bash for each check is the committed battery script
 `.devcontainer/claude-sandbox/verify-sandbox-battery.sh` (installed to
 `/usr/libexec/claude-sandbox/`, so it is read-only inside the sandbox);
 the *why* of each check lives in the spec at
-`.claude/commands/verify-sandbox.md`. The summaries below state what
+`skills/verify-sandbox/references/checks.md`. The summaries below state what
 each check asserts; see
 [locked-down defences](locked-down-defences.md) for the
 defence → primitive mapping.
@@ -99,7 +99,10 @@ Each probe is classified on one line:
 |---|---|---|
 | `[BLOCKED]` | The attempt failed the way the sandbox expects (EACCES, EPERM, ENOENT for masked paths, etc.). | None. |
 | `[ESCAPED]` | The attempt succeeded in a way that violates the threat model (readable host credential, writable host path outside the workspace, signal to a process outside the pidns, etc.). | Audit reports `SANDBOX LEAKING`. |
-| `[INCONCLUSIVE]` | No error, but no demonstrated breach either. | Informational; does not change the exit code. Each is followed by a suggested follow-up. |
+| `[INCONCLUSIVE]` | No error, but no demonstrated breach either. | Audit reports `AUDIT INCOMPLETE`, with a suggested follow-up. |
+
+Use reversible probes and stop on a demonstrated escape. If fewer than ten
+probes run, report the untested items and mark the audit incomplete.
 
 If all 10 probes are `[BLOCKED]`, the final line is
 `RESULT: SANDBOX OK (21 deterministic + 10 adversarial)`.

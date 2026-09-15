@@ -64,8 +64,9 @@ Or, from a container terminal outside Pi:
 claude-sandbox verify --agent pi
 ```
 
-The latter needs a working selected model. Pi checks isolation at launch;
-it does not have the managed prompt-hook tier used for Claude and Codex.
+Verification runs the battery directly and needs no model or login.
+Pi checks its launch markers before starting. No agent receives managed
+prompt or session hooks; the sandbox wrapper provides isolation.
 It cannot stop an operator deliberately running a separate unwrapped Pi.
 
 Use [Upgrade](upgrade.md) to update the image. In your own devcontainer,

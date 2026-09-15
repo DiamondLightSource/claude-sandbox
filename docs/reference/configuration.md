@@ -34,8 +34,9 @@ skips placing it if the clone carries no conf. File mode is `0644`.
 - One directive per line.
 - `key = value`, or a bare `key` for boolean flags.
 - Blank lines and `#` comments are ignored.
-- Environment variables already set take precedence — the config
-  supplies defaults.
+- Environment variables take precedence for scalar settings such as
+  `workspace-root`. Repeatable lists such as `allow-write` and `local-port`
+  append config entries to the environment values.
 
 ### Keys
 
@@ -68,6 +69,7 @@ These names are ignored, and the sandbox's own value always wins:
 | Names | Why |
 |---|---|
 | `PATH`, `HOME`, `USER`, `IS_SANDBOX`, `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM` | The sandbox sets each of these itself. Forwarding `PATH` would undo the shadow's PATH discipline; `IS_SANDBOX` would trip the recursion guard into skipping the jail |
+| `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `CLAUDE_SANDBOX_AGENT`, `IS_SANDBOX_AGENT` | Agent configuration locations and profile selection remain controlled by the wrapper |
 | `LD_*`, `BASH_ENV`, `ENV`, `SHELLOPTS`, `BASHOPTS`, `IFS` | Loader and shell startup hooks — they execute code in every process the session spawns |
 
 ## Environment variables
@@ -82,17 +84,15 @@ configuration.
 |---|---|---|
 | `CLAUDE_SANDBOX_WORKSPACE_ROOT` | you (`remoteEnv`) → shadow | Explicit rw bind-mount root. Set to `/workspaces` to restore the old broad bind; any absolute path for a custom root. Default when unset: `$PWD` |
 | `CLAUDE_SANDBOX_NO_FORGE` | you (`remoteEnv`) → shadow | `1` skips the `gh`/`glab` token binds and drops the credential helpers from the generated gitconfig, so `git push` fails inside the sandbox by design |
-| `DANGEROUSLY_ALLOW_CLAUDE_SANDBOX_UNWRAPPED` | you → `install.sh` (install-time) | `1` stamps the root-owned gate escape-hatch flag `/etc/claude-code/allow-unwrapped` (downgrades the unwrapped-launch gate to warn-only; weakening the sandbox is discouraged); unset/`0` leaves the gate fail-closed and removes a stale flag. Replaces the retired `CLAUDE_SANDBOX_ALLOW_UNWRAPPED` env hatch, which a confined Claude could forge via `~/.claude/settings.json` (deep-review H4) |
 | `CLAUDE_SANDBOX_EGRESS_JAIL` | you (env, per session) / conf `egress-jail` → shadow | Network egress jail toggle ({ref}`adr-network-egress-jail`). Default **ON**, fail-closed: with the jail on but `/dev/net/tun` / pasta / `unshare` missing, `claude` refuses to launch. An operator opt-out value exists but is deliberately not documented — weakening the sandbox is discouraged. Env value wins over the `egress-jail` conf key |
 | `CLAUDE_SANDBOX_ALLOW_IP` | populated by `parse_config` from `allow-ip` lines | Newline-separated device IPs the jail keeps reachable past the RFC1918 blackhole |
 | `CLAUDE_SANDBOX_LOCAL_PORTS` | you (env, per session) and `parse_config` from `local-port` lines | Extra outer-loopback TCP ports relayed into the jail, space-, comma- or newline-separated. Conf entries are appended to whatever the environment already holds, so `CLAUDE_SANDBOX_LOCAL_PORTS=8082 claude` adds one port for one session ({ref}`adr-local-port-all-agents`) |
 | `CLAUDE_SANDBOX_LOCAL_MODEL_PORT` | you (env, per session) / conf `local-model-port` → shadow, and into the sandbox for Pi | The model port Pi discovers on; always in the relay set. `0` drops it. Env wins over conf |
 | `CLAUDE_SANDBOX_CALLBACK_PORTS` | you (env, per session) and `parse_config` from `callback-port` lines | Outer-loopback TCP ports relayed into the jail for browser OAuth callbacks, space-, comma- or newline-separated. Conf entries are appended to the environment's, so `CLAUDE_SANDBOX_CALLBACK_PORTS=1455 codex` adds one port for one session ({ref}`adr-callback-port-relay`) |
-| `IS_SANDBOX` | set by bwrap (`--setenv IS_SANDBOX 1`) | Sentinel proving the sandbox was entered. The shadow's recursion guard falls through to the real binary when it is `1`; the gate blocks every prompt unless it is `1` |
+| `IS_SANDBOX` | set by bwrap (`--setenv IS_SANDBOX 1`) | Marker preventing recursive wrapping of nested agent calls. It is not independent proof of isolation |
 | `CLAUDE_SANDBOX_ALLOW_WRITE` | populated by `parse_config` from `allow-write` lines | Newline-separated extra writable paths bound in addition to the workspace |
 | `CLAUDE_SANDBOX_PASS_ENV` | populated by `parse_config` from `pass-env` lines | Names of environment variables to forward into the sandbox. Set it directly to forward a variable for one session without editing the conf |
 | `CLAUDE_SANDBOX_GITCONFIG_PATH` | exported by the shadow | Path to the curated gitconfig (`/etc/claude-gitconfig`) consumed by the argv builder |
-| `CLAUDE_CODE_REMOTE` | Claude Code Web | When `true`, both guard scripts skip (the guard does not run on Claude Code Web) |
 | `DISABLE_AUTOUPDATER` | set to `1` in managed settings by `install.sh` | Disables Claude Code's in-container auto-updater (alongside `autoUpdates:false`) so a self-update can't re-arm the unwrapped-launch bypass |
 
 `CLAUDE_SANDBOX_NO_FORGE` is documented as a task in
@@ -100,24 +100,3 @@ configuration.
 is covered in [widen the writable workspace](../how-to/configure-workspace-scope.md);
 forwarding variables is covered in
 [pass environment variables in](../how-to/pass-environment-variables.md).
-
-## Gate escape-hatch flag: `/etc/claude-code/allow-unwrapped`
-
-The `UserPromptSubmit` gate ([integrity guard](../explanations/integrity-guard.md))
-is fail-closed: it blocks every prompt unless Claude is inside the bwrap
-shadow (`IS_SANDBOX=1`). A root-owned flag file at this path downgrades
-the gate to warn-only. It exists for operators who need a deliberate,
-root-gated exception; how to manage it is documented for IT/platform
-teams in
-[Enforce sandbox use across an organisation](../how-to/enforce-org-wide.md),
-not here. When the flag is present the `SessionStart` warning still
-fires: unwrapped is allowed, never silent.
-
-It is deliberately a flag under `/etc`, **not** an environment variable:
-`/etc` is root-owned, read-only inside the sandbox (`--ro-bind / /`), and
-not part of the host-shared `~/.claude`. A confined Claude can write
-`~/.claude/settings.json` (host-shared, persistent) and Claude Code
-exports that file's `env` block into later sessions, so an env-var hatch
-was forgeable from inside the jail and would persistently neutralise the
-gate on a later unwrapped launch (deep-review **H4**). Only `root` on the
-host can create this flag.

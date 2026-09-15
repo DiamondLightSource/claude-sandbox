@@ -38,8 +38,7 @@ LABEL io.diamondlightsource.claude-sandbox.launcher-version="${LAUNCHER_VERSION}
 ARG CLAUDE_SANDBOX_VERSION=""
 
 # Whether to fetch OpenAI's Codex CLI at build time (install.sh's own
-# WITH_CODEX knob, exposed here). The codex SHADOW and its managed guard
-# are installed either way — Invariant 1 says the shadow must own the name
+# WITH_CODEX knob, exposed here). The codex SHADOW is installed either way — Invariant 1 says the shadow must own the name
 # on $PATH regardless — this only controls the best-effort curl fetch of
 # the real binary. Default on, matching install.sh; set to 0 to build an
 # image that never reaches chatgpt.com (e.g. an offline/air-gapped build,
@@ -53,46 +52,11 @@ ARG PI_VERSION=latest
 COPY . /opt/claude-sandbox
 WORKDIR /opt/claude-sandbox
 
-# Run install.sh's main() sequence MINUS two build-time-inappropriate
-# steps, via install.sh's source-guard seam:
-#   - probe_userns_or_refuse: a build-time probe proves the BUILDER can
-#     nest namespaces, not the host that will run the image (and BuildKit
-#     confinement varies by builder).
-#   - link_terminal_config: the base image ships an EMPTY stub
-#     /user-terminal-config dir, so wiring at build symlinks
-#     ~/.claude.json to a zero-length file — which the official Claude
-#     installer's setup step then rejects as corrupted JSON (build
-#     failure). The share only exists for real as a runtime mount.
-# container/entrypoint.sh runs both at container start, where they act
-# on the actual host / actual mounts. KEEP THIS LIST IN STEP WITH main()
-# IN install.sh.
-RUN bash -c ' \
-    set -euo pipefail; \
-    export WITH_CODEX="'"$WITH_CODEX"'"; \
-    export WITH_PI="'"$WITH_PI"'"; \
-    export PI_VERSION="'"$PI_VERSION"'"; \
-    source .devcontainer/claude-sandbox/install.sh; \
-    probe_or_refuse; \
-    install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/claude)"; \
-    install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/codex)"; \
-    install_file "$SCRIPT_DIR/claude-shadow" "$(prefixed /usr/local/bin/pi)"; \
-    install_file "$SCRIPT_DIR/pi-run" "$(prefixed /usr/libexec/claude-sandbox/pi-run)"; \
-    install_file "$SCRIPT_DIR/pi-system.md" "$(prefixed /usr/libexec/claude-sandbox/pi-system.md)" 0644; \
-    install_file "$SCRIPT_DIR/claude-sandbox" "$(prefixed /usr/local/bin/claude-sandbox)"; \
-    apt_install; \
-    install_claude_binary; \
-    install_codex_binary; \
-    install_pi_binary; \
-    ensure_cred_dirs; \
-    install_conf; \
-    stamp_version; \
-    install_guard_scripts; \
-    install_shipped_skills; \
-    wire_managed_settings; \
-    wire_codex_managed; \
-    wire_gate_flag; \
-    wire_user_statusline; \
-    rm -rf /var/lib/apt/lists/*'
+# Install the same files as a devcontainer. Runtime mounts and the namespace
+# probe are handled by the entrypoint when the image starts on its host.
+RUN bash .devcontainer/claude-sandbox/install.sh --image-build \
+    && apt-get install -y --no-install-recommends vim \
+    && rm -rf /var/lib/apt/lists/*
 
 # Python for the agent — IMAGE-ONLY by design. The devcontainer stage and
 # clone+install guests get none of this (the sandbox itself is bash-only;

@@ -6,7 +6,7 @@ description: How agent skills ship to claude-sandbox users (ADR 24). The top-lev
 # claude-sandbox-shipped-skills
 
 Skills that sandboxed agents should have in every workspace (currently
-`vscode-headless` and `claude-sandbox-user`) reach users through the **sandbox itself**, not through
+`vscode-headless`, `browser-testing`, `claude-sandbox-user` and `verify-sandbox`) reach users through the **sandbox itself**, not through
 their `~/.claude`. This skill records the pattern; the `claude-sandbox`
 skill records the invariants it rests on (4 and 5: trust anchors live in
 `/etc` and `/usr/libexec`, ro in-session, never in a host-shared or
@@ -65,10 +65,9 @@ system-wide skills directory and no managed key that adds a skills path
 network at first use, and is Claude-only. The bind is harness-agnostic.
 
 Shipped 2026-09-15 as 4.2.0 (PR #49). Verified live in all three agents,
-check 03 of the battery, and the wheel path from a branch. Parked issue
-**#79** (ship `/verify-sandbox` machine-wide) predates this pattern and
-assumed a plugin marketplace was the only channel; a `~/.claude/commands`
-ro-bind on the same model is the cheaper candidate to re-evaluate first.
+check 03 of the battery, and the wheel path from a branch. The full
+`verify-sandbox` audit now uses this same skill mechanism; the former
+repository-only `.claude/commands/verify-sandbox.md` has been removed.
 
 ## Adding a shipped skill
 
@@ -78,9 +77,11 @@ ro-bind on the same model is the cheaper candidate to re-evaluate first.
 - A skill's scripts that need host-side setup (apt installs, as
   `install-vscode-driver-deps.sh` does) must tell the agent to ask the user
   to run them **outside** the sandbox and must not be extended beyond that.
-  The skill bind is invisible to the outer container, so the skill text must
-  also tell the agent to copy the script to a shared path (`/cache` or the
-  workspace) and hand the user that path, never one under `~/.claude/skills`.
+  Give the user the installed script path under
+  `/usr/libexec/claude-sandbox/skills/<name>/scripts/`, which exists in the
+  outer container and is read-only inside the sandbox. No copy is needed.
+  Never use the agent's `~/.claude/skills` mount path for outer commands;
+  that mount exists only inside the jail.
 - Prefix names distinctively enough that they will not collide with a user's
   own skill: a collision is masked for the session, with a warning.
 - Tests: `tests/bwrap_argv.sh` scenario 15 (per-skill ro bind at each

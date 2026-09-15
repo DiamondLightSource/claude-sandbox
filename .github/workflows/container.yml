@@ -4,7 +4,7 @@
 # DiamondLightSource/ubuntu-devcontainer approach: per-arch native builds
 # pushed by digest, merged into one multi-arch manifest.
 #
-# The in-image auto-updater is disabled by design (integrity guard), so
+# The in-image auto-updater is disabled by design (managed updater settings), so
 # the baked Claude version is frozen at build time — the weekly cron
 # rebuild is what picks up new Claude releases.
 name: Container
@@ -85,12 +85,9 @@ jobs:
             test -x /usr/local/bin/pi
             test -x /usr/libexec/claude-sandbox/pi-run
             test -x /usr/libexec/claude-sandbox/pi-dist/pi
-            test -x /usr/libexec/claude-sandbox/sandbox-verify.sh
-            test -x /usr/libexec/claude-sandbox/sandbox-gate.sh
             test -x /usr/libexec/claude-sandbox/verify-sandbox-battery.sh
             test -f /etc/claude-sandbox.conf
-            jq -e ".hooks.SessionStart and .hooks.UserPromptSubmit
-                   and .autoUpdates == false
+            jq -e ".autoUpdates == false
                    and .env.DISABLE_AUTOUPDATER == \"1\"" \
               /etc/claude-code/managed-settings.json
             /usr/libexec/claude-sandbox/claude --version
@@ -144,6 +141,8 @@ jobs:
             -v "$RUNNER_TEMP/terminal-config:/user-terminal-config" \
             -v "$RUNNER_TEMP/project:/work" -w /work \
             claude-sandbox:test bash -c '
+              git config --global user.name "Sandbox integration test" || exit "$?"
+              git config --global user.email "sandbox-test@example.invalid" || exit "$?"
               claude --version || {
                 rc=$?
                 echo "=== jail diagnostics (launch failed, rc=$rc) ==="
@@ -152,7 +151,10 @@ jobs:
                 echo "--- /etc/resolv.conf ---"; cat /etc/resolv.conf || true
                 echo "--- ip addr / route ---"; ip -o addr; ip route || true
                 exit "$rc"
-              }'
+              }
+              for agent in claude codex pi; do
+                claude-sandbox verify --agent "$agent" || exit "$?"
+              done'
 
       - name: "Test: Pi streams a local tool call through the sandbox"
         run: |

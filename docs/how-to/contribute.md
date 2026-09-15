@@ -34,6 +34,10 @@ CLAUDE_SANDBOX_SMOKE=1 bash tests/bwrap_argv.sh
 CLAUDE_SANDBOX_SMOKE=1 bash tests/smoke.sh
 bash tests/install_ref.sh
 bash tests/launcher.sh
+bash tests/shadow_launch.sh
+bash tests/shadow_git.sh
+bash tests/verify.sh
+bash tests/install_modes.sh
 ```
 
 Run installation tests as root inside the development container.
