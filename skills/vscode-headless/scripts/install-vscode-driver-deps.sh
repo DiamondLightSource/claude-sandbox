@@ -23,7 +23,8 @@ apt-get install -y --no-install-recommends \
     libxdamage1 libxrandr2 libxshmfence1 libx11-xcb1 libdbus-1-3 libxkbcommon0 \
     fonts-dejavu-core \
     libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
-    libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0 libxcb-util1 libxcb-cursor0
+    libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0 libxcb-util1 libxcb-cursor0 \
+    libegl1 libopengl0
 
 prefix=${VSCODE_PREFIX:-/cache/vscode}
 if [ ! -x "$prefix/bin/code" ]; then

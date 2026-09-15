@@ -72,6 +72,10 @@ needs to open a window on the Xvfb display (`libxcb-icccm4`, `libxcb-xkb1`,
 `Could not load the Qt platform plugin "xcb"`, which shows up as an
 exception pause at the first Qt import instead of at your breakpoint.
 
+Other toolkits (Tk, GTK via PyGObject, SDL, wxPython's HTML widget) need
+their own packages; the traceback names the missing library. Fetch it with
+the fallback below rather than growing the install script.
+
 ### Missing libraries the user cannot install right now
 
 `apt-get download` also fails in the jail (it drops privileges with
