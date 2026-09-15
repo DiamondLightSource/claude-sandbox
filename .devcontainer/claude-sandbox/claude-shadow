@@ -1151,6 +1151,12 @@ EOF
     mv "$tmp" "$CLAUDE_SANDBOX_GITCONFIG_PATH"
 )
 
+# Resolve configuration before creating credential dirs or building mounts.
+configure_launch() {
+    parse_config "$CONFIG_PATH"
+    render_gitconfig
+}
+
 # Run in a fresh terminal, preserving the wrapped command's exit status.
 sandbox_launch() {
     local command
@@ -1211,6 +1217,7 @@ if cmp -s "$AGENT_REAL" "$0"; then
     exit 1
 fi
 
+configure_launch
 check_config_persistence
 
 # Pre-create forge credential dirs so the argv builder's --bind succeeds
@@ -1251,9 +1258,6 @@ if ! mkdir -p "${HOME:-/root}/$SHARED_SKILLS_REL" 2>/dev/null; then
     echo "claude-sandbox: cannot create ~/$SHARED_SKILLS_REL; shared skills are unavailable this session." >&2
 fi
 
-render_gitconfig
-
-parse_config "$CONFIG_PATH"
 # Stage the DNS forwarder configuration before building the arguments.
 if egress_jail_enabled; then
     jail_stage_dns

@@ -24,4 +24,21 @@ for name in 'Sam "SJ" Jones' 'Sam #1; Jones' 'Sam\Jones' $'Sam\n[core]\n    hook
     fi
 done
 assert_eq 'curated config readable by agents' 644 "$(stat -c %a "$CLAUDE_SANDBOX_GITCONFIG_PATH")"
+
+CONFIG_PATH="$tmp/sandbox.conf"
+printf 'no-forge\n' > "$CONFIG_PATH"
+unset CLAUDE_SANDBOX_NO_FORGE
+configure_launch
+if git config --file "$CLAUDE_SANDBOX_GITCONFIG_PATH" --get-regexp 'credential.*helper'; then
+    fail 'no-forge config retained credential helpers'
+else
+    pass
+fi
+mkdir -p "$tmp/home/.config/gh" "$tmp/home/.config/glab-cli"
+argv="$(HOME="$tmp/home" bwrap_argv_lines "$tmp/repo" /fake/claude)"
+assert_not_contains 'no-forge omits gh bind' "$argv" "$tmp/home/.config/gh"
+assert_not_contains 'no-forge omits glab bind' "$argv" "$tmp/home/.config/glab-cli"
+CLAUDE_SANDBOX_NO_FORGE=0 configure_launch
+assert_eq 'environment overrides no-forge config' 2 \
+    "$(git config --file "$CLAUDE_SANDBOX_GITCONFIG_PATH" --get-regexp 'credential.*helper' | wc -l)"
 finish shadow_git
