@@ -125,9 +125,11 @@ next agent launch; recreate if your editor replaces the mounted file.
 See [Configuration](../reference/configuration.md) for all keys and
 [Configure the network egress jail](network-egress-jail.md) for network access.
 
-The project directory is the only writable path. Its parent is mounted
-read-only, so sibling checkouts are readable as in a devcontainer (skipped
-when the parent is your home directory). Automounted trees such as `/dls_sw`
+The project directory and its parent are mounted read-write, as a
+devcontainer mounts `/workspaces`, so from `claude-sandbox shell` you can
+`cd` into a sibling checkout and start an agent session there (the parent
+is skipped when it is your home directory). Each agent can still write
+only to the directory it was started in. Automounted trees such as `/dls_sw`
 work: the binds use slave propagation, so mounts the host automounter makes
 appear inside without the container triggering them. To add more:
 
@@ -136,9 +138,9 @@ claude-sandbox --mount ~/src/shared-lib       # read-only
 claude-sandbox --mount-rw ~/src/other-repo    # writable in the container and the sandbox
 ```
 
-Use `--mount-rw` for a sibling checkout the agent must edit. The
+Use `--mount-rw` for a path outside the parent that an agent must edit. The
 `workspace-root` config key only widens the sandbox bind within what the
-container mounted, so on its own it cannot make a read-only sibling writable.
+container mounted, so on its own it cannot make a read-only mount writable.
 
 Mounts, network mode and forwarded `CLAUDE_SANDBOX_*` variables are fixed
 when a container is created. For an existing container, include

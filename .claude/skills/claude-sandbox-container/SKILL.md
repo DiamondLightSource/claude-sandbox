@@ -156,11 +156,14 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   command, never the name alone. Why it exists: reconnecting keeps the
   image a container was created from, so after a pull it is unclear
   which image a session runs; `--recreate` is one project at a time.
-- **Devcontainer-like filesystem view (2026-09-14)**: the launcher binds
-  the project's PARENT read-only at its host path (siblings readable, as
-  the devcontainer's `/workspaces` mount) and the project rw, nested
-  over it; `--mount` is now READ-ONLY and `--mount-rw` is the old rw +
-  allow-write behaviour. The parent bind is skipped when the parent is
+- **Devcontainer-like filesystem view (2026-09-14; parent rw 2026-09-15)**:
+  the launcher binds the project's PARENT read-write at its host path, as
+  the devcontainer's `/workspaces` mount does, and the project rw nested
+  over it. First cut made the parent ro; user reversed that 2026-09-15 so
+  a shell can start a new sandboxed session in any sibling — not a hazard
+  because the shadow binds only `$PWD` rw per session, and the parent is
+  NOT added to allow-write. `--mount` is READ-ONLY and `--mount-rw` is
+  the old rw + allow-write behaviour. The parent bind is skipped when the parent is
   `/` or contains `$HOME` (a project directly under `~` would hand
   `~/.ssh` and every host token to the container, ro or not — the
   launcher says so). `shell` execs the shell the launcher was run FROM
