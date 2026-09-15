@@ -149,7 +149,10 @@ jobs:
                 echo "--- /etc/resolv.conf ---"; cat /etc/resolv.conf || true
                 echo "--- ip addr / route ---"; ip -o addr; ip route || true
                 exit "$rc"
-              }'
+              }
+              for agent in claude codex pi; do
+                claude-sandbox verify --agent "$agent" || exit "$?"
+              done'
 
       - name: "Test: Pi streams a local tool call through the sandbox"
         run: |

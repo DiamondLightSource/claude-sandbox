@@ -58,6 +58,9 @@ jobs:
       - name: Run shadow terminal wrapper tests
         run: bash tests/shadow_launch.sh
 
+      - name: Run direct sandbox verification tests
+        run: bash tests/verify.sh
+
       # Which git ref `install` selects, and when it refuses to select one.
       # Hermetic — builds its own throwaway origin+clone with synthetic tags,
       # so it never touches this checkout. `sudo` only to clear the shim's own

@@ -46,6 +46,7 @@ JAIL_DNS_FWD="192.0.2.53"
 # scope without running the launch body (nor the recursion guard, which
 # would exec the real binary inside an already-sandboxed session).
 : "${CLAUDE_SHADOW_SOURCE_ONLY:=0}"
+SANDBOX_VERIFY=0
 
 # filter_chrome_args OUTVAR ARGS...: set array OUTVAR to ARGS with any
 # `--chrome` removed. Stripping it stops a user-supplied flag from overriding
@@ -219,6 +220,10 @@ agent_profile() {
 agent_exec_argv() {
     local -n _command_out="$1"
     local agent_home="$2"
+    if [ "$SANDBOX_VERIFY" = 1 ]; then
+        _command_out=( /bin/bash /usr/libexec/claude-sandbox/verify-sandbox-battery.sh )
+        return 0
+    fi
     if [ "$AGENT" = codex ]; then
         _command_out=( /usr/libexec/claude-sandbox/codex-launch "$AGENT_REAL" )
     elif [ "$AGENT_BIND_BACK" = 1 ]; then
@@ -226,10 +231,19 @@ agent_exec_argv() {
     else
         _command_out=( "$AGENT_REAL" )
     fi
+    _command_out+=( "${AGENT_INJECT[@]}" )
 }
 
 AGENT="$(detect_agent "${0:-claude}" "${CLAUDE_SANDBOX_AGENT:-}")" || exit 1
 agent_profile "$AGENT" || exit 1
+
+# Internal command used by the helper CLI. Runs the battery through the same
+# profile and isolation setup without starting a model or asking for input.
+if [ "$CLAUDE_SHADOW_SOURCE_ONLY" != 1 ] && [ "${1:-}" = --sandbox-verify ]; then
+    shift
+    [ "$#" = 0 ] || { echo 'claude-sandbox: --sandbox-verify takes no arguments' >&2; exit 2; }
+    SANDBOX_VERIFY=1
+fi
 
 # Recursion guard: if IS_SANDBOX=1 is already set we are inside the
 # sandbox (e.g. a hook or skill spawned the agent), so use the same agent
@@ -245,8 +259,7 @@ if [ "$CLAUDE_SHADOW_SOURCE_ONLY" != "1" ] && [ "${IS_SANDBOX:-}" = "1" ]; then
         _filtered=( "$@" )
     fi
     agent_exec_argv _agent_command "${HOME:-/root}"
-    exec "${_agent_command[@]}" \
-        "${AGENT_INJECT[@]+"${AGENT_INJECT[@]}"}" "${_filtered[@]+"${_filtered[@]}"}"
+    exec "${_agent_command[@]}" "${_filtered[@]}"
 fi
 
 # Export so the inlined bwrap_argv_build picks up the gitconfig path.
@@ -557,8 +570,7 @@ bwrap_argv_build() {
     # matches what its official installer would have placed.
     local -a agent_command=()
     agent_exec_argv agent_command "$home"
-    argv+=( -- "${agent_command[@]}" \
-        "${AGENT_INJECT[@]+"${AGENT_INJECT[@]}"}" "${user_args[@]+"${user_args[@]}"}" )
+    argv+=( -- "${agent_command[@]}" "${user_args[@]}" )
     _bwrap_out=( "${argv[@]}" )
 }
 
@@ -1218,7 +1230,9 @@ if cmp -s "$AGENT_REAL" "$0"; then
 fi
 
 configure_launch
-check_config_persistence
+if [ "$SANDBOX_VERIFY" != 1 ]; then
+    check_config_persistence
+fi
 
 # Pre-create forge credential dirs so the argv builder's --bind succeeds
 # on first run. Skipped when CLAUDE_SANDBOX_NO_FORGE=1 since those binds
