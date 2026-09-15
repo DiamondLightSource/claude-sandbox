@@ -31,7 +31,7 @@ stays empty inside the jail's nested userns, and the two jail checks
 |---|---|
 | 01 | `IS_SANDBOX=1` is set (the fall-through sentinel proving bwrap was entered, not the real binary run directly). |
 | 02 | `/proc/self/status` reports `NoNewPrivs: 1` (NO_NEW_PRIVS blocks setuid escalation). |
-| 03 | Strict-under-`/root`: only the allowed top-level entries exist under `$HOME` (`.cache`, `.config`, `.local`, the masked dotfiles, and **only the running agent's own config** — `.claude`/`.claude.json` for Claude, `.codex` for Codex), and `$HOME/.config` contains only `gh` / `glab-cli` — no leaked sibling configs and no browser `NativeMessagingHosts` dirs. The *other* agent's credentials turning up in a session is a cross-agent leak and FAILs here. |
+| 03 | Strict-under-`/root`: only the allowed top-level entries exist under `$HOME` (`.cache`, `.config`, `.local`, the masked dotfiles, and **only the running agent's own config** — `.claude`/`.claude.json` for Claude, `.codex` for Codex, `.pi` for Pi — plus `.agents`, which may contain only the shared `skills` bind), and `$HOME/.config` contains only `gh` / `glab-cli` — no leaked sibling configs and no browser `NativeMessagingHosts` dirs. The *other* agent's credentials turning up in a session is a cross-agent leak and FAILs here. |
 | 04 | `GH_TOKEN` and `OPENAI_API_KEY` are empty (host env scrubbed by `--clearenv` + allow-list). |
 | 05 | `DISPLAY` is empty (kept out of the allow-list, closing the X11 path). |
 | 06 | `CapEff` in `/proc/self/status` is all zeros (`--cap-drop ALL`). |

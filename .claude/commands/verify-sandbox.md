@@ -87,6 +87,12 @@ config bound back in from the host — `.claude` + `.claude.json`
 one — plus `.cache`, `.local/share`, and a `.config` intermediate
 tmpfs that holds the `gh` / `glab-cli` credential binds.
 
+Every agent also gets `.agents`, as the parent of the read-write
+`~/.agents/skills` bind shared across agents (ADR 25). `.agents` may
+contain **only** `skills`: the rest of the host's `~/.agents` is never
+bound, so any other entry is either a leak or an in-session write to
+the tmpfs, and FAILS here.
+
 **The expected set is per-agent, and that makes this check stronger,
 not laxer.** Each session binds only its own agent's config, so a
 `.claude` appearing inside a codex session (or a `.codex` inside a

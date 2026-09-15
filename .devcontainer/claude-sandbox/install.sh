@@ -598,9 +598,13 @@ link_terminal_config() {
     if [ -w "$shared" ]; then
         _share_path "$HOME/.codex" "$shared/.codex" dir
         _share_path "$HOME/.pi" "$shared/.pi" dir
+        # Shared user skills, bound rw into every agent's session (ADR 25).
+        # Only the skills dir joins the share, not the rest of ~/.agents.
+        mkdir -p "$HOME/.agents"
+        _share_path "$HOME/.agents/skills" "$shared/.agents/skills" dir
     else
         echo "claude-sandbox: $shared is not writable; ~/.codex stays container-scoped (expect to sign in to codex again after a rebuild)." >&2
-        echo "claude-sandbox: ~/.pi also stays container-scoped." >&2
+        echo "claude-sandbox: ~/.pi and ~/.agents/skills also stay container-scoped." >&2
     fi
 }
 

@@ -105,6 +105,14 @@ consistent across them:
 - **Claude's own state** (`~/.claude`, `~/.claude.json`, caches) is bound so
   settings, skills, and the OAuth token survive across launches instead of
   being swallowed by the strict-under-`/root` tmpfs.
+- **Shared agent skills** (`~/.agents/skills`) are bound read-write into every
+  agent's session so one set of skills can serve Claude, Codex and Pi. This is
+  the one home path agents share, and it is a deliberate write channel between
+  them: a compromised session can plant a skill that another agent later loads,
+  in any project that shares the same terminal config. It carries no
+  credentials, and each agent could already persist instructions into its own
+  config, but it widens that reach across agents
+  ({ref}`ADR 25 <adr-shared-agent-skills>`).
 - The **curated gitconfig** and the host **system gitconfig** are exposed
   read-only, the latter neutralised for `git` itself via
   `GIT_CONFIG_SYSTEM=/dev/null`.

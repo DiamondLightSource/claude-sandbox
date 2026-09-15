@@ -83,5 +83,17 @@ share when one is mounted, so a Codex login survives a devcontainer rebuild —
 it is one vendor login, not a repo-scoped forge PAT
 ({ref}`ADR 6 <adr-container-scoped-credentials>`).
 
+## User-scope `~/.agents/skills`
+
+Skills shared by every agent. Created if absent (by the shadow at launch) and
+bound read-write into Claude, Codex and Pi sessions alike. Codex and Pi load
+skills from it natively; Claude loads one only when you symlink it into
+`~/.claude/skills`. Its contents are yours and are never rewritten. When
+`/user-terminal-config` is mounted, it joins the share, so the skills survive
+a rebuild. Only the `skills` directory is bound or shared; the rest of
+`~/.agents` stays outside the sandbox
+({ref}`ADR 25 <adr-shared-agent-skills>`,
+[share skills between agents](../how-to/share-skills-between-agents.md)).
+
 Not placed: `CLAUDE.md` and `README-CLAUDE.md` live in the meta-repo for
 dogfooding.

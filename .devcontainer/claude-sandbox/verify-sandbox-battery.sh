@@ -102,12 +102,21 @@ check_03() {
         pi)    own='\.pi' ;;
         *)     own='\.claude|\.claude\.json' ;;
     esac
+    # .agents is allowed for every agent, but only as the parent of the
+    # shared skills bind (ADR 25): anything else under it is a leak.
     extras="$(ls -A "$HOME" 2>/dev/null \
-        | grep -vxE "$own"'|\.cache|\.config|\.local|\.gitconfig|\.netrc|\.Xauthority|\.ICEauthority' \
+        | grep -vxE "$own"'|\.agents|\.cache|\.config|\.local|\.gitconfig|\.netrc|\.Xauthority|\.ICEauthority' \
         || true)"
     if [ -n "$extras" ]; then
         EXTRA_DETAIL="unexpected \$HOME entries: $(printf '%s' "$extras" | tr '\n' ' ')"
         return 1
+    fi
+    if [ -d "$HOME/.agents" ]; then
+        extras="$(ls -A "$HOME/.agents" 2>/dev/null | grep -vx 'skills' || true)"
+        if [ -n "$extras" ]; then
+            EXTRA_DETAIL="unexpected \$HOME/.agents entries: $(printf '%s' "$extras" | tr '\n' ' ')"
+            return 1
+        fi
     fi
     if [ -d "$HOME/.config" ]; then
         config_extras="$(ls -A "$HOME/.config" 2>/dev/null | grep -vxE 'gh|glab-cli' || true)"

@@ -43,7 +43,12 @@ and would abort codex), and the per-agent `--setenv` list. See
   silently — a hardening fix lands in one and quietly not the other.
 - Binding `~/.claude` into a codex session or `~/.codex` into a
   claude one. Each agent sees only its own credentials; that
-  separation is the point.
+  separation is the point. The ONE deliberate cross-agent path is
+  `~/.agents/skills` (ADR 25, #52), rw in every session. Refuse widening
+  it to all of `~/.agents` (Codex already reads `~/.agents/plugins`;
+  contents are third-party-defined), putting shipped-skill ro binds
+  inside it (they stay in each agent's own dir, ADR 24), or relaxing
+  check 03's "`.agents` holds only `skills`".
 - Dropping the `~/.codex/packages` tmpfs mask, or moving it above
   the `~/.codex` bind. The vendor unpacks the codex binary INSIDE
   `CODEX_HOME`, so without the mask a compromised session has a

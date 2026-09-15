@@ -315,6 +315,15 @@ if [ "$(readlink "$LINK_HOME/.claude" 2>/dev/null)" = "$LINK_SHARED/.claude" ] \
 else
     fail "link_terminal_config did not symlink ~/.claude{,.json} into $LINK_SHARED"
 fi
+# Shared user skills join the share (ADR 25) — the skills dir only, with
+# ~/.agents itself left a real, container-local directory.
+if [ "$(readlink "$LINK_HOME/.agents/skills" 2>/dev/null)" = "$LINK_SHARED/.agents/skills" ] \
+        && [ -d "$LINK_SHARED/.agents/skills" ] \
+        && [ ! -L "$LINK_HOME/.agents" ]; then
+    pass
+else
+    fail "link_terminal_config did not symlink ~/.agents/skills into $LINK_SHARED"
+fi
 
 # Guard behaviour: drive the INSTALLED scripts directly (deterministic,
 # env-only — no claude needed). The gate fail-closes when unwrapped and

@@ -723,4 +723,40 @@ ARGV15N="$(HOME="$SKILLSFIX/home" CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitc
 assert_not_contains scenario15-none "$ARGV15N" "$SKILLSFIX/nonexistent/*"
 SHIPPED_SKILLS_DIR="$_saved_skills_dir"
 
+
+# --- Scenario 16: ~/.agents/skills is bound rw into EVERY agent (ADR 25) ---
+# The one home path shared across agents: skills, not credentials. Only the
+# skills dir is bound — never ~/.agents itself — and each agent keeps its own
+# config (and so its own skills dir) unshared.
+SHAREDFIX="$(mktemp -d)"
+register_cleanup "$SHAREDFIX"
+mkdir -p "$SHAREDFIX/.agents/skills" "$SHAREDFIX/.agents/plugins" \
+    "$SHAREDFIX/.claude" "$SHAREDFIX/.codex" "$SHAREDFIX/.pi"
+touch "$SHAREDFIX/.claude.json"
+for _agent in claude codex pi; do
+    agent_profile "$_agent"
+    ARGV16="$(HOME="$SHAREDFIX" CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
+        bwrap_argv_build "$SHAREDFIX" "$AGENT_REAL")"
+    assert_pair "scenario16-$_agent-rw"  "$ARGV16" "--bind" "$SHAREDFIX/.agents/skills"
+    assert_pair "scenario16-$_agent-dst" "$ARGV16" "$SHAREDFIX/.agents/skills" "$SHAREDFIX/.agents/skills"
+    # Narrow: the parent and its other entries stay on the tmpfs.
+    assert_not_contains "scenario16-$_agent-narrow"  "$ARGV16" "$SHAREDFIX/.agents"
+    assert_not_contains "scenario16-$_agent-plugins" "$ARGV16" "$SHAREDFIX/.agents/plugins"
+done
+# Sharing skills does not share credentials: the other agents' config dirs
+# stay out of a pi session.
+assert_not_contains scenario16-isolation "$ARGV16" "$SHAREDFIX/.claude"
+assert_not_contains scenario16-isolation "$ARGV16" "$SHAREDFIX/.codex"
+agent_profile claude
+# Absent on the host: no bind, and the builder does not create it.
+rm -rf "$SHAREDFIX/.agents"
+ARGV16N="$(HOME="$SHAREDFIX" CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \
+    bwrap_argv_build "$SHAREDFIX" /test/.local/bin/claude)"
+assert_not_contains scenario16-absent "$ARGV16N" "$SHAREDFIX/.agents/skills"
+if [ -e "$SHAREDFIX/.agents" ]; then
+    fail "scenario16-pure — bwrap_argv_build created ~/.agents"
+else
+    pass
+fi
+
 finish bwrap_argv.sh
