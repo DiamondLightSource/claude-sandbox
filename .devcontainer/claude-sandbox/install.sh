@@ -929,6 +929,12 @@ wire_user_statusline() {
 }
 
 main() {
+    local image_build=0
+    case "$*" in
+        '') ;;
+        --image-build) image_build=1 ;;
+        *) echo 'Usage: install.sh [--image-build]' >&2; return 2 ;;
+    esac
     probe_or_refuse
     # Shadow first: with /usr/local/bin/claude in place before the
     # official installer runs, any `claude` lookup during the rest of
@@ -949,8 +955,12 @@ main() {
     # on PATH so it works after the install clone is deleted.
     install_file "$SCRIPT_DIR/claude-sandbox" "$(prefixed /usr/local/bin/claude-sandbox)"
     apt_install
-    probe_userns_or_refuse
-    link_terminal_config
+    # Image builds have no runtime mounts and cannot validate the host kernel.
+    # The container entrypoint performs these two steps at startup.
+    if [ "$image_build" = 0 ]; then
+        probe_userns_or_refuse
+        link_terminal_config
+    fi
     install_claude_binary
     install_codex_binary
     install_pi_binary
