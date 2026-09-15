@@ -8,6 +8,19 @@ For the configuration they read, see [configuration](configuration.md).
 The published image also includes Vim for terminal editing. Installing the
 sandbox into a custom devcontainer leaves the choice of editor to that project.
 
+Browser testing is optional. The shipped `browser-testing` skill provides an
+outer-container installer for Playwright, Chromium and system dependencies,
+plus an in-sandbox smoke check. It preserves project dependencies and caches
+browser downloads under `/cache/ms-playwright`; browsers are not baked into
+the image. Run the setup script from an outer container terminal:
+
+```bash
+sh /usr/libexec/claude-sandbox/skills/browser-testing/scripts/install-browser-deps.sh
+```
+
+After setup, `chromium` opens the browser from an outer-container terminal
+with a working display. Its profile persists under `/cache/chromium-home`.
+
 ## Container-scoped
 
 Preinstalled in the published image. In a custom devcontainer, re-established
