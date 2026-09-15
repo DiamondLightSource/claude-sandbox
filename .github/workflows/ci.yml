@@ -121,6 +121,7 @@ jobs:
           cmp x/claude_sandbox/tree/container/claude-container container/claude-container
           cmp x/claude_sandbox/tree/.devcontainer/claude-sandbox.conf .devcontainer/claude-sandbox.conf
           cmp x/claude_sandbox/tree/.claude/statusline-command.sh .claude/statusline-command.sh
+          diff -r x/claude_sandbox/tree/skills skills
 
   egress-jail:
     # Exercises the egress-jail netns routing enforcement (ADR 0015 / issue #56),

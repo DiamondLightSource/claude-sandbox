@@ -20,7 +20,9 @@ non-default or modified checkout.
 The sandbox implementation is Bash. Python is limited to the docs toolchain,
 the test socket fixture, and the PyPI entry point that bundles and executes
 the Bash files. See `CLAUDE.md` for the project boundaries.
-The repository's `.claude/` is the source of shipped skills, commands and hooks.
+The repository's `.claude/` holds the skills, commands and hooks for developing
+this repo; only the top-level `skills/` tree ships to users (see the
+`claude-sandbox-shipped-skills` skill).
 
 ## Validation
 

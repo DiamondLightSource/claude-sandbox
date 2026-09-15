@@ -130,6 +130,23 @@ for g in "$VERIFY_DEST" "$GATE_DEST" "$BATTERY_DEST"; do
     fi
 done
 
+
+# Shipped skills: the repo's top-level skills/ tree lands under /usr/libexec
+# (root-owned, ro in-session — the shadow binds each skill into the agent's
+# own skills dir). Placed by copy, so a byte-diff against the source proves
+# the install ships exactly what the checkout carries; nothing is written
+# under the user's ~/.claude/skills.
+SKILLS_DEST="$PREFIX/usr/libexec/claude-sandbox/skills"
+if [ -d "$REPO_ROOT/skills" ] && diff -r "$REPO_ROOT/skills" "$SKILLS_DEST" >/dev/null 2>&1; then
+    pass
+else
+    fail "shipped skills at $SKILLS_DEST do not match $REPO_ROOT/skills"
+fi
+if [ -e "$USER_HOME_DIR/.claude/skills" ]; then
+    fail "install wrote into the user's ~/.claude/skills ($USER_HOME_DIR/.claude/skills)"
+else
+    pass
+fi
 # Managed settings (the highest-precedence, user-uneditable policy layer)
 # carries the guard hooks + updater-disable.
 MANAGED="$PREFIX/etc/claude-code/managed-settings.json"

@@ -87,6 +87,7 @@ RUN bash -c ' \
     install_conf; \
     stamp_version; \
     install_guard_scripts; \
+    install_shipped_skills; \
     wire_managed_settings; \
     wire_codex_managed; \
     wire_gate_flag; \

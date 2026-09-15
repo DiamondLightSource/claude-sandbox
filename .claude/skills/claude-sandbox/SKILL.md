@@ -616,6 +616,7 @@ image/launcher topics. Touch the root `Dockerfile`, `container/*`, or
 | Global UserPromptSubmit gate  | `.devcontainer/claude-sandbox/sandbox-gate.sh`      |
 | Threat model + binds rationale| [sphinx docs](https://diamondlightsource.github.io/claude-sandbox/explanations/threat-model.html) |
 | Helper CLI (gh-auth, glab-auth, update, verify, version) | `.devcontainer/claude-sandbox/claude-sandbox` |
+| Shipped skills (ro-bound into every agent session) | `skills/` + `claude-sandbox-shipped-skills` skill |
 | Network egress / firewall / lateral-movement design | `claude-sandbox-networking` skill (kept separate so it loads only on network topics) |
 
 Touching any of these → re-read this skill first.

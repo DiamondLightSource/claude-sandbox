@@ -82,6 +82,16 @@ filter_chrome_args() {
 # ~/.local/bin AND prepend that dir to the user's shell rc; install.sh
 # relocates both so the rc-mutation is inert (Invariant 1).
 
+# Shipped skills: the repo's top-level skills/ tree, placed by install.sh
+# under /usr/libexec next to the guard scripts (root-owned, ro in-session).
+# The argv builder binds each one read-only onto the agent's own skills
+# directory INSIDE the sandbox, so the user's host ~/.claude (or ~/.codex,
+# ~/.pi) is never written to and the skill's scripts cannot be rewritten by
+# a compromised session. A plain variable, not an env seam: tests point it
+# at a fixture after sourcing; nothing outside the jail's trust boundary
+# can choose a bind source.
+SHIPPED_SKILLS_DIR="/usr/libexec/claude-sandbox/skills"
+
 # detect_agent ARGV0 OVERRIDE: name the agent this invocation wraps.
 # OVERRIDE (CLAUDE_SANDBOX_AGENT) exists for tests and for reaching a
 # shadow through a differently-named symlink. It is matched against a
@@ -111,6 +121,7 @@ detect_agent() {
 #   AGENT_INNER_REL     $HOME-relative conventional path inside the sandbox
 #   AGENT_HOME_DIRS     $HOME-relative dirs bound rw (config + login state)
 #   AGENT_HOME_FILES    $HOME-relative files bound rw
+#   AGENT_SKILLS_REL    $HOME-relative dir the agent discovers skills in
 #   AGENT_INJECT        args injected ahead of the user's
 #   AGENT_FILTER_CHROME strip a user-supplied --chrome (Claude only)
 #   AGENT_LABEL         human name for messages
@@ -132,6 +143,7 @@ agent_profile() {
             AGENT_HOME_DIRS=( .claude )
             AGENT_HOME_FILES=( .claude.json )
             AGENT_HOME_TMPFS=()
+            AGENT_SKILLS_REL=".claude/skills"
             AGENT_INJECT=( --no-chrome )
             AGENT_FILTER_CHROME=1
             # Claude's updater-disable is delivered by managed-settings
@@ -169,6 +181,7 @@ agent_profile() {
             # exec. Mask it. Same reasoning as the ~/.local/share/claude tmpfs
             # (Claude's versioned binary cache) below.
             AGENT_HOME_TMPFS=( .codex/packages )
+            AGENT_SKILLS_REL=".codex/skills"
             # Codex has no browser-extension RPC channel to disable and
             # no --chrome flag; injecting Claude's would abort the launch.
             AGENT_INJECT=()
@@ -193,6 +206,7 @@ agent_profile() {
             AGENT_HOME_DIRS=( .pi )
             AGENT_HOME_FILES=()
             AGENT_HOME_TMPFS=()
+            AGENT_SKILLS_REL=".pi/agent/skills"
             AGENT_INJECT=()
             AGENT_FILTER_CHROME=0
             AGENT_SETENV=( PI_SKIP_VERSION_CHECK 1 )
@@ -332,6 +346,21 @@ bwrap_argv_build() {
     local mask_rel
     for mask_rel in "${AGENT_HOME_TMPFS[@]+"${AGENT_HOME_TMPFS[@]}"}"; do
         argv+=( --tmpfs "$home/$mask_rel" )
+    done
+    # Shipped skills, one --ro-bind PER SKILL onto the agent's skills dir.
+    # Per skill, not per tree: every agent discovers skills exactly one level
+    # deep (<skills>/<name>/SKILL.md), so binding the whole tree would bury
+    # them a level down; and a per-skill bind leaves the user's own skills
+    # in the same directory visible alongside. Emitted after the rw binds so
+    # it sits inside the bound config dir (bwrap applies argv in order), and
+    # read-only so the bundled scripts stay exactly what install placed.
+    # The launch body pre-creates the skills dir on the host; on a tmpfs
+    # $HOME bwrap creates the mount points itself.
+    local skill_dir
+    for skill_dir in "$SHIPPED_SKILLS_DIR"/*/; do
+        [ -d "$skill_dir" ] || continue
+        skill_dir="${skill_dir%/}"
+        argv+=( --ro-bind "$skill_dir" "$home/$AGENT_SKILLS_REL/${skill_dir##*/}" )
     done
     # $HOME/.local/share bulk-bound for host XDG data dirs (helm
     # plugins, krew, uv Python, etc.). Two sub-dirs need to stay
@@ -1262,6 +1291,19 @@ for _agent_dir in "${AGENT_HOME_DIRS[@]}"; do
 done
 for _agent_file in "${AGENT_HOME_FILES[@]+"${AGENT_HOME_FILES[@]}"}"; do
     touch "${HOME:-/root}/$_agent_file"
+done
+# The shipped-skills binds land inside that config dir, one per skill. Create
+# the skills dir explicitly (the one deliberate host write, and only when
+# something ships) rather than let bwrap mkdir its mount points on the host
+# bind. A host skill of the same name would be masked by the ro bind for the
+# session, so say so — the shipped copy wins by design, but not silently.
+for _skill_dir in "$SHIPPED_SKILLS_DIR"/*/; do
+    [ -d "$_skill_dir" ] || continue
+    mkdir -p "${HOME:-/root}/$AGENT_SKILLS_REL"
+    _skill_dir="${_skill_dir%/}"
+    if [ -e "${HOME:-/root}/$AGENT_SKILLS_REL/${_skill_dir##*/}" ]; then
+        echo "claude-sandbox: ~/$AGENT_SKILLS_REL/${_skill_dir##*/} is shadowed by the shipped skill for this session." >&2
+    fi
 done
 
 render_gitconfig
