@@ -20,6 +20,13 @@ sh /usr/libexec/claude-sandbox/skills/browser-testing/scripts/install-browser-de
 
 After setup, `chromium` opens the browser from an outer-container terminal
 with a working display. Its profile persists under `/cache/chromium-home`.
+See [browser automation](../how-to/browser-automation.md) for setup checks
+and example testing prompts.
+
+VS Code automation is also optional. The shipped `vscode-headless` skill
+provides an outer-container installer, a virtual-display launcher and a UI
+driver. See [VS Code automation](../how-to/vscode-automation.md) for setup
+and example editor and debugging workflows.
 
 ## Container-scoped
 
