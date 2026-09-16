@@ -107,6 +107,28 @@ CONF="${CLAUDE_SANDBOX_CONF:-$HOME/.config/claude-sandbox.conf}"
 # Named volume at /cache (empty = none, the container layer only).
 CACHE_VOLUME="${CLAUDE_SANDBOX_CACHE-claude-sandbox-cache}"
 
+# Messages: one "claude-sandbox:" headline, then one indented detail per line
+# with an aligned label, so no line wraps mid-name and each command copies
+# whole. WARNED records a warning for pause_after_warnings.
+WARNED=0
+say() { echo "claude-sandbox: $1" >&2; }
+note() { printf '  %-11s %s\n' "$1" "$2" >&2; }
+warn() { note warning "$1"; WARNED=1; }
+
+# pause_after_warnings: an agent redraws the whole terminal as it starts, so
+# a warning printed before it vanishes at once. Wait for a key after any
+# warning, but only before an agent verb and only when a person is at the
+# terminal (stdin and stderr are ttys). A shell or a helper verb does not
+# redraw, so its warnings stay visible without a wait.
+pause_after_warnings() {
+    local _key
+    [ "$WARNED" = 1 ] && [ "$shell" = 0 ] && [ "$inner" = 0 ] || return 0
+    [ -t 0 ] && [ -t 2 ] || return 0
+    printf 'Press any key to continue, Ctrl-C to cancel.' >&2
+    read -rsn 1 _key
+    printf '\n' >&2
+}
+
 usage() {
     # The header comment above IS the manual; print it (strip the '# ').
     sed -n '2,/^set -euo pipefail$/p' "$0" | sed -e '$d' -e 's/^# \{0,1\}//'
@@ -128,16 +150,19 @@ warn_if_outdated() {
         rev="$("$ENGINE" image inspect \
             -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' \
             "$IMAGE" 2>/dev/null)" || rev=""
-        echo "claude-container: this launcher is v$VERSION; the image was built with v$img_ver. Update:" >&2
+        say "launcher v$VERSION is older than the image (v$img_ver)"
         if [ "${CLAUDE_SANDBOX_LAUNCHER:-}" = uvx ]; then
-            echo "    uvx claude-sandbox@latest   (or pin: uvx claude-sandbox==$img_ver)" >&2
+            note update "uvx claude-sandbox@latest"
+            note pin "uvx claude-sandbox==$img_ver"
         else
-            echo "    curl -fsSLO https://raw.githubusercontent.com/DiamondLightSource/claude-sandbox/${rev:-main}/container/claude-container" >&2
+            note update "curl -fsSLO https://raw.githubusercontent.com/DiamondLightSource/claude-sandbox/${rev:-main}/container/claude-container"
         fi
     else
-        echo "claude-container: this launcher (v$VERSION) is newer than the local image (v$img_ver);" >&2
-        echo "    consider: $ENGINE pull $IMAGE  then  $SELF --recreate" >&2
+        say "launcher v$VERSION is newer than the local image (v$img_ver)"
+        note pull "$ENGINE pull $IMAGE"
+        note rebuild "$SELF --recreate"
     fi
+    WARNED=1
 }
 
 # Idle PID 1, also used to identify containers owned by this launcher.
@@ -162,7 +187,7 @@ while [ $# -gt 0 ]; do
         --no-peers) peers=0; create_opts+=( --no-peers ); shift ;;
         --mount|--mount-rw)
             if [ $# -lt 2 ]; then
-                echo "claude-container: $1 needs a PATH" >&2
+                echo "claude-sandbox: $1 needs a PATH" >&2
                 exit 1
             fi
             if [ "$1" = --mount ]; then
@@ -196,13 +221,13 @@ case "${1:-}" in
             case "$1" in
                 --force)  clean_force=1 ;;
                 --images) clean_images=1 ;;
-                *) echo "claude-container: clean takes only --force and --images" >&2; exit 2 ;;
+                *) echo "claude-sandbox: clean takes only --force and --images" >&2; exit 2 ;;
             esac
             shift
         done
         ;;
     install)
-        echo "claude-container: install is a uvx verb: run \`uvx claude-sandbox install\` INSIDE the devcontainer" >&2
+        echo "claude-sandbox: install is a uvx verb: run \`uvx claude-sandbox install\` INSIDE the devcontainer" >&2
         exit 2
         ;;
 esac
@@ -214,15 +239,15 @@ esac
 # a real setup; it is also the test seam, since CI runs in a container).
 if { [ -e /run/.containerenv ] || [ -e /.dockerenv ]; } && [ "${CLAUDE_SANDBOX_NESTED:-0}" != 1 ]; then
     if [ -x /usr/local/bin/claude ]; then
-        echo "claude-container: you are already inside an claude-sandbox container — run claude, codex or pi directly" >&2
+        echo "claude-sandbox: you are already inside an claude-sandbox container — run claude, codex or pi directly" >&2
     else
-        echo "claude-container: this is a container without the sandbox — install it with: uvx claude-sandbox install" >&2
+        echo "claude-sandbox: this is a container without the sandbox — install it with: uvx claude-sandbox install" >&2
     fi
     exit 1
 fi
 
 if ! command -v "$ENGINE" >/dev/null 2>&1; then
-    echo "claude-container: $ENGINE not found (set CLAUDE_SANDBOX_ENGINE=docker?)" >&2
+    echo "claude-sandbox: $ENGINE not found (set CLAUDE_SANDBOX_ENGINE=docker?)" >&2
     exit 1
 fi
 
@@ -245,20 +270,20 @@ clean_containers() {
         "$ENGINE" container inspect -f '{{join .Config.Cmd " "}}' "$n" 2>/dev/null \
             | grep -qF 'sleep 60 & wait' || continue
         if [ "$clean_force" != 1 ] && [ "$("$ENGINE" container inspect -f '{{.State.Running}}' "$n" 2>/dev/null)" = true ]; then
-            echo "claude-container: kept $n (running; --force removes it and ends its sessions)" >&2
+            echo "claude-sandbox: kept $n (running; --force removes it and ends its sessions)" >&2
             kept=$((kept + 1))
             continue
         fi
-        "$ENGINE" rm -f "$n" >/dev/null && { echo "claude-container: removed $n" >&2; removed=$((removed + 1)); }
+        "$ENGINE" rm -f "$n" >/dev/null && { echo "claude-sandbox: removed $n" >&2; removed=$((removed + 1)); }
     done < <("$ENGINE" ps -a --filter name='^claude-sandbox-' --format '{{.Names}}' 2>/dev/null)
-    echo "claude-container: $removed container(s) removed, $kept running kept" >&2
+    echo "claude-sandbox: $removed container(s) removed, $kept running kept" >&2
     [ "$clean_images" = 1 ] || return 0
     local img
     while IFS= read -r img; do
         [ -n "$img" ] || continue
         # rmi refuses an image a remaining container still uses; that is the
         # right outcome, so its complaint is dropped.
-        "$ENGINE" rmi "$img" >/dev/null 2>&1 && echo "claude-container: removed image $img" >&2
+        "$ENGINE" rmi "$img" >/dev/null 2>&1 && echo "claude-sandbox: removed image $img" >&2
     done < <("$ENGINE" images --filter reference='*/diamondlightsource/claude-sandbox' --format '{{.Repository}}:{{.Tag}}' 2>/dev/null)
 }
 # Venvs under /cache/venv-for<path> on the cache volume whose project
@@ -282,10 +307,10 @@ clean_venvs() {
             continue
         fi
         "$ENGINE" run --rm --entrypoint rm -v "$CACHE_VOLUME:/cache" "$IMAGE" -rf "$venv" >/dev/null \
-            && { echo "claude-container: removed venv for $path" >&2; removed=$((removed + 1)); }
+            && { echo "claude-sandbox: removed venv for $path" >&2; removed=$((removed + 1)); }
     done < <("$ENGINE" run --rm --entrypoint find -v "$CACHE_VOLUME:/cache" "$IMAGE" \
         /cache/venv-for -name pyvenv.cfg -printf '%h\n' 2>/dev/null)
-    echo "claude-container: $removed venv(s) removed" >&2
+    echo "claude-sandbox: $removed venv(s) removed" >&2
 }
 if [ "$clean" = 1 ]; then
     clean_containers
@@ -357,12 +382,13 @@ create_container() {
     # and every host token to the container, ro or not).
     local parent
     parent="$(dirname "$PWD")"
+    skipped_parent=""
     if [ "$peers" = 1 ]; then
         case "$parent" in
             /) ;;
             *)
                 case "$HOME/" in
-                    "$parent"/*) echo "claude-container: not mounting $parent: it contains your home directory" >&2 ;;
+                    "$parent"/*) skipped_parent="$parent" ;;
                     *) args+=( --mount "type=bind,src=$parent,dst=$parent,bind-propagation=slave" ) ;;
                 esac
                 ;;
@@ -441,8 +467,12 @@ create_container() {
     # orphans a session leaves behind; the trap lets `stop` end it promptly.
     args+=( "$IMAGE" bash -c "$KEEPER_CMD" )
     "$ENGINE" "${args[@]}" >/dev/null
-    echo "claude-container: created container $NAME from $IMAGE" >&2
-    echo "claude-container: for forge push access: $SELF shell, then claude-sandbox gh-auth" >&2
+    say "created $NAME"
+    note image "$IMAGE"
+    note "forge auth" "$SELF shell, then claude-sandbox gh-auth"
+    if [ -n "$skipped_parent" ]; then
+        warn "did not mount $skipped_parent: it contains your home directory"
+    fi
 }
 
 if [ "$recreate" = 1 ] && container_exists; then
@@ -451,26 +481,31 @@ fi
 
 if container_exists; then
     if ! is_keeper; then
-        echo "claude-container: $NAME does not have the expected keeper command;" >&2
-        echo "  run: $SELF --recreate (forge logins must be re-done)" >&2
+        say "$NAME does not have the expected keeper command"
+        note rebuild "$SELF --recreate  (forge logins must be re-done)"
         exit 1
     fi
-    created="$("$ENGINE" container inspect -f '{{.Created}}' "$NAME" 2>/dev/null | cut -c1-19)"
-    echo "claude-container: reconnecting to existing container $NAME (created ${created:-?}); --recreate rebuilds it" >&2
+    # One line on every launch; details only when something needs acting on.
+    say "reusing $NAME"
+    rebuild=0
     # A pulled image does not reach an existing container: compare the
     # container's image ID with the local tag's. Silent when either lookup
     # fails (no local image yet, docker/podman template differences).
     local_img="$("$ENGINE" image inspect -f '{{.Id}}' "$IMAGE" 2>/dev/null)" || local_img=""
     ctr_img="$("$ENGINE" container inspect -f '{{.Image}}' "$NAME" 2>/dev/null)" || ctr_img=""
     if [ -n "$local_img" ] && [ -n "$ctr_img" ] && [ "$local_img" != "$ctr_img" ]; then
-        echo "  this container was created from an OLDER image than the one now pulled for $IMAGE;" >&2
-        echo "  it keeps running the old one until you: $SELF --recreate" >&2
+        created="$("$ENGINE" container inspect -f '{{.Created}}' "$NAME" 2>/dev/null | cut -c1-16 | tr T ' ')"
+        warn "runs an older image than the one pulled (created ${created:-?})"
+        rebuild=1
     fi
     if [ ${#create_opts[@]} -gt 0 ]; then
         # Everything else applies per run; these are baked into the
         # container and silently ignored on reuse — say so.
-        echo "  create-time option(s) ignored on an existing container: ${create_opts[*]}" >&2
-        echo "  use --recreate to apply them" >&2
+        warn "ignored on an existing container: ${create_opts[*]}"
+        rebuild=1
+    fi
+    if [ "$rebuild" = 1 ]; then
+        note rebuild "$SELF --recreate"
     fi
 else
     create_container
@@ -481,7 +516,7 @@ if ! container_running; then
     if ! container_running; then
         # The entrypoint refused (typically: this host cannot nest user
         # namespaces). Its message is in the container log.
-        echo "claude-container: $NAME exited during start:" >&2
+        echo "claude-sandbox: $NAME exited during start:" >&2
         "$ENGINE" logs "$NAME" >&2 || true
         exit 1
     fi
@@ -501,6 +536,7 @@ elif [ "$shell" = 1 ]; then
 else
     set -- "$agent" "$@"
 fi
+pause_after_warnings
 rc=0
 "$ENGINE" exec -it "$NAME" "$@" || rc=$?
 

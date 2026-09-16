@@ -114,8 +114,11 @@ printf '%s\n' "claude-sandbox-project-$(printf '%s' "$TMP/ws/project" | cksum | 
 PROJECT="$TMP/ws/project" run -- --no-peers
 assert_eq 'no-peers reuse does not recreate' '' "$(create_line)"
 assert_eq 'no-peers reuse completes normally' 0 "$RC"
-assert_parse 'no-peers reuse warns option was ignored' grep -Fq -- 'create-time option(s) ignored on an existing container: --no-peers' <<< "$ERR"
-assert_parse 'no-peers reuse explains recreation' grep -Fq -- 'use --recreate to apply them' <<< "$ERR"
+assert_parse 'no-peers reuse warns option was ignored' grep -Fq -- '  warning     ignored on an existing container: --no-peers' <<< "$ERR"
+assert_parse 'no-peers reuse explains recreation' grep -Fq -- '  rebuild     claude-container --recreate' <<< "$ERR"
+# A plain reuse prints the headline alone.
+PROJECT="$TMP/ws/project" run --
+assert_eq 'plain reuse prints one line' "claude-sandbox: reusing claude-sandbox-project-$(printf '%s' "$TMP/ws/project" | cksum | awk '{print $1}')" "$ERR"
 rm -f "$TMP/ps"
 run --   # project directly under $HOME: parent holds ~, must not be mounted
 assert_not_contains "parent containing HOME is not mounted" "$(create_line)" "src=$TMP,dst=$TMP,"
@@ -187,6 +190,31 @@ case "$ERR" in *"curl"*) fail "uvx hint still mentions curl" ;; *) pass ;; esac
 run FAKE_IMG_VER=0.1.0 CLAUDE_SANDBOX_LAUNCHER=uvx --
 case "$ERR" in *"uvx claude-sandbox --recreate"*) pass ;; *) fail "newer-launcher hint under uvx: $ERR" ;; esac
 
+
+# --- messages: headline plus aligned details, no wrapped lines --------------
+run CLAUDE_SANDBOX_LAUNCHER=uvx --
+assert_parse 'create headline' grep -Eq -- '^claude-sandbox: created claude-sandbox-project-[0-9]+$' <<< "$ERR"
+assert_parse 'create names the image' grep -Fxq -- '  image       ghcr.io/diamondlightsource/claude-sandbox:latest' <<< "$ERR"
+assert_parse 'create names forge auth' grep -Fxq -- '  forge auth  uvx claude-sandbox shell, then claude-sandbox gh-auth' <<< "$ERR"
+long="$(awk 'length > 80' <<< "$ERR")"
+assert_eq 'create lines fit 80 columns' '' "$long"
+assert_parse 'no old prefix' grep -Fvq -- 'claude-container:' <<< "$ERR"
+
+# --- a warning holds the terminal before an agent, never before a shell -----
+# script(1) gives the launcher a terminal; one key press lets it continue.
+pause_run() {
+    : > "$LOG"; rm -f "$TMP/mark"
+    printf x | ( cd "$TMP/project" && env -i PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP" \
+        LOG="$LOG" MARK="$TMP/mark" PS="$TMP/ps" IMAGES="$TMP/images" VENVS="$TMP/venvs" CLAUDE_SANDBOX_NESTED=1 \
+        FAKE_IMG_VER=99.0.0 timeout 10 script -qec "bash $LAUNCHER $*" /dev/null 2>&1 | tr -d '\r' )
+}
+out="$(pause_run)"
+assert_contains 'warning pauses before an agent' "$out" 'Press any key to continue, Ctrl-C to cancel.'
+[ -n "$(exec_line)" ] && pass || fail "agent did not launch after the key press"
+out="$(pause_run shell)"
+assert_not_contains 'warning does not pause before a shell' "$out" 'Press any key to continue, Ctrl-C to cancel.'
+run FAKE_IMG_VER=99.0.0 --
+assert_parse 'no pause without a terminal' grep -Fvq -- 'Press any key' <<< "$ERR"
 
 # --- clean removes stopped keeper containers; running ones only with --force -
 printf '%s\n' claude-sandbox-a-1 claude-sandbox-b-2 claude-sandbox-running-3 > "$TMP/ps"
