@@ -108,8 +108,9 @@ there does not reach the agent session you meant.
 
 Each container has a short tag: the project directory name and four hex
 digits, such as `myproj-3f2a`. The tag is in `/etc/claude-sandbox-tag`.
-Show it with the host name, as `ws1:myproj-3f2a`, in the Claude status line,
-the Pi footer and the zsh and bash prompts:
+Show it with the host name, as `ws1:myproj-3f2a`, in the Claude status line
+and the Pi footer. The zsh and bash prompts show the tag alone, in white,
+because most prompts already show the host name:
 
 ```bash
 claude-sandbox doctor        # Report what is not set up; changes nothing

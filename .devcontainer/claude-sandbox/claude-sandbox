@@ -234,18 +234,18 @@ backup() {
     report backup "$(basename "$1")" "saved the original as $copy"
 }
 
-# The prompt block for SHELL (zsh or bash). It prefixes host:tag to the
+# The prompt block for SHELL (zsh or bash). It prefixes the tag in white to the
 # prompt inside a launcher-made container and does nothing anywhere else, so
 # a terminal-config shared with the host or a devcontainer stays safe. The
 # case guard stops a re-sourced rc file adding the prefix twice.
 prompt_block() {
     printf '%s\n' "$PROMPT_BEGIN"
-    printf '%s\n' '# Added by `claude-sandbox doctor --fix`: shows host:tag of the claude-sandbox' \
+    printf '%s\n' '# Added by `claude-sandbox doctor --fix`: shows the tag of the claude-sandbox' \
         '# container this shell runs in. Delete this block to remove it.'
     case "$1" in
         zsh) cat <<'EOF'
 if [ -r /etc/claude-sandbox-tag ]; then
-    __cs_tag="%F{yellow}${HOST%%.*}:$(cat /etc/claude-sandbox-tag)%f "
+    __cs_tag="%F{white}$(cat /etc/claude-sandbox-tag)%f "
     # Put the tag at the start of the line above the input line. A theme such
     # as dst opens with a blank line and puts user@host on the next one; the
     # tag belongs on that user@host line, not the blank one.
@@ -263,8 +263,8 @@ EOF
         ;;
         bash) cat <<'EOF'
 if [ -r /etc/claude-sandbox-tag ]; then
-    __cs_tag="${HOSTNAME%%.*}:$(cat /etc/claude-sandbox-tag)"
-    case "$PS1" in *"$__cs_tag"*) ;; *) PS1="\[\033[0;33m\]$__cs_tag\[\033[0m\] $PS1" ;; esac
+    __cs_tag="$(cat /etc/claude-sandbox-tag)"
+    case "$PS1" in *"$__cs_tag"*) ;; *) PS1="\[\033[0;37m\]$__cs_tag\[\033[0m\] $PS1" ;; esac
     unset __cs_tag
 fi
 EOF
