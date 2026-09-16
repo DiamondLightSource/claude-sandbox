@@ -11,17 +11,18 @@
 # devcontainer (re-authenticate after --recreate), never a host-credential
 # mount. The container's own process is an idle keeper; every session is
 # an exec into it, so the verb and AGENT_ARGS apply on every run.
-# Only --bridge, --no-peers, --mount and --mount-rw are fixed at create time
+# Only --bridge, --peers, --mount and --mount-rw are fixed at create time
 # (--recreate to change them). The container stops when its last session
 # exits.
 #
-# Filesystem view, like a devcontainer's: the project dir and its PARENT
-# are bound read-write at their host paths, so sibling checkouts can be
-# opened as sessions of their own (skipped when the parent is / or
-# contains $HOME, which would expose ~/.ssh and every other host secret
-# to the container). Each agent session still writes only to its own
-# project: the sandbox binds $PWD, not the parent. Siblings remain readable
-# by agents; --no-peers skips the automatic parent mount.
+# Filesystem view: the project dir is bound read-write at its host path.
+# --peers also binds its PARENT read-write, as a devcontainer mounts
+# /workspaces, so sibling checkouts can be opened as sessions of their own
+# (skipped when the parent is / or contains $HOME, which would expose ~/.ssh
+# and every other host secret to the container). Each agent session still
+# writes only to its own project: the sandbox binds $PWD, not the parent.
+# Peers are off by default because every sibling, and any credential in it,
+# is then readable by agents.
 #
 # Usage: claude-container [OPTIONS] [VERB] [ARGS...]
 #
@@ -62,9 +63,11 @@
 #                   agents can read it, nothing in the container can write it
 #   --mount-rw PATH bind PATH read-write into the container AND the
 #                   sandbox (repeatable; becomes an allow-write entry)
-#   --no-peers      skip the automatic parent-directory mount; sibling
-#                   projects are otherwise readable by sandboxed agents.
-#                   Explicit --mount and --mount-rw paths still apply.
+#   --peers         also bind the project's parent directory read-write, so
+#                   sibling projects can be opened from a shell. Sibling
+#                   projects are then readable by sandboxed agents.
+#   --no-peers      the default: no parent-directory mount. Accepted so
+#                   commands written for 4.4.0 keep working.
 #   --version       print launcher version and exit
 #   -h | --help     this text
 #
@@ -170,7 +173,7 @@ KEEPER_CMD='trap "exit 0" TERM INT; while :; do sleep 60 & wait $!; done'
 
 recreate=0
 host_net=1
-peers=1
+peers=0
 agent=claude
 shell=0
 inner=0
@@ -184,7 +187,8 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --recreate) recreate=1; shift ;;
         --bridge) host_net=0; create_opts+=( --bridge ); shift ;;
-        --no-peers) peers=0; create_opts+=( --no-peers ); shift ;;
+        --peers) peers=1; create_opts+=( --peers ); shift ;;
+        --no-peers) peers=0; shift ;;
         --mount|--mount-rw)
             if [ $# -lt 2 ]; then
                 echo "claude-sandbox: $1 needs a PATH" >&2
@@ -370,7 +374,7 @@ create_container() {
         -v "$SHARED:/user-terminal-config"
         -e "TERM=${TERM:-xterm-256color}"
     )
-    # Siblings, as a devcontainer's /workspaces mount gives them: the
+    # Siblings with --peers, as a devcontainer's /workspaces mount gives them: the
     # parent dir read-write at its host path, so a shell can start a
     # sandboxed session in any sibling; the sandbox still confines each
     # agent's writes to its own $PWD. The project bind below is kept for when the
@@ -496,6 +500,14 @@ if container_exists; then
     if [ -n "$local_img" ] && [ -n "$ctr_img" ] && [ "$local_img" != "$ctr_img" ]; then
         created="$("$ENGINE" container inspect -f '{{.Created}}' "$NAME" 2>/dev/null | cut -c1-16 | tr T ' ')"
         warn "runs an older image than the one pulled (created ${created:-?})"
+        rebuild=1
+    fi
+    # Peers were on by default in 4.4.0. A container created then keeps
+    # its parent mount until it is recreated, so say so when peers are off.
+    if [ "$peers" = 0 ] && "$ENGINE" container inspect \
+            -f '{{range .Mounts}}{{println .Destination}}{{end}}' "$NAME" 2>/dev/null \
+            | grep -Fxq -- "$(dirname "$PWD")"; then
+        warn "mounts the parent directory; peers are now off by default"
         rebuild=1
     fi
     if [ ${#create_opts[@]} -gt 0 ]; then

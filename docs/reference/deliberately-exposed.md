@@ -5,10 +5,11 @@ is potentially reachable from inside Claude. This page reproduces the two refere
 tables: what the sandbox deliberately exposes, and what is out of scope.
 
 Paths below are inside the container. The PyPI launcher mounts only the
-project and its parent directory (both writable in the container, the
-parent skipped when it is your home; each agent's sandbox still binds only
-its own project), shared agent state, git identity, and explicitly added paths from
-the workstation. For its read-only host config mount, see
+project directory, writable in the container. With `--peers` it also mounts
+the parent directory writable, except when the parent is your home. Each
+agent's sandbox still binds only its own project. The launcher also mounts
+shared agent state, git identity, and explicitly added paths from the
+workstation. For its read-only host config mount, see
 [Configuration](configuration.md).
 
 ## Deliberately exposed
