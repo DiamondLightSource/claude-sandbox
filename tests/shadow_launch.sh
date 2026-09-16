@@ -46,4 +46,20 @@ for agent in claude codex pi; do
     ( CLAUDE_SANDBOX_EGRESS_JAIL=0 sandbox_launch "${built[@]}" ) </dev/null >/dev/null 2>&1
     assert_parse "$agent terminal argument round trip" cmp "$tmp/expected" "$ARGV_CAPTURE"
 done
+# A warning before launch sets the flag, and the pause never blocks without a
+# terminal. Output goes to a file, so stderr is not a tty here.
+LAUNCH_WARNED=0
+launch_warn "test warning" 2>"$tmp/warn"
+assert_eq "launch_warn sets the flag" 1 "$LAUNCH_WARNED"
+assert_eq "launch_warn prefixes the message" "claude-sandbox: test warning" "$(cat "$tmp/warn")"
+rc=0
+timeout 5 bash -c 'source "$1"; LAUNCH_WARNED=1; pause_after_warnings' _ "$REPO_ROOT/.devcontainer/claude-sandbox/claude-shadow" </dev/null >"$tmp/pause" 2>&1 || rc=$?
+assert_eq "pause does not block without a terminal" 0 "$rc"
+assert_eq "pause prints nothing without a terminal" "" "$(cat "$tmp/pause")"
+
+# On a terminal the pause waits for one key, then the launch continues.
+out="$(printf x | timeout 10 script -qec "bash -c 'source \"$REPO_ROOT/.devcontainer/claude-sandbox/claude-shadow\"; launch_warn hello; pause_after_warnings; echo LAUNCHED'" /dev/null 2>&1 | tr -d '\r')" || true
+assert_contains "pause prompts on a terminal" "$out" "Press any key to continue, Ctrl-C to cancel."
+assert_contains "launch continues after a key" "$out" "LAUNCHED"
+
 finish shadow_launch
