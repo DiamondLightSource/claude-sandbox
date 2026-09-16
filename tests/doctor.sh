@@ -97,17 +97,17 @@ echo myproj-3f2a > "$TMP/tag"
 sed "s#/etc/claude-sandbox-tag#$TMP/tag#g" "$TMP/terminal-config/bashrc" > "$TMP/bashrc"
 out="$(env -i PATH="$PATH" HOSTNAME=ws1.example bash --norc -c \
     "PS1='\$ '; source '$TMP/bashrc'; source '$TMP/bashrc'; printf '%s' \"\$PS1\"")"
-assert_eq "bash prompt prefixed once" '\[\033[0;33m\]ws1:myproj-3f2a\[\033[0m\] $ ' "$out"
+assert_eq "bash prompt prefixed once" '\[\033[0;37m\]myproj-3f2a\[\033[0m\] $ ' "$out"
 if command -v zsh >/dev/null; then
     sed "s#/etc/claude-sandbox-tag#$TMP/tag#g" "$TMP/terminal-config/zshrc" > "$TMP/zshrc"
     out="$(env -i PATH="$PATH" zsh -f -c \
         "HOST=ws1.example; PROMPT='%# '; source '$TMP/zshrc'; source '$TMP/zshrc'; printf '%s' \"\$PROMPT\"")"
-    assert_eq "zsh prompt prefixed once" '%F{yellow}ws1:myproj-3f2a%f %# ' "$out"
+    assert_eq "zsh prompt prefixed once" '%F{white}myproj-3f2a%f %# ' "$out"
     # dst layout: a leading blank line, user@host, then the input line. The
     # tag goes on the user@host line, so the blank line stays blank.
     out="$(env -i PATH="$PATH" zsh -f -c \
         "HOST=ws1; PROMPT=\$'\\nuser@host: %~\\n%# '; source '$TMP/zshrc'; source '$TMP/zshrc'; printf '%s' \"\$PROMPT\"")"
-    assert_eq "zsh tag on the line above input" $'\n%F{yellow}ws1:myproj-3f2a%f user@host: %~\n%# ' "$out"
+    assert_eq "zsh tag on the line above input" $'\n%F{white}myproj-3f2a%f user@host: %~\n%# ' "$out"
 else
     echo "SKIP: zsh not installed; zsh prompt block not exercised" >&2
 fi
