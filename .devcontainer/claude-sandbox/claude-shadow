@@ -1124,6 +1124,27 @@ check_config_persistence() {
     printf '\n\n' >&2
 }
 
+# prepare_shipped_skills: create the agent's host skills dir when anything
+# ships, and warn about each host skill a shipped one masks. The shipped-skills
+# binds land inside that dir, one per skill. Creating the dir here, the one
+# deliberate host write, stops bwrap from making it on the host bind. bwrap
+# still leaves an empty mount point per shipped skill on the host. An empty
+# dir masks nothing, so only a non-empty one, or a non-directory, warns.
+prepare_shipped_skills() {
+    local skills_dir="${HOME:-/root}/$AGENT_SKILLS_REL" skill_dir host_skill
+    for skill_dir in "$SHIPPED_SKILLS_DIR"/*/; do
+        [ -d "$skill_dir" ] || continue
+        mkdir -p "$skills_dir"
+        skill_dir="${skill_dir%/}"
+        host_skill="$skills_dir/${skill_dir##*/}"
+        if [ -L "$host_skill" ] \
+                || { [ -e "$host_skill" ] && ! [ -d "$host_skill" ]; } \
+                || [ -n "$(find "$host_skill" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
+            echo "claude-sandbox: ~/$AGENT_SKILLS_REL/${skill_dir##*/} is shadowed by the shipped skill for this session." >&2
+        fi
+    done
+}
+
 # render_gitconfig: (re)write $CLAUDE_SANDBOX_GITCONFIG_PATH from the host's
 # current git identity. Called on every launch because VS Code's
 # dev.containers.copyGitConfig fires AFTER postCreate, so an install-time render
@@ -1252,19 +1273,7 @@ done
 for _agent_file in "${AGENT_HOME_FILES[@]+"${AGENT_HOME_FILES[@]}"}"; do
     touch "${HOME:-/root}/$_agent_file"
 done
-# The shipped-skills binds land inside that config dir, one per skill. Create
-# the skills dir explicitly (the one deliberate host write, and only when
-# something ships) rather than let bwrap mkdir its mount points on the host
-# bind. A host skill of the same name would be masked by the ro bind for the
-# session, so say so — the shipped copy wins by design, but not silently.
-for _skill_dir in "$SHIPPED_SKILLS_DIR"/*/; do
-    [ -d "$_skill_dir" ] || continue
-    mkdir -p "${HOME:-/root}/$AGENT_SKILLS_REL"
-    _skill_dir="${_skill_dir%/}"
-    if [ -e "${HOME:-/root}/$AGENT_SKILLS_REL/${_skill_dir##*/}" ]; then
-        echo "claude-sandbox: ~/$AGENT_SKILLS_REL/${_skill_dir##*/} is shadowed by the shipped skill for this session." >&2
-    fi
-done
+prepare_shipped_skills
 # The shared skills dir must exist for its bind (the builder skips a missing
 # source). A dangling symlink — a shared store that has gone away — makes
 # mkdir fail; warn and launch without the share rather than abort.

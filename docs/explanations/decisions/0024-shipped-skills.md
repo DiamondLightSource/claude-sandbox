@@ -52,7 +52,9 @@ what every agent discovers.
 
 The launcher creates the agent's skills directory on the host before launch
 when anything ships. That is the one deliberate host write, and it is an
-empty directory the agent would create itself on first use.
+empty directory the agent would create itself on first use. bwrap also
+leaves one empty mount-point directory per shipped skill inside it, because
+the agent's config directory is a read-write host bind.
 
 The wheel and the image carry the same `skills/` tree through the existing
 paths: the wheel's verbatim force-include and the Dockerfile's `install.sh`
@@ -62,11 +64,14 @@ function list.
 
 - Every consumer (dogfood devcontainer, guest clone-and-install, wheel,
   image) gets the same skills, at the version that was installed, with no
-  change to the user's `~/.claude` beyond an empty `skills/` directory.
+  change to the user's `~/.claude` beyond an empty `skills/` directory and
+  one empty directory per shipped skill inside it.
 - A compromised session cannot edit a shipped skill's scripts: the bind is
   read-only and the source is outside the sandbox's writable set.
 - A user skill with the same name as a shipped one is masked for the
-  session; the launcher warns. Shipped skill names should be distinctive.
+  session; the launcher warns. An empty directory of that name is the mount
+  point a previous session left, masks nothing and does not warn. Shipped
+  skill names should be distinctive.
 - Skills are visible to the agent only inside a sandboxed session. Running
   an agent unwrapped (with the gate hatch) does not see them, which is
   consistent: the skills are part of the sandbox.

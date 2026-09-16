@@ -41,7 +41,10 @@ new shipped skill only if it is useful for repo work; most will not need it.
 3. The launch body pre-creates `~/$AGENT_SKILLS_REL` on the host when
    anything ships (the one deliberate host write; `~/.claude` always exists,
    either in the container or as the shared mount) and warns when a host
-   skill of the same name is masked for the session.
+   skill of the same name is masked for the session
+   (`prepare_shipped_skills`). bwrap leaves an empty mount point per shipped
+   skill in that host dir. The warning therefore ignores an empty dir, or
+   every launch after the first would warn.
 4. The wheel force-includes `skills/` (`packaging/pypi/pyproject.toml`) and
    the Dockerfile's `install.sh` function list calls
    `install_shipped_skills`, so clone, wheel and image all ship the same
@@ -85,8 +88,8 @@ repository-only `.claude/commands/verify-sandbox.md` has been removed.
 - Prefix names distinctively enough that they will not collide with a user's
   own skill: a collision is masked for the session, with a warning.
 - Tests: `tests/bwrap_argv.sh` scenario 15 (per-skill ro bind at each
-  agent's path, builder stays pure); `tests/smoke.sh` (installed tree
-  byte-equals `skills/`, nothing written under the test home's
+  agent's path, builder stays pure, empty mount point does not warn);
+  `tests/smoke.sh` (installed tree byte-equals `skills/`, nothing written under the test home's
   `~/.claude/skills`). CI's wheel job diffs `tree/skills` against `skills/`.
 
 ## Refuse as regressions
