@@ -62,6 +62,13 @@ if [ ! -e "$venv_mark" ] || [ ! -x "$venv/bin/python" ]; then
 fi
 ln -sfn "$venv" /opt/venv
 
+# The launcher's short container tag, for prompts and status lines. A file
+# under /etc, not an env var: every agent jail clears the environment but
+# sees /etc read-only. Absent when the container was not made by the launcher.
+if [ -n "${CLAUDE_SANDBOX_TAG:-}" ]; then
+    printf '%s\n' "$CLAUDE_SANDBOX_TAG" > /etc/claude-sandbox-tag
+fi
+
 # The image build skipped this probe deliberately (a builder that can
 # nest namespaces proves nothing about this host — see the Dockerfile).
 # Refuse HERE, at container start, if the runtime host cannot run

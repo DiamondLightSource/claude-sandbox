@@ -121,6 +121,12 @@ else
     fail "battery missing or not executable"
 fi
 
+# `claude-sandbox doctor --fix` copies these, so they outlive the install clone.
+cmp -s "$REPO_ROOT/.claude/statusline-command.sh" "$PREFIX/usr/libexec/claude-sandbox/statusline-command.sh" \
+    && pass || fail "recommended status line not placed for doctor"
+[ "$(stat -c '%a' "$PREFIX/usr/libexec/claude-sandbox/pi-sandbox-tag.ts" 2>/dev/null)" = 644 ] \
+    && pass || fail "pi footer extension not placed for doctor"
+
 # Shipped skills: the repo's top-level skills/ tree lands under /usr/libexec
 # (root-owned, ro in-session — the shadow binds each skill into the agent's
 # own skills dir). Placed by copy, so a byte-diff against the source proves

@@ -597,6 +597,10 @@ USER_SL_CMD='bash $HOME/.claude/statusline-command.sh'
 install_runtime_scripts() {
     install_file "$SCRIPT_DIR/codex-launch" "$(prefixed "$LIBEXEC/codex-launch")"
     install_file "$SCRIPT_DIR/verify-sandbox-battery.sh" "$(prefixed "$BATTERY_PATH")"
+    # The recommended status line, kept where `claude-sandbox doctor --fix`
+    # finds it after the install clone is deleted.
+    install_file "$REPO_ROOT/.claude/statusline-command.sh" "$(prefixed "$LIBEXEC/statusline-command.sh")"
+    install_file "$SCRIPT_DIR/pi-sandbox-tag.ts" "$(prefixed "$LIBEXEC/pi-sandbox-tag.ts")" 0644
 }
 
 # install_shipped_skills: place the repo's top-level skills/ tree (the skills
