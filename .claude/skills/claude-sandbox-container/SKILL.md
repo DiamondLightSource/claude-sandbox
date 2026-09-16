@@ -157,10 +157,14 @@ stage) gives non-devcontainer hosts sandboxed Claude via rootless podman + the
   image a container was created from, so after a pull it is unclear
   which image a session runs; `--recreate` is one project at a time.
 - **Devcontainer-like filesystem view (2026-09-14; parent rw 2026-09-15)**:
-  `--no-peers` skips the automatic parent mount at container creation;
-  explicit `--mount` and `--mount-rw` still apply. Existing containers need
-  `--recreate`; the flag does not alter mounts in independent devcontainers.
-  Without the flag, sibling projects remain readable by sandboxed agents.
+  the parent mount is OPT-IN with `--peers` (user decision 2026-09-16: off
+  by default is more secure, because every sibling and its credentials are
+  readable by agents). 4.4.0 had it on by default with `--no-peers` to skip;
+  `--no-peers` is still accepted as a no-op so old commands work. On reuse
+  without `--peers`, the launcher inspects the container's mounts and warns
+  when a 4.4.0 container still binds the parent. Explicit `--mount` and
+  `--mount-rw` still apply; existing containers need `--recreate`; the flag
+  does not alter mounts in independent devcontainers. With `--peers`,
   the launcher binds the project's PARENT read-write at its host path, as
   the devcontainer's `/workspaces` mount does, and the project rw nested
   over it. First cut made the parent ro; user reversed that 2026-09-15 so

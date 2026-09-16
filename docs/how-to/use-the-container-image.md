@@ -125,27 +125,33 @@ next agent launch; recreate if your editor replaces the mounted file.
 See [Configuration](../reference/configuration.md) for all keys and
 [Configure the network egress jail](network-egress-jail.md) for network access.
 
-The project directory and its parent are mounted read-write, as a
-devcontainer mounts `/workspaces`, so from `claude-sandbox shell` you can
-`cd` into a sibling checkout and start an agent session there (the parent
-is skipped when it is your home directory). Each agent can still write
+The launcher mounts the project directory read-write. Each agent can write
 only to the directory it was started in. Automounted trees such as `/dls_sw`
 work: the binds use slave propagation, so mounts the host automounter makes
 appear inside without the container triggering them.
 
-Sibling projects are **readable by agents**, including any credentials they
-contain. Read-only access prevents changes, not disclosure. To skip the
-automatic parent mount, use `--no-peers` when creating the container:
+To also mount the project's parent read-write, as a devcontainer mounts
+`/workspaces`, use `--peers` when you create the container. From
+`claude-sandbox shell` you can then `cd` into a sibling checkout and start
+an agent session there. The launcher skips the parent when it contains your
+home directory.
 
 ```bash
-claude-sandbox --no-peers
+claude-sandbox --peers
 # For an existing project container:
-claude-sandbox --recreate --no-peers
+claude-sandbox --recreate --peers
 ```
+
+Peers are off by default because sibling projects are then **readable by
+agents**, including any credentials they contain. Read-only access prevents
+changes, not disclosure. Version 4.4.0 mounted the parent by default. A
+container created by that version keeps the parent mount, and the launcher
+warns until you run `claude-sandbox --recreate`. `--no-peers` still works
+and selects the default.
 
 This affects containers created by the host launcher. It does not change
 workspace mounts supplied by an existing devcontainer. Explicit `--mount`
-and `--mount-rw` paths still apply with `--no-peers`. To add specific paths:
+and `--mount-rw` paths apply with or without `--peers`. To add specific paths:
 
 ```bash
 claude-sandbox --mount ~/src/shared-lib       # read-only
