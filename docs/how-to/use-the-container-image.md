@@ -41,7 +41,7 @@ installed. There, skip `claude-sandbox shell` and the matching `exit` in these
 guides; the commands inside are the same.
 
 The helper commands of the in-container `claude-sandbox` CLI (`gh-auth`,
-`glab-auth`, `verify`, `pi-local`, `version`, `update`) can be given to the
+`glab-auth`, `verify`, `pi-local`, `version`, `update`, `doctor`) can be given to the
 host launcher directly: `claude-sandbox verify` on the host runs them inside
 the project's container, so a shell is only needed for other administration.
 
@@ -99,6 +99,33 @@ claude-sandbox gh-auth      # Same command on the host or in a devcontainer term
 
 Use [project-scoped tokens](authenticate-with-forges.md), and authenticate again
 after recreation.
+
+## Tell containers apart
+
+Each project directory gets its own container, so a shell opened from a
+different directory runs in a different container. A `gh-auth` login made
+there does not reach the agent session you meant.
+
+Each container has a short tag: the project directory name and four hex
+digits, such as `myproj-3f2a`. The tag is in `/etc/claude-sandbox-tag`.
+Show it with the host name, as `ws1:myproj-3f2a`, in the Claude status line,
+the Pi footer and the zsh and bash prompts:
+
+```bash
+claude-sandbox doctor        # Report what is not set up; changes nothing
+claude-sandbox doctor --fix  # Apply the recommended setup
+```
+
+`--fix` installs the recommended Claude status line and a Pi footer extension,
+and adds a marked block to `zshrc` and `bashrc` in the shared terminal config.
+It saves a timestamped `.bak-` copy of every file before a change. The prompt
+block does nothing outside a tagged container, so shells on the host and in
+devcontainers that share the files are unchanged. A later `--fix` replaces an
+older block. To remove the prompt tag, delete the block between the
+`claude-sandbox prompt tag` markers.
+
+Codex has no custom status line text, so it does not show the tag.
+Containers created before the tag existed have none: recreate them.
 
 ## Configure the sandbox
 

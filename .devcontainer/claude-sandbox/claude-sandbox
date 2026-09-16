@@ -27,6 +27,8 @@ Commands:
   pi-local [--port PORT] Discover the running lllm2 model and context (port 1920)
   pi-local MODEL CONTEXT [PORT]
                         Configure Pi's lllm2 provider manually
+  doctor [--fix]        Check the recommended setup: container tag in the Claude status
+                        line, Pi footer and shell prompts. --fix applies it, with backups
   version               Show the installed claude-sandbox version
   help                  Show this help
 EOF
@@ -208,6 +210,178 @@ cmd_pi_local() (
     echo "The relay setting in /etc/claude-sandbox.conf must match port $port (shipped default: 1920)."
 )
 
+# --- doctor: check, and with --fix apply, the recommended user setup ---------
+# Seams for tests only: the paths doctor reads and writes.
+LIBEXEC_DIR="${CLAUDE_SANDBOX_LIBEXEC:-/usr/libexec/claude-sandbox}"
+TAG_FILE="${CLAUDE_SANDBOX_TAG_FILE:-/etc/claude-sandbox-tag}"
+TERMINAL_CONFIG="${USER_TERMINAL_CONFIG:-/user-terminal-config}"
+SL_CMD='bash $HOME/.claude/statusline-command.sh'
+PROMPT_BEGIN='# >>> claude-sandbox prompt tag >>>'
+PROMPT_END='# <<< claude-sandbox prompt tag <<<'
+
+DOCTOR_FIX=0
+DOCTOR_PENDING=0
+# report STATUS SUBJECT DETAIL: one aligned result line.
+report() { printf '  %-8s %-22s %s\n' "$1" "$2" "$3"; }
+# pending SUBJECT DETAIL: a problem that --fix would repair.
+pending() { report todo "$1" "$2"; DOCTOR_PENDING=1; }
+
+# backup FILE: copy FILE aside with a timestamp and say where it went.
+backup() {
+    local copy
+    copy="$1.bak-$(date +%Y%m%d-%H%M%S)"
+    cp -p "$1" "$copy"
+    report backup "$(basename "$1")" "saved the original as $copy"
+}
+
+# The prompt block for SHELL (zsh or bash). It prefixes host:tag to the
+# prompt inside a launcher-made container and does nothing anywhere else, so
+# a terminal-config shared with the host or a devcontainer stays safe. The
+# case guard stops a re-sourced rc file adding the prefix twice.
+prompt_block() {
+    printf '%s\n' "$PROMPT_BEGIN"
+    printf '%s\n' '# Added by `claude-sandbox doctor --fix`: shows host:tag of the claude-sandbox' \
+        '# container this shell runs in. Delete this block to remove it.'
+    case "$1" in
+        zsh) cat <<'EOF'
+if [ -r /etc/claude-sandbox-tag ]; then
+    __cs_tag="%F{yellow}${HOST%%.*}:$(cat /etc/claude-sandbox-tag)%f "
+    # Put the tag at the start of the line above the input line. A theme such
+    # as dst opens with a blank line and puts user@host on the next one; the
+    # tag belongs on that user@host line, not the blank one.
+    case "$PROMPT" in
+        *"$__cs_tag"*) ;;
+        *$'\n'*$'\n'*)
+            __cs_head="${PROMPT%$'\n'*$'\n'*}"
+            PROMPT="$__cs_head"$'\n'"$__cs_tag${PROMPT#"$__cs_head"$'\n'}"
+            unset __cs_head ;;
+        *) PROMPT="$__cs_tag$PROMPT" ;;
+    esac
+    unset __cs_tag
+fi
+EOF
+        ;;
+        bash) cat <<'EOF'
+if [ -r /etc/claude-sandbox-tag ]; then
+    __cs_tag="${HOSTNAME%%.*}:$(cat /etc/claude-sandbox-tag)"
+    case "$PS1" in *"$__cs_tag"*) ;; *) PS1="\[\033[0;33m\]$__cs_tag\[\033[0m\] $PS1" ;; esac
+    unset __cs_tag
+fi
+EOF
+        ;;
+    esac
+    printf '%s\n' "$PROMPT_END"
+}
+
+doctor_tag() {
+    if [ -s "$TAG_FILE" ]; then
+        report ok "container tag" "$(cat "$TAG_FILE")"
+    else
+        # Not fixable from inside: the launcher sets the tag at create time.
+        report info "container tag" "none; containers from the uvx launcher get one (use --recreate on an older one)"
+    fi
+}
+
+# doctor_file SUBJECT SHIPPED DEST [MODE]: DEST must be a copy of SHIPPED.
+doctor_file() {
+    local subject="$1" shipped="$2" dest="$3" mode="${4:-0755}"
+    if [ ! -r "$shipped" ]; then
+        report skip "$subject" "$shipped is missing; re-run the install"
+    elif [ -f "$dest" ] && cmp -s "$shipped" "$dest"; then
+        report ok "$subject" "$dest"
+    elif [ "$DOCTOR_FIX" = 0 ]; then
+        pending "$subject" "$dest is $([ -f "$dest" ] && echo 'not the recommended one' || echo absent)"
+    else
+        mkdir -p "$(dirname "$dest")"
+        [ -f "$dest" ] && backup "$dest"
+        install -m "$mode" "$shipped" "$dest"
+        report fixed "$subject" "installed $dest"
+    fi
+}
+
+doctor_claude_settings() {
+    local settings="$HOME/.claude/settings.json" input tmp
+    if [ -f "$settings" ] && ! jq -e 'type == "object"' "$settings" >/dev/null 2>&1; then
+        report skip "claude settings" "$settings is not a JSON object; set statusLine by hand"
+    elif [ -f "$settings" ] && jq -e --arg c "$SL_CMD" '.statusLine.command == $c' "$settings" >/dev/null; then
+        report ok "claude settings" "statusLine runs the script"
+    elif [ "$DOCTOR_FIX" = 0 ]; then
+        pending "claude settings" "statusLine in $settings does not run the script"
+    else
+        input='{}'
+        if [ -f "$settings" ]; then
+            backup "$settings"
+            input="$(cat "$settings")"
+        fi
+        mkdir -p "$(dirname "$settings")"
+        tmp="$(mktemp "$settings.XXXXXX")"
+        jq --arg c "$SL_CMD" '.statusLine = {type: "command", command: $c}' <<<"$input" > "$tmp"
+        chmod 0644 "$tmp"
+        mv "$tmp" "$settings"
+        report fixed "claude settings" "statusLine now runs the script"
+    fi
+}
+
+# prompt_block_in RC: the tag block already in RC, markers included.
+prompt_block_in() {
+    awk -v b="$PROMPT_BEGIN" -v e="$PROMPT_END" '$0 == b { p = 1 } p { print } $0 == e { p = 0 }' "$1"
+}
+
+# doctor_prompt SHELL: the prompt block in the shared rc file for SHELL.
+doctor_prompt() {
+    local rc="$TERMINAL_CONFIG/${1}rc"
+    if [ ! -f "$rc" ]; then
+        report skip "$1 prompt" "$rc is absent (only DLS base-image shells read it)"
+    elif grep -qxF "$PROMPT_BEGIN" "$rc"; then
+        if [ "$(prompt_block_in "$rc")" = "$(prompt_block "$1")" ]; then
+            report ok "$1 prompt" "$rc"
+        elif [ "$DOCTOR_FIX" = 0 ]; then
+            pending "$1 prompt" "$rc has an older tag block"
+        else
+            local block
+            backup "$rc"
+            block="$(mktemp)"
+            prompt_block "$1" > "$block"
+            # cat into the rc file, not mv: keep its mode and any symlink.
+            awk -v b="$PROMPT_BEGIN" -v e="$PROMPT_END" -v f="$block" '
+                $0 == b { while ((getline line < f) > 0) print line; skip = 1; next }
+                skip && $0 == e { skip = 0; next }
+                !skip { print }' "$rc" > "$block.rc"
+            cat "$block.rc" > "$rc"
+            rm -f "$block" "$block.rc"
+            report fixed "$1 prompt" "updated the tag block in $rc (new shells show it)"
+        fi
+    elif [ "$DOCTOR_FIX" = 0 ]; then
+        pending "$1 prompt" "$rc has no container tag in the prompt"
+    else
+        backup "$rc"
+        { printf '\n'; prompt_block "$1"; } >> "$rc"
+        report fixed "$1 prompt" "appended the tag block to $rc (new shells show it)"
+    fi
+}
+
+cmd_doctor() {
+    case "${1:-}" in
+        '') ;;
+        --fix) DOCTOR_FIX=1 ;;
+        *) echo "claude-sandbox: doctor takes only --fix" >&2; exit 2 ;;
+    esac
+    if [ "$DOCTOR_FIX" = 1 ] && [ "${IS_SANDBOX:-0}" = 1 ]; then
+        echo "claude-sandbox: refusing doctor --fix inside a sandboxed agent session; run it from a shell." >&2
+        exit 1
+    fi
+    doctor_tag
+    doctor_file "claude status line" "$LIBEXEC_DIR/statusline-command.sh" "$HOME/.claude/statusline-command.sh"
+    doctor_claude_settings
+    doctor_file "pi footer" "$LIBEXEC_DIR/pi-sandbox-tag.ts" "$HOME/.pi/agent/extensions/claude-sandbox-tag.ts" 0644
+    doctor_prompt zsh
+    doctor_prompt bash
+    if [ "$DOCTOR_PENDING" = 1 ]; then
+        echo "Run \`claude-sandbox doctor --fix\` to apply the recommended setup. It backs up every file it changes."
+        exit 1
+    fi
+}
+
 cmd_version() {
     if [ -r "$VERSION_FILE" ]; then
         echo "claude-sandbox $(cat "$VERSION_FILE")"
@@ -227,6 +401,7 @@ case "${1:-help}" in
     update)               shift; cmd_update "$@" ;;
     verify)               shift; cmd_verify "$@" ;;
     pi-local)             shift; cmd_pi_local "$@" ;;
+    doctor)               shift; cmd_doctor "$@" ;;
     version|--version|-v) cmd_version ;;
     help|-h|--help)       usage ;;
     *)

@@ -33,7 +33,7 @@
 #   shell           a plain (UNSANDBOXED) shell in the container instead of an
 #                   agent — e.g. to run `claude-sandbox gh-auth` first. Start a
 #                   sandboxed session from it with claude / codex / pi.
-#   gh-auth | glab-auth | verify | pi-local | version | update
+#   gh-auth | glab-auth | verify | pi-local | version | update | doctor
 #                   run that helper of the in-container `claude-sandbox` CLI
 #                   (same as typing it in a shell session), e.g.
 #                   `uvx claude-sandbox gh-auth` or `uvx claude-sandbox verify`.
@@ -213,7 +213,7 @@ done
 case "${1:-}" in
     claude|codex|pi) agent="$1"; shift ;;
     shell) shell=1; shift ;;
-    gh-auth|glab-auth|verify|pi-local|version|update)
+    gh-auth|glab-auth|verify|pi-local|version|update|doctor)
         # Helper verbs of the in-container `claude-sandbox` CLI. Forwarded, so
         # they do the same thing typed on the host as inside: without this a
         # host `uvx claude-sandbox version` launched claude with "version" as
@@ -329,6 +329,11 @@ slug="$(basename "$PWD" | tr -c 'a-zA-Z0-9_.-' '-')"
 slug="${slug%-}"
 path_hash="$(printf '%s' "$PWD" | cksum | awk '{print $1}')"
 NAME="claude-sandbox-${slug}-${path_hash}"
+# Short form of NAME for prompts and status lines, e.g. myproj-3f2a. The
+# entrypoint writes it to /etc/claude-sandbox-tag, where every agent's jail
+# can read it (the jail clears the environment). The hash suffix tells apart
+# same-named projects under different parents.
+TAG="$(printf '%.20s-%04x' "$slug" $((path_hash % 65536)))"
 
 container_exists() {
     "$ENGINE" container inspect "$NAME" >/dev/null 2>&1
@@ -373,6 +378,7 @@ create_container() {
         --security-opt label=disable
         -v "$SHARED:/user-terminal-config"
         -e "TERM=${TERM:-xterm-256color}"
+        -e "CLAUDE_SANDBOX_TAG=$TAG"
     )
     # Siblings with --peers, as a devcontainer's /workspaces mount gives them: the
     # parent dir read-write at its host path, so a shell can start a
@@ -461,6 +467,7 @@ create_container() {
             CLAUDE_SANDBOX_IMAGE|CLAUDE_SANDBOX_ENGINE) continue ;;
             CLAUDE_SANDBOX_SHARED_CONFIG|CLAUDE_SANDBOX_CONF) continue ;;
             CLAUDE_SANDBOX_ALLOW_WRITE|CLAUDE_SANDBOX_SHELL|CLAUDE_SANDBOX_CACHE) continue ;;
+            CLAUDE_SANDBOX_TAG) continue ;;
         esac
         args+=( -e "$v=${!v}" )
     done

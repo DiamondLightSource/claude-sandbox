@@ -2,21 +2,31 @@
 # Claude Code status line: model + git branch + context & rate-limit usage.
 #
 # Reads Claude's JSON status payload from stdin and prints a colored
-# one-liner: username · model · cwd · git branch · ctx · 5h/7d windows.
+# one-liner: host:tag · model · ctx · cwd · git branch · 5h/7d windows.
 # Uses jq for JSON parsing so no python is needed — works fine inside the
 # bwrap sandbox where the host's python is masked off. If jq is missing,
 # falls through to a bash-only degraded line.
 
 input=$(cat)
 
+# Where this session runs: the short hostname, plus the claude-sandbox
+# container tag when the launcher made this container (e.g. ws1:myproj-3f2a).
+# The tag tells apart two containers on one host; the hostname tells apart
+# two hosts. Read from /etc because the sandbox jail clears the environment.
+location() {
+    local host tag
+    host=$(uname -n 2>/dev/null); host=${host%%.*}
+    tag=$(cat /etc/claude-sandbox-tag 2>/dev/null)
+    printf '%s%s' "${host:-?}" "${tag:+:$tag}"
+}
+
 degraded_line() {
-    local username cwd short_cwd
-    username=$(whoami 2>/dev/null || echo "?")
+    local cwd short_cwd
     cwd=$(printf '%s' "$input" | sed -n 's/.*"current_dir"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
     [ -z "$cwd" ] && cwd="$PWD"
     short_cwd="${cwd/#$HOME/~}"
     printf "\033[0;35m%s\033[0m  \033[0;33m%s\033[0m  \033[2;37m(no jq — degraded statusline)\033[0m" \
-        "$username" "$short_cwd"
+        "$(location)" "$short_cwd"
 }
 
 command -v jq >/dev/null 2>&1 || { degraded_line; exit 0; }
@@ -76,7 +86,6 @@ if [ -z "$model" ]; then
 fi
 
 short_cwd="${cwd/#$HOME/~}"
-username=$(whoami 2>/dev/null || echo "unknown")
 
 # The status payload has no branch field, so derive it from cwd. Use the
 # plumbing form (--no-optional-locks, so a read-only status line never
@@ -91,9 +100,9 @@ if [ -n "$effort" ]; then
     model="$model · $effort"
 fi
 
-# username · model
+# host:tag · model
 printf "\033[0;35m%s\033[0m  \033[0;36m%s\033[0m" \
-    "$username" "$model"
+    "$(location)" "$model"
 
 # context window usage — promoted high (one of the most-watched signals).
 # Green/yellow/red gradient by % used.

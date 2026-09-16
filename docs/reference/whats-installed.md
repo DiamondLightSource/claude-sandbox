@@ -43,7 +43,9 @@ message naming the fix. The PyPI host launcher adds the tun device automatically
 | `/usr/local/bin/pi` | `.devcontainer/claude-sandbox/claude-shadow` (same file) | Pi profile of the shared wrapper; always installed, even with `WITH_PI=0` |
 | `/usr/libexec/claude-sandbox/pi-run` | `.devcontainer/claude-sandbox/pi-run` | Fixed launch guard that checks sandbox markers before starting Pi; see [Pi guard limitations](../how-to/use-pi.md#verify-the-sandbox) |
 | `/usr/libexec/claude-sandbox/pi-dist/` | Latest Pi standalone release on fresh install, verified against release checksums; optional `PI_VERSION` pin | Pi executable and assets, read-only inside the sandbox; Linux x64 and arm64. Existing installs are kept on re-run. No separate Node.js runtime needed |
-| `/usr/local/bin/claude-sandbox` | `.devcontainer/claude-sandbox/claude-sandbox` (verbatim) | Helper CLI (`gh-auth`, `glab-auth`, `update`, `verify`, `pi-local`, `version`) — on PATH so it works after the install clone is deleted |
+| `/usr/local/bin/claude-sandbox` | `.devcontainer/claude-sandbox/claude-sandbox` (verbatim) | Helper CLI (`gh-auth`, `glab-auth`, `update`, `verify`, `pi-local`, `doctor`, `version`) — on PATH so it works after the install clone is deleted |
+| `/usr/libexec/claude-sandbox/statusline-command.sh` | `.claude/statusline-command.sh` (verbatim) | The recommended Claude status line, which `claude-sandbox doctor --fix` copies to `~/.claude` |
+| `/usr/libexec/claude-sandbox/pi-sandbox-tag.ts` | `.devcontainer/claude-sandbox/pi-sandbox-tag.ts` (verbatim) | Pi footer extension showing the host and container tag, which `claude-sandbox doctor --fix` copies to `~/.pi/agent/extensions` |
 | `/usr/libexec/claude-sandbox/installer` | Stamped by `install.sh` only when the PyPI wheel ran it (`uvx`) | Lets `claude-sandbox update` point at `uvx claude-sandbox@latest install` instead of a git clone that would step past the wheel's pin. Absent after a clone install |
 | `/usr/libexec/claude-sandbox/version` | Stamped by `install.sh` (`git describe` on the installing clone, the wheel's version under `uvx`, or the `CLAUDE_SANDBOX_VERSION` build arg) | What `claude-sandbox version` reports. Normally a release tag: `install` checks the newest one out before installing, as does `claude-sandbox update`. A commit hash means the revision was chosen deliberately — `install --here` on a branch or working tree, or a team pin (see [Sandbox a team devcontainer](../how-to/sandbox-a-team-devcontainer.md)) |
 | `/etc/claude-gitconfig` | Generated | Curated gitconfig — regenerated from `git config --get user.{name,email}` on every shadow launch |
@@ -86,6 +88,9 @@ The installer seeds a statusline preference.
 |---|---|
 | `~/.claude/statusline-command.sh` | Statusline — seeded **only if absent** (an owner-customised one survives) |
 | `~/.claude/settings.json` | `.statusLine` set only if absent. Existing settings and hooks are preserved |
+
+`claude-sandbox doctor --fix` replaces both with the recommended status line and
+saves a `.bak-` copy of each file first.
 
 ## User-scope `~/.codex`
 

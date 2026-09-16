@@ -83,6 +83,17 @@ run -- --resume;   case "$(exec_line)" in *" claude --resume") pass ;; *) fail "
 run -- version;    case "$(exec_line)" in *" claude-sandbox version") pass ;; *) fail "version verb not forwarded: $(exec_line)" ;; esac
 run -- gh-auth;    case "$(exec_line)" in *" claude-sandbox gh-auth") pass ;; *) fail "gh-auth verb not forwarded: $(exec_line)" ;; esac
 run -- verify --agent pi; case "$(exec_line)" in *" claude-sandbox verify --agent pi") pass ;; *) fail "verify args not forwarded: $(exec_line)" ;; esac
+run -- doctor --fix; case "$(exec_line)" in *" claude-sandbox doctor --fix") pass ;; *) fail "doctor verb not forwarded: $(exec_line)" ;; esac
+
+# --- the container tag: short slug plus 4 hex digits of the path hash ------
+hash="$(printf '%s' "$TMP/project" | cksum | awk '{print $1}')"
+run --; assert_contains "tag passed at create" "$(create_line | tr ' ' '\n')" \
+    "CLAUDE_SANDBOX_TAG=project-$(printf '%04x' $((hash % 65536)))"
+run CLAUDE_SANDBOX_TAG=forged --; assert_not_contains "host tag variable not passed through" \
+    "$(create_line | tr ' ' '\n')" "CLAUDE_SANDBOX_TAG=forged"
+mkdir -p "$TMP/a-very-long-project-directory-name"
+PROJECT="$TMP/a-very-long-project-directory-name" run --
+case "$(create_line)" in *"CLAUDE_SANDBOX_TAG=a-very-long-project--"[0-9a-f][0-9a-f][0-9a-f][0-9a-f]" "*) pass ;; *) fail "long slug not cut to 20: $(create_line)" ;; esac
 
 # --- host networking is the default; --bridge opts out (create-time) -------
 touch "$TMP/.gitconfig"
