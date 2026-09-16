@@ -705,6 +705,22 @@ if [ -e "$SKILLSFIX/home/.claude/skills" ]; then
 else
     pass
 fi
+# The launch body creates the host skills dir. bwrap leaves an empty mount
+# point per shipped skill on the host bind, and that empty dir masks nothing,
+# so the next launch must not warn about it. A real host skill of the same
+# name warns. A host skill no shipped one masks never warns.
+mkdir -p "$SKILLSFIX/home/.claude/skills/alpha" "$SKILLSFIX/home/.claude/skills/beta" "$SKILLSFIX/home/.claude/skills/gamma"
+touch "$SKILLSFIX/home/.claude/skills/beta/SKILL.md" "$SKILLSFIX/home/.claude/skills/gamma/SKILL.md"
+WARN15="$(HOME="$SKILLSFIX/home" prepare_shipped_skills 2>&1)"
+assert_eq scenario15-warn "claude-sandbox: ~/.claude/skills/beta is shadowed by the shipped skill for this session." "$WARN15"
+rm -rf "$SKILLSFIX/home/.claude/skills"
+WARN15="$(HOME="$SKILLSFIX/home" prepare_shipped_skills 2>&1)"
+assert_eq scenario15-warn-fresh "" "$WARN15"
+if [ -d "$SKILLSFIX/home/.claude/skills" ]; then
+    pass
+else
+    fail "scenario15-mkdir — prepare_shipped_skills did not create the host skills dir"
+fi
 # Each agent gets the same skills at ITS OWN discovery path.
 agent_profile codex
 ARGV15C="$(HOME="$SKILLSFIX/home" CLAUDE_SANDBOX_GITCONFIG_PATH=/etc/claude-gitconfig \

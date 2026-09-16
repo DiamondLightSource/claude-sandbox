@@ -1019,7 +1019,7 @@ egress_jail_enabled() {
 jail_stage_dns() {
     local f
     if ! f="$(mktemp "${TMPDIR:-/tmp}/claude-jail-resolv.XXXXXX" 2>/dev/null)"; then
-        echo "claude-sandbox: egress jail — could not stage a DNS override (mktemp failed); name resolution may fail." >&2
+        launch_warn "egress jail — could not stage a DNS override (mktemp failed); name resolution may fail."
         return 0
     fi
     printf 'nameserver %s\n' "$JAIL_DNS_FWD" > "$f"
@@ -1030,7 +1030,7 @@ jail_stage_dns() {
     # nothing to forward to. Warn rather than fail: pasta attach is the
     # fail-closed gate, and a host with no resolver has bigger problems.
     if ! grep -qE '^[[:space:]]*nameserver' /etc/resolv.conf 2>/dev/null; then
-        echo "claude-sandbox: egress jail — /etc/resolv.conf lists no resolvers; forwarding Claude DNS to the host's resolvers via pasta. If resolution still fails the host has none to forward to." >&2
+        launch_warn "egress jail — /etc/resolv.conf lists no resolvers; forwarding Claude DNS to the host's resolvers via pasta. If resolution still fails the host has none to forward to."
     fi
     return 0
 }
@@ -1107,7 +1107,30 @@ netns_launch() {
     exit "$rc"
 }
 
-# check_config_persistence: warn (with keypress gate) when the agent's
+# LAUNCH_WARNED: set when a warning printed before launch.
+# launch_warn MESSAGE: print a warning that does not stop the launch, and set
+# LAUNCH_WARNED so that pause_after_warnings holds the terminal.
+LAUNCH_WARNED=0
+launch_warn() {
+    echo "claude-sandbox: $1" >&2
+    LAUNCH_WARNED=1
+}
+
+# pause_after_warnings: an agent redraws the whole terminal as it starts, so a
+# warning printed before launch vanishes at once. After any warning, wait for
+# a key press. Skip the wait when no person is at the terminal (stdin or
+# stderr is not a tty) and for --sandbox-verify, which does not redraw.
+pause_after_warnings() {
+    local _key
+    [ "$LAUNCH_WARNED" = 1 ] || return 0
+    [ "$SANDBOX_VERIFY" != 1 ] || return 0
+    [ -t 0 ] && [ -t 2 ] || return 0
+    printf 'Press any key to continue, Ctrl-C to cancel.' >&2
+    read -rsn 1 _key
+    printf '\n' >&2
+}
+
+# check_config_persistence: warn (and set LAUNCH_WARNED) when the agent's
 # config dir is neither a symlink (link_terminal_config path) nor a direct
 # bind mount. A plain container directory means memory, settings, and OAuth
 # state will be lost on the next devcontainer rebuild.
@@ -1120,8 +1143,28 @@ check_config_persistence() {
     printf '\n\033[33mWARNING\033[0m: ~/%s is not host-mounted.\n' "${AGENT_HOME_DIRS[0]}" >&2
     printf '%s memory, settings, and login state will be lost on devcontainer rebuild.\n' "$AGENT_LABEL" >&2
     printf 'See https://diamondlightsource.github.io/claude-sandbox/how-to/use-the-container-image.html#authentication-and-persistence\n\n' >&2
-    read -rsp "Press any key to continue..." -n 1 _key </dev/tty
-    printf '\n\n' >&2
+    LAUNCH_WARNED=1
+}
+
+# prepare_shipped_skills: create the agent's host skills dir when anything
+# ships, and warn about each host skill a shipped one masks. The shipped-skills
+# binds land inside that dir, one per skill. Creating the dir here, the one
+# deliberate host write, stops bwrap from making it on the host bind. bwrap
+# still leaves an empty mount point per shipped skill on the host. An empty
+# dir masks nothing, so only a non-empty one, or a non-directory, warns.
+prepare_shipped_skills() {
+    local skills_dir="${HOME:-/root}/$AGENT_SKILLS_REL" skill_dir host_skill
+    for skill_dir in "$SHIPPED_SKILLS_DIR"/*/; do
+        [ -d "$skill_dir" ] || continue
+        mkdir -p "$skills_dir"
+        skill_dir="${skill_dir%/}"
+        host_skill="$skills_dir/${skill_dir##*/}"
+        if [ -L "$host_skill" ] \
+                || { [ -e "$host_skill" ] && ! [ -d "$host_skill" ]; } \
+                || [ -n "$(find "$host_skill" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
+            launch_warn "~/$AGENT_SKILLS_REL/${skill_dir##*/} is shadowed by the shipped skill for this session."
+        fi
+    done
 }
 
 # render_gitconfig: (re)write $CLAUDE_SANDBOX_GITCONFIG_PATH from the host's
@@ -1199,7 +1242,7 @@ fi
 if [ -z "${CLAUDE_SANDBOX_AGENT:-}" ]; then
     case "${0##*/}" in
         claude|codex|pi) ;;
-        *) echo "claude-sandbox: invoked as '${0##*/}', which names no known agent — assuming $AGENT_LABEL. Set CLAUDE_SANDBOX_AGENT to choose explicitly." >&2 ;;
+        *) launch_warn "invoked as '${0##*/}', which names no known agent — assuming $AGENT_LABEL. Set CLAUDE_SANDBOX_AGENT to choose explicitly." ;;
     esac
 fi
 
@@ -1252,24 +1295,12 @@ done
 for _agent_file in "${AGENT_HOME_FILES[@]+"${AGENT_HOME_FILES[@]}"}"; do
     touch "${HOME:-/root}/$_agent_file"
 done
-# The shipped-skills binds land inside that config dir, one per skill. Create
-# the skills dir explicitly (the one deliberate host write, and only when
-# something ships) rather than let bwrap mkdir its mount points on the host
-# bind. A host skill of the same name would be masked by the ro bind for the
-# session, so say so — the shipped copy wins by design, but not silently.
-for _skill_dir in "$SHIPPED_SKILLS_DIR"/*/; do
-    [ -d "$_skill_dir" ] || continue
-    mkdir -p "${HOME:-/root}/$AGENT_SKILLS_REL"
-    _skill_dir="${_skill_dir%/}"
-    if [ -e "${HOME:-/root}/$AGENT_SKILLS_REL/${_skill_dir##*/}" ]; then
-        echo "claude-sandbox: ~/$AGENT_SKILLS_REL/${_skill_dir##*/} is shadowed by the shipped skill for this session." >&2
-    fi
-done
+prepare_shipped_skills
 # The shared skills dir must exist for its bind (the builder skips a missing
 # source). A dangling symlink — a shared store that has gone away — makes
 # mkdir fail; warn and launch without the share rather than abort.
 if ! mkdir -p "${HOME:-/root}/$SHARED_SKILLS_REL" 2>/dev/null; then
-    echo "claude-sandbox: cannot create ~/$SHARED_SKILLS_REL; shared skills are unavailable this session." >&2
+    launch_warn "cannot create ~/$SHARED_SKILLS_REL; shared skills are unavailable this session."
 fi
 
 # Stage the DNS forwarder configuration before building the arguments.
@@ -1278,6 +1309,9 @@ if egress_jail_enabled; then
 fi
 WORKSPACE_ROOT="$(resolve_workspace_root "$PWD")"
 bwrap_argv_build ARGV "$WORKSPACE_ROOT" "$AGENT_REAL" "$@"
+
+# Hold any warning on screen before the agent redraws the terminal.
+pause_after_warnings
 
 # Wrap bwrap in script(1) so the sandbox runs inside a freshly-allocated
 # pseudo-terminal. SIGWINCH propagates, job control works, and TIOCSTI
