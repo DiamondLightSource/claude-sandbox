@@ -41,14 +41,17 @@ Explain these changes before you ask. The installer:
   container clashes with the one the host mounts in;
 - picks the newest toolkit that the host driver supports, as `nvidia-smi`
   reports it;
-- installs about 5 GiB under `/usr/local/cuda-<version>` and links the tools
+- installs `nvcc` and CUDA runtime development files (about 0.5 GiB)
+  under `/usr/local/cuda-<version>` and links the tools
   into `/usr/local/bin`;
 - compiles and runs the smoke test in the outer container.
 
 Options, which the user can combine:
 
 - a version such as `12.8` installs that release instead, to match a project;
-- `--minimal` installs `nvcc` and the runtime only (about 0.5 GiB);
+- `--minimal` explicitly selects the default compiler and runtime profile;
+- `--dev` adds math libraries, NVML headers and command-line debugging and
+  profiling tools (about 5 GiB total);
 - `--full` installs the whole `cuda-toolkit`, with the Nsight GUIs (about 7 GiB);
 - `--no-smoke` skips the smoke test.
 

@@ -34,12 +34,12 @@ servers. It does these things:
 2. It pins every NVIDIA driver package out of apt, so that nothing replaces
    the driver files the host mounts in.
 3. It picks the newest toolkit that the host driver supports.
-4. It installs `nvcc`, the CUDA runtime, the math libraries and the
-   command-line debug and profiling tools, about 5 GiB in total.
+4. It installs `nvcc` and CUDA runtime development files, about 0.5 GiB.
 5. It links the tools into `/usr/local/bin` and runs a GPU smoke test.
 
 Add a version such as `12.8` to install that release instead. Add
-`--minimal` for `nvcc` and the runtime only, or `--full` for the whole
+`--dev` for math libraries and command-line debugging and profiling tools
+(about 5 GiB total), or `--full` for the whole
 toolkit with the Nsight GUIs. Rerun the script after container recreation.
 No agent restart is needed for the installed tools.
 

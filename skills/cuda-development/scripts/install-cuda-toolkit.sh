@@ -8,24 +8,25 @@ set -euo pipefail
 
 usage() {
     cat >&2 <<'EOF'
-Usage: install-cuda-toolkit.sh [--minimal | --full] [--no-smoke] [CUDA_VERSION]
+Usage: install-cuda-toolkit.sh [--minimal | --dev | --full] [--no-smoke] [CUDA_VERSION]
 
   CUDA_VERSION  major.minor toolkit to install, for example 12.8. The default
                 is the newest release that the host driver supports.
-  --minimal     nvcc and the CUDA runtime only (about 0.5 GiB).
+  --minimal     nvcc and CUDA runtime development files (default, about 0.5 GiB).
+  --dev         also CUDA math libraries, NVML headers and command-line
+                debug and profiling tools (about 5 GiB).
   --full        the whole cuda-toolkit, with Nsight GUIs and a Java runtime
                 (about 7 GiB).
-  (default)     nvcc, runtime, CUDA math libraries, NVML headers and the
-                command-line debug and profiling tools (about 5 GiB).
   --no-smoke    skip the GPU smoke test at the end.
 EOF
     exit 2
 }
 
-profile=dev smoke=1 want=''
+profile=minimal smoke=1 want=''
 for arg in "$@"; do
     case $arg in
         --minimal) profile=minimal ;;
+        --dev) profile=dev ;;
         --full) profile=full ;;
         --no-smoke) smoke=0 ;;
         [0-9]*.[0-9]*) want=$arg ;;
