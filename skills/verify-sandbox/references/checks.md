@@ -103,15 +103,19 @@ closes the X11 reachability path.
 
 ### Check 07 — --unshare-pid (kernel pidns isolation)
 
-The launcher records its PID namespace in `IS_SANDBOX_OUTER_PIDNS` and
-refuses operator passthrough of that variable. Check 07 requires a different
+Non-GPU sessions retain the original check: `NSpid` in the outer procfs
+must contain at least two entries, demonstrating PID namespace nesting.
+
+For GPU sessions, the launcher sets `IS_SANDBOX_GPU=1`, records its PID
+namespace in `IS_SANDBOX_OUTER_PIDNS`, and refuses operator passthrough of
+either variable. Check 07 then requires a different
 namespace inside the sandbox, matching local process and thread entries in
 the fresh `/proc`, and non-writable `/proc/sys`, `/proc/sysrq-trigger`,
-`/proc/irq` and `/proc/bus`. It no longer counts `NSpid` entries: with fresh
+`/proc/irq` and `/proc/bus`. GPU mode cannot count `NSpid` entries: with fresh
 procfs the list begins at the sandbox's namespace and normally has one entry.
 
 This is structural verification. The outer-container live test
-`bash tests/proc_isolation.sh` additionally uses a disposable outer process
+`bash tests/proc_isolation.sh` selects GPU-mode procfs and uses a disposable outer process
 to check process invisibility and denial of signalling and debugger
 attachment. Add `--cuda` to run the GPU smoke test. The launcher and verifier
 must be updated together.

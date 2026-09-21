@@ -112,9 +112,10 @@ run -- --bridge; case "$(create_line)" in *"--network=host"*) fail "--bridge sti
 # --- filesystem view: parent rw, project rw, --mount ro, --mount-rw ---------
 run --
 assert_parse 'no GPU by default' grep -Fvq 'nvidia.com/sandbox-gpu' <<< "$(create_line)"
-assert_parse 'Podman permits fresh procfs' grep -Fq -- '--security-opt unmask=/proc/*' <<< "$(create_line)"
+assert_parse 'non-GPU retains proc masks' grep -Fvq -- 'unmask=/proc/*' <<< "$(create_line)"
 assert_parse 'no device opt-in by default' grep -Fvq 'CLAUDE_SANDBOX_ALLOW_DEVICES=' <<< "$(create_line)"
 run -- --gpu
+assert_parse 'GPU permits fresh procfs' grep -Fq -- '--security-opt unmask=/proc/*' <<< "$(create_line)"
 assert_parse 'Podman GPU uses scoped CDI' grep -Fq -- '--device nvidia.com/sandbox-gpu=all' <<< "$(create_line)"
 assert_parse 'GPU reaches shadow' grep -Fq -- '-e CLAUDE_SANDBOX_GPU=1' <<< "$(create_line)"
 assert_parse 'GPU flag consumed' grep -Fvq -- '--gpu' <<< "$(exec_line)"

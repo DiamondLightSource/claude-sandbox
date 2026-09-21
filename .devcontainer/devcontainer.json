@@ -30,9 +30,6 @@
         "--net=host",
         // Make sure SELinux does not disable host filesystems like tmp.
         "--security-opt=label=disable",
-        // Permit fresh procfs in the agent PID namespace; the launcher
-        // restores sensitive proc masks inside the sandbox.
-        "--security-opt=unmask=/proc/*",
         "--device=/dev/net/tun"
     ],
     "mounts": [

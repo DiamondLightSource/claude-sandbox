@@ -144,8 +144,8 @@ managed-settings path already makes.
     tmpfs-masks `~/.codex/packages` — the same treatment Claude's versioned
     binary cache at `~/.local/share/claude` gets. The mask is emitted after the
     bind it covers, because bwrap applies argv in order.
-    The earlier outer-procfs view broke the managed daemon's sandbox-local
-    PID lookups. Although procfs now matches the PID namespace, the existing
+    The outer-procfs view retained by non-GPU sessions breaks the managed
+    daemon's sandbox-local PID lookups. In both GPU and non-GPU sessions, the existing
     lifecycle remains: `codex-launch` runs inside bwrap and supervises a foreground
     app-server for `codex agents`, connecting the client with `--remote` over
     a private socket in the sandbox's `/tmp`. Configuration overrides are

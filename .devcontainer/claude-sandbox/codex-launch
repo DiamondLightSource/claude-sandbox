@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Runs INSIDE bwrap. Keep the foreground server lifecycle used when the
-# sandbox retained outer procfs; migrating managed daemon startup is separate.
+# Runs INSIDE bwrap. The foreground server avoids the managed daemon's
+# sandbox-local PID lookups in the outer procfs retained by non-GPU sessions.
 set -euo pipefail
 
 codex_launch() {

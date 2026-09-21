@@ -262,11 +262,14 @@ ask an agent to run it too, to check both layers of device access.
 
 The sandbox-specific CDI class omits NVIDIA's params overlay, which prevents
 a nested fresh procfs mount. It leaves the standard `nvidia.com/gpu` class
-unchanged. The Podman launcher also sets `--security-opt 'unmask=/proc/*'`;
+unchanged. With `--gpu`, the Podman launcher also sets `--security-opt 'unmask=/proc/*'`;
 the agent launcher restores sensitive proc masks inside its own PID namespace.
 Existing containers need recreation to pick up these create-time settings.
-Rootless Podman devcontainers need the same security option in `runArgs`
-and, when using GPUs, the sandbox-specific CDI device. The changed procfs
+GPU-enabled rootless Podman devcontainers need that security option and
+`--device=nvidia.com/sandbox-gpu=all` in `runArgs`, plus
+`"CLAUDE_SANDBOX_GPU": "1"` in `containerEnv` to enable GPU mode in the agent
+launcher. Non-GPU devcontainers need none of these additions and retain the
+previous read-only outer `/proc`. The GPU procfs
 setup has been CUDA-tested on the workstation; RHEL8 and the VS Code
 devcontainer path still need live validation. This beta targets rootless Podman.
 

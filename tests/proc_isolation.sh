@@ -77,7 +77,8 @@ source "$REPO_ROOT/.devcontainer/claude-sandbox/claude-shadow"
 # mounts, environment scrubbing, capability drops and namespace flags.
 AGENT=claude AGENT_REAL=/bin/bash AGENT_BIND_BACK=0 AGENT_FILTER_CHROME=0
 AGENT_INJECT=()
-CLAUDE_SANDBOX_GPU=$cuda
+# This test exercises GPU-mode procfs even on CI hosts without GPU hardware.
+CLAUDE_SANDBOX_GPU=1
 declare -a launch_argv=()
 bwrap_argv_build launch_argv "$REPO_ROOT" /bin/bash \
     "$REPO_ROOT/tests/proc_isolation.sh" --inside "$outer_pid" "$cuda"

@@ -134,29 +134,32 @@ place — closing exactly this reach is its whole point. `/verify-sandbox`
 surfaces the reachability question as an `[INCONCLUSIVE]` adversarial probe
 so it stays on the radar rather than being silently forgotten.
 
-## The procfs view: sandbox processes only
+## The procfs view
 
-All agents use `--unshare-pid` with `--proc /proc`. The fresh procfs
+All agents use `--unshare-pid`. Non-GPU sessions retain the read-only outer
+`/proc` view and the original `NSpid` nesting check. This needs no extra
+devcontainer options, but process IDs in procfs differ from sandbox-local IDs.
+
+GPU mode additionally uses `--proc /proc`. The fresh procfs
 shows the sandbox's process tree, with IDs matching the running processes
 and threads. This also supports CUDA's `/proc/self/task/<tid>/comm` lookup.
 Bubblewrap protects `/proc/sys`, `/proc/sysrq-trigger`, `/proc/irq` and
 `/proc/bus` against writes; capability dropping remains enabled. The launcher
 also restores the runtime's sensitive proc file and directory masks after
 mounting fresh procfs. Rootless Podman must allow that initial mount with
-`--security-opt 'unmask=/proc/*'`, which the host launcher supplies.
+`--security-opt 'unmask=/proc/*'`, which the host launcher supplies only with
+`--gpu`.
 
-Check 07 compares the sandbox's PID namespace with the launcher's, checks
+In GPU mode, check 07 compares the sandbox's PID namespace with the launcher's, checks
 local process and thread entries, and checks those kernel controls. The live
-test `bash tests/proc_isolation.sh`, run in the outer container from the
+test `bash tests/proc_isolation.sh` selects the GPU procfs path even without
+GPU hardware. Run it in the outer container from the
 checkout with `bwrap` and `gdb` installed, additionally checks that a
 disposable outer process is invisible and inaccessible to signalling and
 debugger attachment. Add `--cuda` to compile and run the GPU smoke test.
 
-Earlier launchers retained the outer container's procfs to accommodate
-fresh-proc mount failures in some rootless environments. That mismatched
-view broke process-ID lookups. The launcher now fails if it cannot mount
-fresh procfs; it does not fall back to the outer view. Validate this on the
-target container runtime before rollout.
+GPU mode fails if it cannot mount fresh procfs; it does not fall back to the
+outer view, which cannot support CUDA's thread lookups.
 
 ## Egress-jail mechanism: holder netns + pasta-attach
 

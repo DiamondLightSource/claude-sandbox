@@ -268,7 +268,7 @@ export CLAUDE_SANDBOX_GITCONFIG_PATH="$GITCONFIG_PATH"
 # bwrap_argv_build OUT WORKSPACE REAL ARGS...: fill OUT with the bwrap command.
 # Reads configuration and source-path availability without creating files.
 # Keep arguments as arrays so newlines and empty strings survive unchanged.
-# Mount procfs in the sandbox's PID namespace so process and thread IDs agree.
+# GPU mode needs procfs in the sandbox's PID namespace for CUDA thread lookups.
 bwrap_argv_build() {
     local -n _bwrap_out="$1"; shift
     local workspace="$1"; shift
@@ -284,25 +284,28 @@ bwrap_argv_build() {
         # TIOCSTI inside the sandbox can only inject into the script(1)-
         # allocated pty the shadow wraps us in.
         --dev /dev
-        # bwrap protects sys, sysrq-trigger, irq and bus on fresh procfs.
-        # Fail if the mount is refused; outer procfs has incompatible PIDs.
-        --proc /proc
-        --tmpfs /tmp
     )
-    # The outer runtime leaves procfs unmasked so this mount is permitted.
-    # Restore its sensitive-path masks inside our own namespace. bwrap's
-    # --proc already makes sys, sysrq-trigger, irq and bus non-writable.
-    local proc_path
-    for proc_path in /proc/kcore /proc/keys /proc/latency_stats /proc/sched_debug \
-        /proc/timer_list /proc/timer_stats /proc/interrupts; do
-        [ ! -e "$proc_path" ] || argv+=( --ro-bind /dev/null "$proc_path" )
-    done
-    for proc_path in /proc/acpi /proc/scsi; do
-        [ ! -d "$proc_path" ] || argv+=( --tmpfs "$proc_path" --remount-ro "$proc_path" )
-    done
-    for proc_path in /proc/asound /proc/fs; do
-        [ ! -d "$proc_path" ] || argv+=( --ro-bind "$proc_path" "$proc_path" )
-    done
+    if [ "${CLAUDE_SANDBOX_GPU:-0}" = 1 ]; then
+        # bwrap protects sys, sysrq-trigger, irq and bus on fresh procfs.
+        # Fail if the mount is refused; CUDA cannot use outer procfs.
+        argv+=( --proc /proc --tmpfs /tmp )
+        # The outer runtime leaves procfs unmasked so this mount is permitted.
+        # Restore its sensitive-path masks inside our own namespace. bwrap's
+        # --proc already makes sys, sysrq-trigger, irq and bus non-writable.
+        local proc_path
+        for proc_path in /proc/kcore /proc/keys /proc/latency_stats /proc/sched_debug \
+            /proc/timer_list /proc/timer_stats /proc/interrupts; do
+            [ ! -e "$proc_path" ] || argv+=( --ro-bind /dev/null "$proc_path" )
+        done
+        for proc_path in /proc/acpi /proc/scsi; do
+            [ ! -d "$proc_path" ] || argv+=( --tmpfs "$proc_path" --remount-ro "$proc_path" )
+        done
+        for proc_path in /proc/asound /proc/fs; do
+            [ ! -d "$proc_path" ] || argv+=( --ro-bind "$proc_path" "$proc_path" )
+        done
+    else
+        argv+=( --ro-bind /proc /proc --tmpfs /tmp )
+    fi
 
     # Keep the private /dev and its isolated terminal namespace. Only the
     # explicitly selected device nodes are restored, with --dev-bind so
@@ -505,7 +508,10 @@ bwrap_argv_build() {
     argv+=( --setenv HOME "$home" )
     argv+=( --setenv USER "root" )
     argv+=( --setenv IS_SANDBOX "1" )
-    argv+=( --setenv IS_SANDBOX_OUTER_PIDNS "$(/usr/bin/readlink /proc/self/ns/pid)" )
+    if [ "${CLAUDE_SANDBOX_GPU:-0}" = 1 ]; then
+        argv+=( --setenv IS_SANDBOX_GPU 1 )
+        argv+=( --setenv IS_SANDBOX_OUTER_PIDNS "$(/usr/bin/readlink /proc/self/ns/pid)" )
+    fi
     # Which agent's session this is, for the in-sandbox verifier: check 03
     # asserts the EXACT contents of $HOME, so it has to know whose config dir
     # legitimately belongs there. Deliberately NOT named CLAUDE_SANDBOX_AGENT:
@@ -582,7 +588,7 @@ bwrap_argv_build() {
                 # legitimately appear under $HOME, so a forged value downgrades
                 # that check into ignoring the other agent's credentials.
                 # Blocked for the same reason as IS_SANDBOX.
-                IS_SANDBOX_AGENT|IS_SANDBOX_OUTER_PIDNS) continue ;;
+                IS_SANDBOX_AGENT|IS_SANDBOX_GPU|IS_SANDBOX_OUTER_PIDNS) continue ;;
                 LD_*|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|IFS) continue ;;
             esac
             if [ -n "${!pass_name:-}" ]; then

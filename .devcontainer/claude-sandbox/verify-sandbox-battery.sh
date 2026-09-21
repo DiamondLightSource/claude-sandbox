@@ -160,9 +160,15 @@ else
     result 06 "cap_drop ALL: CapEff=0000000000000000" 1 "CapEff is non-zero in /proc/self/status"
 fi
 
-# 07 — compare namespace identities supplied by the launcher. Counting NSpid
-# entries is wrong with fresh procfs: its view starts at the mounted pidns.
+# 07 — retain the original NSpid check for outer procfs. GPU mode uses fresh
+# procfs, whose NSpid list starts at the sandbox namespace, so compare inodes.
 check_07() {
+    if [ "${IS_SANDBOX_GPU:-0}" != 1 ]; then
+        local nspid_count
+        nspid_count=$(awk '$1=="NSpid:"{print NF-1; exit}' /proc/self/status)
+        [ "${nspid_count:-1}" -ge 2 ]
+        return
+    fi
     local inner outer=${IS_SANDBOX_OUTER_PIDNS:-} control key value actual_pid=''
     inner=$(readlink /proc/self/ns/pid) || return 1
     [[ $outer =~ ^pid:\[[0-9]+\]$ ]] || return 1
@@ -185,9 +191,9 @@ check_07() {
     done
 }
 if check_07; then
-    result 07 "PID namespace isolated; procfs aligned and controls protected" 0
+    result 07 "PID namespace isolated; GPU procfs checked when enabled" 0
 else
-    result 07 "PID namespace isolated; procfs aligned and controls protected" 1 \
+    result 07 "PID namespace isolated; GPU procfs checked when enabled" 1 \
         "namespace comparison or procfs checks failed; use the matching launcher and verifier"
 fi
 
