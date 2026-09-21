@@ -190,7 +190,54 @@ Use `--mount-rw` for a path outside the parent that an agent must edit. The
 `workspace-root` config key only widens the sandbox bind within what the
 container mounted, so on its own it cannot make a read-only mount writable.
 
-Mounts, network mode and forwarded `CLAUDE_SANDBOX_*` variables are fixed
+### GPUs and other devices
+
+Expose all NVIDIA GPUs to both the container shell and sandboxed agents:
+
+```bash
+claude-sandbox --gpu
+claude-sandbox --recreate --gpu   # if the project container already exists
+claude-sandbox --gpu shell       # then run nvidia-smi to check the container
+```
+
+The host needs its NVIDIA driver and the
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+Docker uses `--gpus all`; Podman uses `--device nvidia.com/gpu=all` and needs
+the toolkit's [CDI configuration](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/cdi-support.html).
+The runtime supplies driver libraries; install your workload's CUDA or other
+user-space dependencies in the container as needed.
+
+For other hardware, repeat `--device` with individual device nodes:
+
+```bash
+claude-sandbox --device /dev/ttyUSB0
+claude-sandbox --device /dev/dri/renderD128                 # Intel/AMD rendering
+claude-sandbox --device /dev/kfd --device /dev/dri/renderD128 # AMD compute
+```
+
+Paths must name existing character or block devices under `/dev`. Symlinks
+are resolved and the canonical path is used inside the container and sandbox.
+Directories and Docker-style `host:container:permissions` mappings are not
+accepted. The host user must have access to the devices; rootless engine
+permissions still apply. Devices are exposed read-write to agents, including
+their ioctl interface and, for disks, raw contents. Choose only the devices
+the workload needs.
+
+Device access widens the sandbox's trust boundary: every process in the agent
+session can use the device, including downloaded tools and project scripts.
+A vulnerability in the host GPU/device driver could allow a sandbox escape;
+GPU workloads can also exhaust shared GPU memory or compute. Raw disk access
+can bypass filesystem protections. These options are off by default and do
+not enable privileged-container mode, but the remaining sandbox protections
+cannot contain a compromised host driver.
+
+The sandbox keeps its private `/dev` and adds the selected nodes. `--gpu`
+adds NVIDIA and DRM device nodes available inside the container. For an
+existing devcontainer, configure device access in its container runtime and
+add `gpu` or repeatable `allow-device = /dev/…` entries to
+`/etc/claude-sandbox.conf` to expose those devices to agents too.
+
+Mounts, devices, GPU access, network mode and forwarded `CLAUDE_SANDBOX_*` variables are fixed
 when a container is created. For an existing container, include
 `--recreate` when changing them. For example:
 

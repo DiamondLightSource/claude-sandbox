@@ -395,6 +395,36 @@ parse_case scenario11-no-forge 'no-forge\n' '
     [ "${CLAUDE_SANDBOX_NO_FORGE:-}" = "1" ]
 '
 
+parse_case devices-config 'gpu\nallow-device = /dev/null\nallow-device = /dev/zero\n' '
+    unset CLAUDE_SANDBOX_GPU
+    CLAUDE_SANDBOX_ALLOW_DEVICES=/dev/full
+    parse_config "$TMPCONF"
+    [ "$CLAUDE_SANDBOX_GPU" = 1 ] &&
+    [ "$CLAUDE_SANDBOX_ALLOW_DEVICES" = "$(printf "%s\n" /dev/full /dev/null /dev/zero)" ]
+'
+parse_case gpu-env-wins 'gpu\n' '
+    CLAUDE_SANDBOX_GPU=0
+    parse_config "$TMPCONF"
+    [ "$CLAUDE_SANDBOX_GPU" = 0 ]
+'
+device_argv="$(CLAUDE_SANDBOX_ALLOW_DEVICES=/dev/zero bwrap_argv_lines /repo /fake/claude)"
+assert_pair 'device uses dev-bind' "$device_argv" --dev-bind /dev/zero
+assert_order 'private dev before device bind' "$device_argv" --dev --dev-bind
+for invalid in /dev /dev/pts /etc/passwd /dev/../etc/passwd /dev/no-such-claude-device; do
+    if (CLAUDE_SANDBOX_ALLOW_DEVICES="$invalid" bwrap_argv_build rejected_args /repo /fake/claude) >/dev/null 2>&1; then
+        fail "invalid sandbox device accepted: $invalid"
+    else
+        pass
+    fi
+done
+gpu_argv="$(CLAUDE_SANDBOX_GPU=1 bwrap_argv_lines /repo /fake/claude)"
+assert_pair 'GPU keeps private dev' "$gpu_argv" --dev /dev
+assert_not_contains 'GPU does not expose tun' "$gpu_argv" /dev/net/tun
+for device in /dev/nvidia* /dev/nvidia-caps/* /dev/dri/*; do
+    [ -c "$device" ] || continue
+    assert_pair 'available GPU device bound' "$gpu_argv" --dev-bind "$device"
+done
+
 parse_case scenario11-allow-write-single 'allow-write = /some/path\n' '
     unset CLAUDE_SANDBOX_ALLOW_WRITE
     parse_config "$TMPCONF"

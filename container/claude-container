@@ -63,6 +63,10 @@
 #                   agents can read it, nothing in the container can write it
 #   --mount-rw PATH bind PATH read-write into the container AND the
 #                   sandbox (repeatable; becomes an allow-write entry)
+#   --gpu           enable all NVIDIA GPUs (host NVIDIA Container Toolkit
+#                   required; Podman uses CDI, Docker uses --gpus all)
+#   --device PATH   expose a /dev device node to the container AND sandbox
+#                   read-write at the same path (repeatable)
 #   --peers         also bind the project's parent directory read-write, so
 #                   sibling projects can be opened from a shell. Sibling
 #                   projects are then readable by sandboxed agents.
@@ -183,12 +187,29 @@ clean_images=0
 create_opts=()     # create-time flags the user passed, for the reuse warning
 mounts_ro=()
 mounts_rw=()
+devices=()
+gpu=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --recreate) recreate=1; shift ;;
         --bridge) host_net=0; create_opts+=( --bridge ); shift ;;
         --peers) peers=1; create_opts+=( --peers ); shift ;;
         --no-peers) peers=0; shift ;;
+        --gpu) gpu=1; create_opts+=( --gpu ); shift ;;
+        --device)
+            if [ $# -lt 2 ] || [[ "$2" != /dev/* || "$2" == *$'\n'* ]]; then
+                say '--device needs an absolute /dev device path'
+                exit 1
+            fi
+            device="$(realpath -e -- "$2")" || exit 1
+            if [[ "$device" != /dev/* ]] || { [ ! -c "$device" ] && [ ! -b "$device" ]; }; then
+                say "--device needs a character or block device under /dev: $2"
+                exit 1
+            fi
+            devices+=( "$device" )
+            create_opts+=( "--device $2" )
+            shift 2
+            ;;
         --mount|--mount-rw)
             if [ $# -lt 2 ]; then
                 echo "claude-sandbox: $1 needs a PATH" >&2
@@ -380,6 +401,24 @@ create_container() {
         -e "TERM=${TERM:-xterm-256color}"
         -e "CLAUDE_SANDBOX_TAG=$TAG"
     )
+    if [ "$gpu" = 1 ]; then
+        case "${ENGINE##*/}" in
+            podman) args+=( --device nvidia.com/gpu=all ) ;;
+            docker) args+=( --gpus all ) ;;
+            *) say '--gpu requires podman or docker'; return 1 ;;
+        esac
+    fi
+    local device allow_devices="${CLAUDE_SANDBOX_ALLOW_DEVICES:-}"
+    for device in "${devices[@]+"${devices[@]}"}"; do
+        args+=( --device "$device" )
+        allow_devices="${allow_devices:+$allow_devices$'\n'}$device"
+    done
+    [ -z "$allow_devices" ] || args+=( -e "CLAUDE_SANDBOX_ALLOW_DEVICES=$allow_devices" )
+    if [ "$gpu" = 1 ]; then
+        args+=( -e CLAUDE_SANDBOX_GPU=1 )
+    elif [ -n "${CLAUDE_SANDBOX_GPU:-}" ]; then
+        args+=( -e "CLAUDE_SANDBOX_GPU=$CLAUDE_SANDBOX_GPU" )
+    fi
     # Siblings with --peers, as a devcontainer's /workspaces mount gives them: the
     # parent dir read-write at its host path, so a shell can start a
     # sandboxed session in any sibling; the sandbox still confines each
@@ -468,6 +507,7 @@ create_container() {
             CLAUDE_SANDBOX_SHARED_CONFIG|CLAUDE_SANDBOX_CONF) continue ;;
             CLAUDE_SANDBOX_ALLOW_WRITE|CLAUDE_SANDBOX_SHELL|CLAUDE_SANDBOX_CACHE) continue ;;
             CLAUDE_SANDBOX_TAG) continue ;;
+            CLAUDE_SANDBOX_GPU|CLAUDE_SANDBOX_ALLOW_DEVICES) continue ;;
         esac
         args+=( -e "$v=${!v}" )
     done

@@ -39,6 +39,7 @@ case "$*" in
         for arg in "$@"; do
             case "$arg" in
                 CLAUDE_SANDBOX_ALLOW_WRITE=*) printf '%s' "${arg#*=}" > "$LOG.mount-env" ;;
+                CLAUDE_SANDBOX_ALLOW_DEVICES=*) printf '%s' "${arg#*=}" > "$LOG.device-env" ;;
             esac
         done
         ;;
@@ -50,12 +51,13 @@ case "$*" in
 esac
 FAKE
 chmod +x "$TMP/bin/podman"
+ln -s podman "$TMP/bin/docker"
 
 # run [ENV=VAL ...] -- ARGS...: fresh engine state, from the project dir.
 run() {
     local -a envs=()
     while [ "$1" != "--" ]; do envs+=( "$1" ); shift; done; shift
-    : > "$LOG"; rm -f "$TMP/mark" "$LOG.mount-env"
+    : > "$LOG"; rm -f "$TMP/mark" "$LOG.mount-env" "$LOG.device-env"
     ( cd "${PROJECT:-$TMP/project}" && env -i PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP" \
         LOG="$LOG" MARK="$TMP/mark" PS="$TMP/ps" IMAGES="$TMP/images" VENVS="$TMP/venvs" CLAUDE_SANDBOX_NESTED=1 "${envs[@]}" \
         bash "$LAUNCHER" "$@" 2>"$TMP/err" ); RC=$?
@@ -108,6 +110,43 @@ run --; case "$(create_line)" in *"--network=host"*) pass ;; *) fail "host net n
 run -- --bridge; case "$(create_line)" in *"--network=host"*) fail "--bridge still host net" ;; *) pass ;; esac
 
 # --- filesystem view: parent rw, project rw, --mount ro, --mount-rw ---------
+run --
+assert_parse 'no GPU by default' grep -Fvq 'nvidia.com/gpu' <<< "$(create_line)"
+assert_parse 'no device opt-in by default' grep -Fvq 'CLAUDE_SANDBOX_ALLOW_DEVICES=' <<< "$(create_line)"
+run -- --gpu
+assert_parse 'Podman GPU uses CDI' grep -Fq -- '--device nvidia.com/gpu=all' <<< "$(create_line)"
+assert_parse 'GPU reaches shadow' grep -Fq -- '-e CLAUDE_SANDBOX_GPU=1' <<< "$(create_line)"
+assert_parse 'GPU flag consumed' grep -Fvq -- '--gpu' <<< "$(exec_line)"
+run CLAUDE_SANDBOX_ENGINE=docker -- --gpu
+assert_parse 'Docker GPU request' grep -Fq -- '--gpus all' <<< "$(create_line)"
+assert_parse 'Docker does not use Podman CDI flag' grep -Fvq 'nvidia.com/gpu' <<< "$(create_line)"
+run CLAUDE_SANDBOX_ALLOW_DEVICES=/dev/full -- --gpu --device /dev/null --device /dev/zero
+assert_parse 'first device reaches engine' grep -Fq -- '--device /dev/null' <<< "$(create_line)"
+assert_parse 'second device reaches engine' grep -Fq -- '--device /dev/zero' <<< "$(create_line)"
+assert_eq 'device list merges environment' $'/dev/full\n/dev/null\n/dev/zero' "$(cat "$LOG.device-env")"
+binds="$(
+    export CLAUDE_SHADOW_SOURCE_ONLY=1
+    source "$HERE/../.devcontainer/claude-sandbox/claude-shadow"
+    CLAUDE_SANDBOX_ALLOW_DEVICES="$(cat "$LOG.device-env")"
+    bwrap_argv_build built "$TMP/project" /fake/claude
+    printf '%s\n' "${built[@]}"
+)"
+for device in /dev/full /dev/null /dev/zero; do
+    assert_pair 'host device reaches sandbox' "$binds" --dev-bind "$device"
+done
+for invalid in /dev /dev/pts /dev/no-such-claude-device /etc/passwd /dev/../etc/passwd --gpu; do
+    run -- --device "$invalid"
+    assert_eq "reject invalid device $invalid" 1 "$RC"
+    assert_eq 'invalid device never creates container' '' "$(create_line)"
+done
+run -- --device
+assert_eq 'device requires argument' 1 "$RC"
+printf '%s\n' "claude-sandbox-project-$(printf '%s' "$TMP/project" | cksum | awk '{print $1}')" > "$TMP/ps"
+run -- --gpu --device /dev/null
+assert_parse 'device reuse warns' grep -Fq -- 'ignored on an existing container: --gpu --device /dev/null' <<< "$ERR"
+assert_eq 'device reuse does not recreate' '' "$(create_line)"
+rm -f "$TMP/ps"
+
 mkdir -p "$TMP/ws/project" "$TMP/ro" "$TMP/rw"
 PROJECT="$TMP/ws/project" run --
 assert_parse 'no parent mount by default' grep -Fvq -- "src=$TMP/ws,dst=$TMP/ws," <<< "$(create_line)"
