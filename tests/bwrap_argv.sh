@@ -41,7 +41,7 @@ unset VIRTUAL_ENV UV_PROJECT_ENVIRONMENT UV_CACHE_DIR UV_PYTHON_CACHE_DIR \
       UV_PYTHON_INSTALL_DIR UV_TOOL_DIR \
       PRE_COMMIT_HOME CLAUDE_SANDBOX_WORKSPACE_ROOT CLAUDE_SANDBOX_NO_FORGE \
       CLAUDE_SANDBOX_ALLOW_WRITE CLAUDE_SANDBOX_EGRESS_JAIL CLAUDE_SANDBOX_ALLOW_IP \
-      CLAUDE_SANDBOX_JAIL_RESOLV
+      CLAUDE_SANDBOX_JAIL_RESOLV CLAUDE_SANDBOX_GPU CLAUDE_SANDBOX_ALLOW_DEVICES
 
 # --- Scenario 1: vanilla (workspace=/workspaces/foo, $HOME=/root) ---
 unset TERM LANG LC_ALL LC_CTYPE LC_MESSAGES LC_TIME LC_COLLATE LC_NUMERIC LC_MONETARY
@@ -52,8 +52,9 @@ assert_contains scenario1 "$ARGV1" "bwrap"
 assert_contains scenario1 "$ARGV1" "--ro-bind"
 assert_contains scenario1 "$ARGV1" "--dev"
 assert_contains scenario1 "$ARGV1" "/dev"
-# Unconditional --ro-bind /proc /proc.
 assert_pair scenario1 "$ARGV1" "--ro-bind" "/proc"
+assert_not_contains 'non-GPU retains outer procfs' "$ARGV1" --proc
+assert_not_contains 'non-GPU has no GPU marker' "$ARGV1" IS_SANDBOX_GPU
 assert_contains scenario1 "$ARGV1" "--cap-drop"
 assert_contains scenario1 "$ARGV1" "ALL"
 # All five unshare flags including --unshare-user-try.
@@ -65,8 +66,6 @@ assert_contains scenario1 "$ARGV1" "--unshare-cgroup-try"
 assert_contains scenario1 "$ARGV1" "--die-with-parent"
 # --new-session is DROPPED (delegated to script(1) wrap).
 assert_not_contains scenario1 "$ARGV1" "--new-session"
-# The shadow's procfs probe is gone — no --proc primitive emission.
-assert_not_contains scenario1 "$ARGV1" "--proc"
 # Env scrub.
 assert_contains scenario1 "$ARGV1" "--clearenv"
 assert_contains scenario1 "$ARGV1" "PATH"
@@ -418,6 +417,31 @@ for invalid in /dev /dev/pts /etc/passwd /dev/../etc/passwd /dev/no-such-claude-
     fi
 done
 gpu_argv="$(CLAUDE_SANDBOX_GPU=1 bwrap_argv_lines /repo /fake/claude)"
+assert_pair 'GPU mounts fresh procfs' "$gpu_argv" --proc /proc
+assert_pair 'GPU verifier mode' "$gpu_argv" IS_SANDBOX_GPU 1
+for proc_path in /proc/kcore /proc/keys /proc/latency_stats /proc/sched_debug \
+    /proc/timer_list /proc/timer_stats /proc/interrupts; do
+    [ ! -e "$proc_path" ] || assert_pair 'sensitive proc file masked' "$gpu_argv" /dev/null "$proc_path"
+done
+for proc_path in /proc/acpi /proc/scsi; do
+    [ ! -d "$proc_path" ] || assert_pair 'sensitive proc directory read-only' "$gpu_argv" --remount-ro "$proc_path"
+done
+assert_pair 'GPU records outer pidns' "$gpu_argv" IS_SANDBOX_OUTER_PIDNS "$(readlink /proc/self/ns/pid)"
+assert_contains 'GPU retains PID isolation' "$gpu_argv" --unshare-pid
+if grep -A1 '^--ro-bind$' <<< "$gpu_argv" | grep -qx /proc; then
+    fail 'GPU must not bind outer procfs'
+else
+    pass
+fi
+protected_argv="$(CLAUDE_SANDBOX_GPU=1 IS_SANDBOX_GPU=0 IS_SANDBOX_OUTER_PIDNS=forged \
+    CLAUDE_SANDBOX_PASS_ENV='IS_SANDBOX_GPU,IS_SANDBOX_OUTER_PIDNS' \
+    bwrap_argv_lines /repo /fake/claude)"
+assert_not_contains 'cannot forge namespace baseline' "$protected_argv" forged
+assert_pair 'cannot disable GPU verification' "$protected_argv" IS_SANDBOX_GPU 1
+non_gpu_argv="$(CLAUDE_SANDBOX_GPU=0 IS_SANDBOX_GPU=1 \
+    CLAUDE_SANDBOX_PASS_ENV=IS_SANDBOX_GPU bwrap_argv_lines /repo /fake/claude)"
+assert_not_contains 'cannot forge GPU mode' "$non_gpu_argv" IS_SANDBOX_GPU
+assert_not_contains 'explicit GPU off retains outer procfs' "$non_gpu_argv" --proc
 assert_pair 'GPU keeps private dev' "$gpu_argv" --dev /dev
 assert_not_contains 'GPU does not expose tun' "$gpu_argv" /dev/net/tun
 for device in /dev/nvidia* /dev/nvidia-caps/* /dev/dri/*; do

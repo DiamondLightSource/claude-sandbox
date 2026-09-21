@@ -453,9 +453,8 @@ stamp_installer() {
 
 # _is_mount PATH — true if PATH is itself a mount target. Compares the
 # st_dev of PATH against its parent (the heuristic mountpoint(1) uses),
-# NOT /proc/mounts: inside the sandbox /proc is the host's procfs
-# (--ro-bind /proc /proc), so /proc/mounts shows the host namespace and
-# would miss a path the sandbox itself bind-mounted. stat(2) queries the
+# NOT /proc/mounts: this must also work in older sessions that retain
+# outer procfs and cannot reliably resolve sandbox-local PIDs. stat(2) queries the
 # live kernel, and unlike mountpoint(1) the st_dev check works for a
 # bind-mounted ~/.claude.json (a regular file) too.
 _is_mount() {

@@ -136,6 +136,8 @@ repair the sandbox from inside it.
 
 - `browser-testing` installs optional Playwright/Chromium tooling through the
   outer container, then tests web interfaces inside the sandbox.
+- `cuda-development` installs the NVIDIA CUDA toolkit through the outer
+  container and checks GPU access inside the sandbox.
 - `verify-sandbox` runs the installed battery followed by an agent-driven
   adversarial audit when the user requests a full isolation review.
 - `vscode-headless` runs VS Code inside the jail on a virtual display. Its

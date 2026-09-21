@@ -28,6 +28,12 @@ provides an outer-container installer, a virtual-display launcher and a UI
 driver. See [VS Code automation](../how-to/vscode-automation.md) for setup
 and example editor and debugging workflows.
 
+CUDA development is also optional. The shipped `cuda-development` skill
+provides an outer-container installer for the NVIDIA CUDA toolkit and an
+in-sandbox GPU smoke test. The host supplies the driver, and the installer
+blocks driver packages in the container. See
+[CUDA development](../how-to/cuda-development.md).
+
 ## Container-scoped
 
 Preinstalled in the published image. In a custom devcontainer, re-established

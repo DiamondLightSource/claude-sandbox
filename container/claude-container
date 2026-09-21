@@ -403,7 +403,8 @@ create_container() {
     )
     if [ "$gpu" = 1 ]; then
         case "${ENGINE##*/}" in
-            podman) args+=( --device nvidia.com/gpu=all ) ;;
+            # GPU mode needs fresh procfs; the agent restores sensitive masks.
+            podman) args+=( --security-opt 'unmask=/proc/*' --device nvidia.com/sandbox-gpu=all ) ;;
             docker) args+=( --gpus all ) ;;
             *) say '--gpu requires podman or docker'; return 1 ;;
         esac

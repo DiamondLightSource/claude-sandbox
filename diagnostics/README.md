@@ -1,10 +1,18 @@
 # diagnostic scripts
 
 Operator-only validation tools for the network egress jail (ADR 0015 /
-issue #56). **Not part of the audited product surface**: nothing in
+issue #56) and procfs/CUDA compatibility. **Not part of the audited product surface**: nothing in
 `install.sh`, the `claude-sandbox` CLI, or CI references these — they are
 not installed on a host and not run by the test suite. They exist as live proof-of-concept evidence for ADR 0015 and as
 troubleshooting aids when the jail won't come up on a new host.
+
+For procfs/CUDA, run `bash diagnostics/probe-proc-container.sh CONTAINER_NAME`
+on the rootless Podman host. `--params-hook` compares temporary CDI specs
+with and without NVIDIA's params hook; `--cuda-app` runs the checkout's
+precompiled `build/cuda-probe/cuda-smoke` under its modified launcher.
+These two options need Podman custom CDI path support and a toolkit with
+`--disable-hook`. They create disposable containers and leave installed CDI
+configuration unchanged. `run-cuda-probe.sh` is their internal payload.
 
 **Run them UNJAILED** — from a normal terminal, not from inside a sandboxed
 `claude`. Each needs `unshare` (util-linux); the pasta-based ones also need

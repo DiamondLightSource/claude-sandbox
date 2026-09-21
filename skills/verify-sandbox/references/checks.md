@@ -103,23 +103,22 @@ closes the X11 reachability path.
 
 ### Check 07 — --unshare-pid (kernel pidns isolation)
 
-`--unshare-pid` puts the sandbox in a nested PID namespace. The
-kernel-level effect is what matters for the threat model: `kill()` /
-`ptrace()` are scoped to the new pidns, so the sandbox cannot signal
-or attach to host or devcontainer processes. We positively assert
-the nesting via `/proc/self/status:NSpid:` — outside any sandbox
-this has one entry; inside one nested pidns it has two.
+Non-GPU sessions retain the original check: `NSpid` in the outer procfs
+must contain at least two entries, demonstrating PID namespace nesting.
 
-The companion property (procfs *view* aligned with the new pidns) is
-not checked here. On rootless devcontainer hosts bwrap's `--proc /proc`
-mounts procfs against its outer pidns rather than the spawned child's,
-so process-tree visibility leaks even though kernel kill/ptrace
-scoping is intact. The launch-time probe in claude-shadow detects this
-and sets `CLAUDE_SANDBOX_FRESH_PROC=0`. Credential-bearing procfs
-entries (`/proc/<pid>/environ`, `/maps`, `/fd`, `/mem`) stay gated by
-`PTRACE_MODE_READ_FSCREDS` + YAMA `ptrace_scope=1`, so leaked
-visibility does not become credential exfil — but see the [threat model](https://diamondlightsource.github.io/claude-sandbox/explanations/threat-model.html)
-for the honest tally.
+For GPU sessions, the launcher sets `IS_SANDBOX_GPU=1`, records its PID
+namespace in `IS_SANDBOX_OUTER_PIDNS`, and refuses operator passthrough of
+either variable. Check 07 then requires a different
+namespace inside the sandbox, matching local process and thread entries in
+the fresh `/proc`, and non-writable `/proc/sys`, `/proc/sysrq-trigger`,
+`/proc/irq` and `/proc/bus`. GPU mode cannot count `NSpid` entries: with fresh
+procfs the list begins at the sandbox's namespace and normally has one entry.
+
+This is structural verification. The outer-container live test
+`bash tests/proc_isolation.sh` selects GPU-mode procfs and uses a disposable outer process
+to check process invisibility and denial of signalling and debugger
+attachment. Add `--cuda` to run the GPU smoke test. The launcher and verifier
+must be updated together.
 
 ### Check 08 — --unshare-ipc
 
