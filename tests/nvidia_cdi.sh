@@ -20,6 +20,10 @@ exit "${GENERATE_RC:-0}"
 SH
 cat > "$tmp/bin/podman" <<'SH'
 #!/usr/bin/env bash
+[ "$*" = --help ] || exit 2
+if [ "${OLD_PODMAN:-0}" != 1 ]; then
+    echo '  --cdi-spec-dir strings  Set the CDI spec directory path'
+fi
 exit 0
 SH
 chmod +x "$tmp/bin/"*
@@ -28,6 +32,9 @@ run() {
         SPEC=$'cdiVersion: 0.3.0\nkind: nvidia.com/gpu\ndevices: []\n' \
         "$@" bash "$helper" > "$tmp/out" 2> "$tmp/err"
 }
+if run OLD_PODMAN=1; then fail 'unsupported Podman accepted'; else pass; fi
+assert_parse 'unsupported Podman creates no config' test ! -e "$tmp/home/.config"
+assert_parse 'unsupported Podman explains limitation' grep -Fq 'lacks custom CDI directory support' "$tmp/err"
 assert_parse 'initial setup' run
 spec="$tmp/home/.config/cdi/nvidia.yaml"
 conf="$tmp/home/.config/containers/containers.conf.d/90-claude-sandbox-nvidia-cdi.conf"
@@ -38,6 +45,9 @@ assert_parse 'repeat setup' run
 assert_eq 'main config preserved' 'unrelated configuration' "$(cat "$tmp/home/.config/containers/containers.conf")"
 cp "$spec" "$tmp/before-spec"
 cp "$conf" "$tmp/before-conf"
+if run OLD_PODMAN=1; then fail 'unsupported Podman accepted on rerun'; else pass; fi
+assert_parse 'unsupported Podman preserves spec' cmp -s "$spec" "$tmp/before-spec"
+assert_parse 'unsupported Podman preserves config' cmp -s "$conf" "$tmp/before-conf"
 if run GENERATE_RC=1 SPEC=partial; then fail 'failed generation accepted'; else pass; fi
 assert_parse 'failed generation preserves spec' cmp -s "$spec" "$tmp/before-spec"
 assert_parse 'failed generation preserves config' cmp -s "$conf" "$tmp/before-conf"

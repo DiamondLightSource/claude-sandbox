@@ -8,7 +8,7 @@ case "${1:-}" in
     -h|--help)
         echo 'Usage: bash setup-nvidia-cdi.sh'
         echo 'Generate user NVIDIA CDI configuration for rootless Podman (no sudo).'
-        echo 'Requires working host NVIDIA drivers, nvidia-ctk and Podman.'
+        echo 'Requires working host NVIDIA drivers, nvidia-ctk and Podman with --cdi-spec-dir support.'
         exit 0 ;;
 esac
 [ "$#" = 0 ] || die 'takes no arguments (use --help)'
@@ -16,6 +16,13 @@ esac
 for tool in nvidia-smi nvidia-ctk podman; do
     command -v "$tool" >/dev/null || die "missing $tool; ask your host administrator to provide it"
 done
+# The config key existed before Podman actually used it when injecting CDI
+# devices. Upstream PR 25717 wired it up along with --cdi-spec-dir. Probe the
+# capability rather than a version number so distro backports can work too.
+podman_help="$(podman --help)" || die 'cannot read Podman capabilities'
+if [[ "$podman_help" != *--cdi-spec-dir* ]]; then
+    die 'this Podman lacks custom CDI directory support (including upstream 4.9). Ask an administrator to generate /etc/cdi/nvidia.yaml, or use a newer Podman with --cdi-spec-dir support. No configuration was changed.'
+fi
 nvidia-smi -L || die 'host GPU access failed; resolve this before configuring CDI'
 
 config_root="${XDG_CONFIG_HOME:-$HOME/.config}"

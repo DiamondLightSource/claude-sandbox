@@ -210,7 +210,11 @@ user-space dependencies in the container as needed.
 If Podman reports `unresolvable CDI devices nvidia.com/gpu=all`, it cannot
 find the NVIDIA CDI specification. When the host driver works (`nvidia-smi`)
 and `nvidia-ctk` is installed, the repository provides a helper that generates
-a specification in your user configuration directory without sudo. On the
+a specification in your user configuration directory without sudo. This
+requires Podman with `--cdi-spec-dir` support (check `podman --help`). Older
+versions, including upstream 4.9, ignore the custom CDI directory setting
+when loading devices; merely writing a user configuration file is not enough.
+The helper checks for this capability before changing any files. On the
 **host**, download it, inspect it, then run it:
 
 ```bash
@@ -233,6 +237,20 @@ should be reconciled with this drop-in. It installs no packages and grants
 no new device permissions. Missing host tools or GPU permissions need your
 host administrator. Toolkit 1.13.5 is supported; `nvidia-ctk cdi list` is
 not required. Re-run after driver updates or GPU configuration changes.
+
+If Podman lacks custom CDI directory support, an administrator can generate
+the specification in a system directory that the older engine searches:
+
+```bash
+sudo mkdir -p /etc/cdi
+sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+```
+
+Run these on the host, then retry `claude-sandbox --gpu shell` as your normal
+user. The administrator must regenerate that file after driver or GPU
+configuration changes. Alternatively, use a Podman build with the custom
+directory support added by [upstream PR 25717](https://github.com/containers/podman/pull/25717).
+Recreating the container does not fix an undiscoverable CDI specification.
 
 If generation fails, the previous specification and Podman configuration
 are preserved. After setup, run `nvidia-smi` inside the container shell and
