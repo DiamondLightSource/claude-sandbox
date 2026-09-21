@@ -57,6 +57,13 @@ if run DRIVER_RC=1; then fail 'broken driver accepted'; else pass; fi
 assert_parse 'broken driver preserves spec' cmp -s "$spec" "$tmp/before-spec"
 assert_parse 'XDG path with spaces' run XDG_CONFIG_HOME="$tmp/custom config"
 assert_parse 'XDG spec written' test -s "$tmp/custom config/cdi/nvidia.yaml"
+assert_eq 'spec carries marker' '# Managed by claude-sandbox setup-nvidia-cdi.sh' "$(head -n 1 "$spec")"
+assert_parse 'spec keeps generated content' grep -Fq 'kind: nvidia.com/gpu' "$spec"
+echo '# user spec' > "$spec"
+if run; then fail 'unmanaged spec overwritten'; else pass; fi
+assert_eq 'unmanaged spec retained' '# user spec' "$(cat "$spec")"
+assert_parse 'unmanaged spec preserves config' cmp -s "$conf" "$tmp/before-conf"
+cp "$tmp/before-spec" "$spec"
 echo '# user owned' > "$conf"
 if run; then fail 'unmanaged config overwritten'; else pass; fi
 assert_eq 'unmanaged config retained' '# user owned' "$(cat "$conf")"

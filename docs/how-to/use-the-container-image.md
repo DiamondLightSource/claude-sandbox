@@ -233,7 +233,9 @@ The helper writes `~/.config/cdi/nvidia.yaml` and a dedicated
 file; it uses `$XDG_CONFIG_HOME` instead of `~/.config` when set. It retains
 the standard CDI search directories and adds the user directory, leaving
 your main `containers.conf` untouched. Any custom `cdi_spec_dirs` setting
-should be reconciled with this drop-in. It installs no packages and grants
+should be reconciled with this drop-in. The helper marks both files as
+managed and refuses to replace either file when an existing copy lacks the
+mark, so a specification you generated yourself stays intact. It installs no packages and grants
 no new device permissions. Missing host tools or GPU permissions need your
 host administrator. Toolkit 1.13.5 is supported; `nvidia-ctk cdi list` is
 not required. Re-run after driver updates or GPU configuration changes.

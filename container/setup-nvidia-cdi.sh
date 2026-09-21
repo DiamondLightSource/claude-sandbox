@@ -37,11 +37,16 @@ esac
 cdi_dir="$config_root/cdi"
 conf_dir="$config_root/containers/containers.conf.d"
 conf="$conf_dir/90-claude-sandbox-nvidia-cdi.conf"
+spec="$cdi_dir/nvidia.yaml"
 marker='# Managed by claude-sandbox setup-nvidia-cdi.sh'
-if [ -e "$conf" ] || [ -L "$conf" ]; then
-    [ ! -L "$conf" ] && [ -f "$conf" ] && [ "$(head -n 1 "$conf")" = "$marker" ] \
-        || die "refusing to replace an unmanaged file: $conf"
-fi
+# Both files may already hold a user's own configuration, for example a spec
+# generated with custom nvidia-ctk options. Replace only what carries the marker.
+for managed in "$conf" "$spec"; do
+    if [ -e "$managed" ] || [ -L "$managed" ]; then
+        [ ! -L "$managed" ] && [ -f "$managed" ] && [ "$(head -n 1 "$managed")" = "$marker" ] \
+            || die "refusing to replace an unmanaged file: $managed"
+    fi
+done
 
 mkdir -p "$cdi_dir" "$conf_dir"
 spec_tmp=''
@@ -50,15 +55,17 @@ trap 'if [ -n "$spec_tmp" ]; then rm -f -- "$spec_tmp"; fi; if [ -n "$conf_tmp" 
 spec_tmp="$(mktemp "$cdi_dir/.nvidia.XXXXXX")"
 # stdout works with older toolkits, including 1.13.5 (which has no cdi list).
 # Generate before replacing anything so a failure keeps working files intact.
-nvidia-ctk cdi generate > "$spec_tmp" || die 'CDI generation failed; previous configuration kept'
-[ -s "$spec_tmp" ] || die 'CDI generation returned an empty specification; previous configuration kept'
+# The marker is a YAML comment, so CDI parsers ignore it.
+{ echo "$marker"; nvidia-ctk cdi generate; } > "$spec_tmp" \
+    || die 'CDI generation failed; previous configuration kept'
+tail -n +2 "$spec_tmp" | grep -q . || die 'CDI generation returned an empty specification; previous configuration kept'
 conf_tmp="$(mktemp "$conf_dir/.nvidia.XXXXXX")"
 printf "%s\n[engine]\ncdi_spec_dirs = ['/etc/cdi', '/var/run/cdi', '%s']\n" \
     "$marker" "$cdi_dir" > "$conf_tmp"
-mv -f -- "$spec_tmp" "$cdi_dir/nvidia.yaml"
+mv -f -- "$spec_tmp" "$spec"
 spec_tmp=''
 mv -f -- "$conf_tmp" "$conf"
 conf_tmp=''
-printf 'CDI specification: %s\nPodman configuration: %s\n' "$cdi_dir/nvidia.yaml" "$conf"
+printf 'CDI specification: %s\nPodman configuration: %s\n' "$spec" "$conf"
 echo 'Ready to try: claude-sandbox --gpu shell'
 echo 'Re-run this helper after host NVIDIA driver or GPU configuration changes.'
