@@ -267,8 +267,8 @@ the agent launcher restores sensitive proc masks inside its own PID namespace.
 Existing containers need recreation to pick up these create-time settings.
 Rootless Podman devcontainers need the same security option in `runArgs`
 and, when using GPUs, the sandbox-specific CDI device. The changed procfs
-setup has been CUDA-tested on the workstation; RHEL8 and Docker still need
-live validation.
+setup has been CUDA-tested on the workstation; RHEL8 and the VS Code
+devcontainer path still need live validation. This beta targets rootless Podman.
 
 For other hardware, repeat `--device` with individual device nodes:
 
