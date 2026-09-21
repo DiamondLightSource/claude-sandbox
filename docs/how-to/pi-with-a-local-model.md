@@ -5,16 +5,17 @@ then connect sandboxed Pi to it. The steps below install both tools.
 
 ## Start the model server
 
-On a Linux host with an NVIDIA GPU and driver:
+On your Linux host:
 
 ```bash
 module load uv                     # DLS workstations
 uv tool install --upgrade lllm2
-lllm2 engines install cuda
-lllm2
 ```
 
-Open `http://127.0.0.1:8082`. Download a model that fits your GPU, then select
+Follow [lllm2’s installation guide](https://gilesknap.github.io/lllm2/tutorials/installation.html)
+to install an engine for your hardware, then run `lllm2`.
+
+Open `http://127.0.0.1:8082`. Download a model that fits your hardware, then select
 it under **Launch model** and start it. Use **Experiments → Run baseline**
 with **Discover usable context** to find a working context allocation.
 The model API defaults to `http://127.0.0.1:1920/v1`.

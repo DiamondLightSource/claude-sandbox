@@ -4,14 +4,7 @@ Give the agent a project-scoped token when it needs to push or use forge APIs.
 
 ## Authenticate
 
-Use your normal devcontainer terminal, outside the agent. With the host launcher,
-open the equivalent terminal first:
-
-```bash
-claude-sandbox shell        # Skip if already in your devcontainer terminal
-```
-
-In either terminal, choose a forge:
+From your project on the host, or a devcontainer terminal outside the agent:
 
 ```bash
 claude-sandbox gh-auth
@@ -19,8 +12,7 @@ claude-sandbox glab-auth gitlab.example.com
 ```
 
 The helpers prompt for a token without placing it in shell history.
-With the host launcher, exit the shell and run `claude-sandbox` to resume.
-In your devcontainer, stay in the terminal and run `claude`.
+The host launcher runs them inside the project's container.
 
 :::{note} DLS: Diamond GitLab
 Use `claude-sandbox glab-auth` with no hostname for `gitlab.diamond.ac.uk`.
