@@ -134,34 +134,29 @@ place — closing exactly this reach is its whole point. `/verify-sandbox`
 surfaces the reachability question as an `[INCONCLUSIVE]` adversarial probe
 so it stays on the radar rather than being silently forgotten.
 
-## The procfs view: host PIDs are visible
+## The procfs view: sandbox processes only
 
-`--unshare-pid` reliably gives **kernel-level PID-namespace
-isolation**: the sandbox cannot `kill()` or `ptrace()` host or
-devcontainer processes. Check 07 verifies this directly via
-`/proc/self/status:NSpid:`.
+All agents use `--unshare-pid` with `--proc /proc`. The fresh procfs
+shows the sandbox's process tree, with IDs matching the running processes
+and threads. This also supports CUDA's `/proc/self/task/<tid>/comm` lookup.
+Bubblewrap protects `/proc/sys`, `/proc/sysrq-trigger`, `/proc/irq` and
+`/proc/bus` against writes; capability dropping remains enabled. The launcher
+also restores the runtime's sensitive proc file and directory masks after
+mounting fresh procfs. Rootless Podman must allow that initial mount with
+`--security-opt 'unmask=/proc/*'`, which the host launcher supplies.
 
-The companion property one might expect — `/proc` reflecting *only*
-the sandbox's own process tree — is a different thing, and it does
-*not* hold here. That property depends on bwrap successfully mounting a
-fresh procfs against the new PID namespace, which fails on rootless
-nested-userns hosts. That configuration is exactly the standard VS
-Code devcontainer pattern, so rather than probe per-launch, the shadow
-unconditionally emits `--ro-bind /proc /proc`. Host PIDs are therefore
-enumerable from inside the sandbox.
+Check 07 compares the sandbox's PID namespace with the launcher's, checks
+local process and thread entries, and checks those kernel controls. The live
+test `bash tests/proc_isolation.sh`, run in the outer container from the
+checkout with `bwrap` and `gdb` installed, additionally checks that a
+disposable outer process is invisible and inaccessible to signalling and
+debugger attachment. Add `--cuda` to compile and run the GPU smoke test.
 
-This is an accepted **information disclosure** — Claude can see the
-user's process tree and command lines — and explicitly **not**
-credential exfiltration. The credential-bearing procfs entries
-(`/proc/<pid>/environ`, `/maps`, `/fd`, `/mem`, `/cwd`) are gated by
-the kernel's `PTRACE_MODE_READ_FSCREDS` check. Under YAMA
-`ptrace_scope=1` — the Ubuntu/Debian default, shipped by every
-devcontainer base image — that check restricts those reads to the
-caller's own descendants. The sandbox has no descendant relationship
-with VS Code, the terminal sessions, or other devcontainer processes,
-so those reads return `EACCES`. The visibility of PIDs does not extend
-to the contents that would matter, and check 07 still passes because
-the kernel PID-namespace isolation is intact regardless.
+Earlier launchers retained the outer container's procfs to accommodate
+fresh-proc mount failures in some rootless environments. That mismatched
+view broke process-ID lookups. The launcher now fails if it cannot mount
+fresh procfs; it does not fall back to the outer view. Validate this on the
+target container runtime before rollout.
 
 ## Egress-jail mechanism: holder netns + pasta-attach
 

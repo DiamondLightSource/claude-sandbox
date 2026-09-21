@@ -151,6 +151,18 @@ for tool in /usr/local/cuda/bin/*; do
         echo "Left $link alone: it is not a CUDA toolkit link." >&2
     fi
 done
+# nvcc locates nvcc.profile and toolkit headers relative to its invocation
+# path. A symlink in /usr/local/bin breaks that lookup; execute the toolkit
+# path instead. Only replace the link owned by this installer.
+if [ -L /usr/local/bin/nvcc ] &&
+    [ "$(readlink /usr/local/bin/nvcc)" = /usr/local/cuda/bin/nvcc ]; then
+    rm /usr/local/bin/nvcc
+    cat > /usr/local/bin/nvcc <<'EOF'
+#!/bin/sh
+exec /usr/local/cuda/bin/nvcc "$@"
+EOF
+    chmod 755 /usr/local/bin/nvcc
+fi
 cat > /etc/profile.d/claude-sandbox-cuda.sh <<'EOF'
 export CUDA_HOME=/usr/local/cuda
 EOF

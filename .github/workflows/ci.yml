@@ -18,7 +18,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
-            bubblewrap jq
+            bubblewrap jq gdb
 
       # Ubuntu 24.04 runners ship with
       # kernel.apparmor_restrict_unprivileged_userns=1, so plain bwrap
@@ -60,6 +60,12 @@ jobs:
 
       - name: Run direct sandbox verification tests
         run: bash tests/verify.sh
+
+      - name: Run live proc isolation test
+        run: |
+          export HOME=/tmp/sandbox-home
+          mkdir -p "$HOME"
+          bash tests/proc_isolation.sh
 
       # Which git ref `install` selects, and when it refuses to select one.
       # Hermetic — builds its own throwaway origin+clone with synthetic tags,

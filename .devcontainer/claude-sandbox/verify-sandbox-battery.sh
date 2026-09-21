@@ -160,12 +160,35 @@ else
     result 06 "cap_drop ALL: CapEff=0000000000000000" 1 "CapEff is non-zero in /proc/self/status"
 fi
 
-# 07 — --unshare-pid: NSpid lists our PID per pidns level; nested == >= 2.
-nspid_count="$(awk '$1=="NSpid:"{print NF-1; exit}' /proc/self/status)"
-if [ "${nspid_count:-1}" -ge 2 ]; then
-    result 07 "--unshare-pid: NSpid has >= 2 entries (kernel pidns isolated)" 0
+# 07 — compare namespace identities supplied by the launcher. Counting NSpid
+# entries is wrong with fresh procfs: its view starts at the mounted pidns.
+check_07() {
+    local inner outer=${IS_SANDBOX_OUTER_PIDNS:-} control key value actual_pid=''
+    inner=$(readlink /proc/self/ns/pid) || return 1
+    [[ $outer =~ ^pid:\[[0-9]+\]$ ]] || return 1
+    [ "$inner" != "$outer" ] || return 1
+    # Read in this shell, not an awk child, and avoid an accidental numeric
+    # collision with an unrelated PID in a mismatched outer procfs.
+    while read -r key value; do
+        if [ "$key" = Pid: ]; then actual_pid=$value; break; fi
+    done < /proc/self/status
+    [ "$actual_pid" = "$BASHPID" ] || return 1
+    [ -r /proc/$$/task/$$/comm ] || return 1
+    for control in /proc/sys /proc/sysrq-trigger /proc/irq /proc/bus /proc/asound /proc/fs \
+        /proc/acpi /proc/scsi; do
+        [ ! -w "$control" ] || return 1
+    done
+    for control in /proc/kcore /proc/keys /proc/latency_stats /proc/sched_debug \
+        /proc/timer_list /proc/timer_stats /proc/interrupts; do
+        [ -e "$control" ] || continue
+        [ -c "$control" ] && [ "$(stat -c '%t:%T' "$control")" = 1:3 ] || return 1
+    done
+}
+if check_07; then
+    result 07 "PID namespace isolated; procfs aligned and controls protected" 0
 else
-    result 07 "--unshare-pid: NSpid has >= 2 entries (kernel pidns isolated)" 1 "NSpid has ${nspid_count:-1} entry (not in a nested pidns)"
+    result 07 "PID namespace isolated; procfs aligned and controls protected" 1 \
+        "namespace comparison or procfs checks failed; use the matching launcher and verifier"
 fi
 
 # 08 — --unshare-ipc: ipcns symlink present and well-formed.

@@ -134,6 +134,7 @@ jobs:
           docker save claude-sandbox:test | podman load
           mkdir -p "$RUNNER_TEMP/terminal-config" "$RUNNER_TEMP/project"
           podman run --rm -t \
+            --security-opt 'unmask=/proc/*' \
             --security-opt seccomp=unconfined \
             --security-opt apparmor=unconfined \
             --security-opt label=disable \
@@ -159,6 +160,7 @@ jobs:
       - name: "Test: Pi streams a local tool call through the sandbox"
         run: |
           podman run --rm -t \
+            --security-opt 'unmask=/proc/*' \
             --security-opt seccomp=unconfined \
             --security-opt apparmor=unconfined \
             --security-opt label=disable \

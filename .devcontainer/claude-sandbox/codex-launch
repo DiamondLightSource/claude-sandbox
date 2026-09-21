@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Runs INSIDE bwrap. Avoid the managed daemon's /proc/<local-pid> lookup:
-# this sandbox retains outer procfs while isolating the PID namespace.
+# Runs INSIDE bwrap. Keep the foreground server lifecycle used when the
+# sandbox retained outer procfs; migrating managed daemon startup is separate.
 set -euo pipefail
 
 codex_launch() {

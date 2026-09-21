@@ -401,9 +401,14 @@ create_container() {
         -e "TERM=${TERM:-xterm-256color}"
         -e "CLAUDE_SANDBOX_TAG=$TAG"
     )
+    # A nested PID namespace needs fresh procfs. OCI's proc masks prevent
+    # that mount; the agent launcher restores masks after mounting its procfs.
+    if [ "${ENGINE##*/}" = podman ]; then
+        args+=( --security-opt 'unmask=/proc/*' )
+    fi
     if [ "$gpu" = 1 ]; then
         case "${ENGINE##*/}" in
-            podman) args+=( --device nvidia.com/gpu=all ) ;;
+            podman) args+=( --device nvidia.com/sandbox-gpu=all ) ;;
             docker) args+=( --gpus all ) ;;
             *) say '--gpu requires podman or docker'; return 1 ;;
         esac

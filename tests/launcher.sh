@@ -111,15 +111,16 @@ run -- --bridge; case "$(create_line)" in *"--network=host"*) fail "--bridge sti
 
 # --- filesystem view: parent rw, project rw, --mount ro, --mount-rw ---------
 run --
-assert_parse 'no GPU by default' grep -Fvq 'nvidia.com/gpu' <<< "$(create_line)"
+assert_parse 'no GPU by default' grep -Fvq 'nvidia.com/sandbox-gpu' <<< "$(create_line)"
+assert_parse 'Podman permits fresh procfs' grep -Fq -- '--security-opt unmask=/proc/*' <<< "$(create_line)"
 assert_parse 'no device opt-in by default' grep -Fvq 'CLAUDE_SANDBOX_ALLOW_DEVICES=' <<< "$(create_line)"
 run -- --gpu
-assert_parse 'Podman GPU uses CDI' grep -Fq -- '--device nvidia.com/gpu=all' <<< "$(create_line)"
+assert_parse 'Podman GPU uses scoped CDI' grep -Fq -- '--device nvidia.com/sandbox-gpu=all' <<< "$(create_line)"
 assert_parse 'GPU reaches shadow' grep -Fq -- '-e CLAUDE_SANDBOX_GPU=1' <<< "$(create_line)"
 assert_parse 'GPU flag consumed' grep -Fvq -- '--gpu' <<< "$(exec_line)"
 run CLAUDE_SANDBOX_ENGINE=docker -- --gpu
 assert_parse 'Docker GPU request' grep -Fq -- '--gpus all' <<< "$(create_line)"
-assert_parse 'Docker does not use Podman CDI flag' grep -Fvq 'nvidia.com/gpu' <<< "$(create_line)"
+assert_parse 'Docker does not use Podman CDI flag' grep -Fvq 'nvidia.com/sandbox-gpu' <<< "$(create_line)"
 run CLAUDE_SANDBOX_ALLOW_DEVICES=/dev/full -- --gpu --device /dev/null --device /dev/zero
 assert_parse 'first device reaches engine' grep -Fq -- '--device /dev/null' <<< "$(create_line)"
 assert_parse 'second device reaches engine' grep -Fq -- '--device /dev/zero' <<< "$(create_line)"

@@ -202,13 +202,13 @@ claude-sandbox --gpu shell       # then run nvidia-smi to check the container
 
 The host needs its NVIDIA driver and the
 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
-Docker uses `--gpus all`; Podman uses `--device nvidia.com/gpu=all` and needs
+Docker uses `--gpus all`; Podman uses `--device nvidia.com/sandbox-gpu=all` and needs
 the toolkit's [CDI configuration](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/cdi-support.html).
 The runtime supplies driver libraries; install your workload's CUDA or other
 user-space dependencies in the container as needed. For the CUDA toolkit, use
 the installer in [CUDA development](cuda-development.md).
 
-If Podman reports `unresolvable CDI devices nvidia.com/gpu=all`, it cannot
+If Podman reports `unresolvable CDI devices nvidia.com/sandbox-gpu=all`, it cannot
 find the NVIDIA CDI specification. When the host driver works (`nvidia-smi`)
 and `nvidia-ctk` is installed, the repository provides a helper that generates
 a specification in your user configuration directory without sudo. This
@@ -229,7 +229,7 @@ claude-sandbox --gpu shell
 From a checkout, run `bash container/setup-nvidia-cdi.sh` instead. For an
 unmerged change, replace `main` in the download URL with its commit SHA.
 
-The helper writes `~/.config/cdi/nvidia.yaml` and a dedicated
+The helper writes `~/.config/cdi/claude-sandbox-nvidia.yaml` and a dedicated
 `~/.config/containers/containers.conf.d/90-claude-sandbox-nvidia-cdi.conf`
 file; it uses `$XDG_CONFIG_HOME` instead of `~/.config` when set. It retains
 the standard CDI search directories and adds the user directory, leaving
@@ -238,18 +238,19 @@ should be reconciled with this drop-in. The helper marks both files as
 managed and refuses to replace either file when an existing copy lacks the
 mark, so a specification you generated yourself stays intact. It installs no packages and grants
 no new device permissions. Missing host tools or GPU permissions need your
-host administrator. Toolkit 1.13.5 is supported; `nvidia-ctk cdi list` is
-not required. Re-run after driver updates or GPU configuration changes.
+host administrator. Toolkit 1.13.5 does not need the newer `--disable-hook`
+flag; the helper uses it only when available and rejects a generated spec
+that retains the incompatible hook. Re-run after driver updates or GPU
+configuration changes.
 
 If Podman lacks custom CDI directory support, an administrator can generate
 the specification in a system directory that the older engine searches:
 
 ```bash
-sudo mkdir -p /etc/cdi
-sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+sudo bash container/setup-nvidia-cdi.sh --system
 ```
 
-Run these on the host, then retry `claude-sandbox --gpu shell` as your normal
+Run this from the checkout on the host, then retry `claude-sandbox --gpu shell` as your normal
 user. The administrator must regenerate that file after driver or GPU
 configuration changes. Alternatively, use a Podman build with the custom
 directory support added by [upstream PR 25717](https://github.com/containers/podman/pull/25717).
@@ -258,6 +259,16 @@ Recreating the container does not fix an undiscoverable CDI specification.
 If generation fails, the previous specification and Podman configuration
 are preserved. After setup, run `nvidia-smi` inside the container shell and
 ask an agent to run it too, to check both layers of device access.
+
+The sandbox-specific CDI class omits NVIDIA's params overlay, which prevents
+a nested fresh procfs mount. It leaves the standard `nvidia.com/gpu` class
+unchanged. The Podman launcher also sets `--security-opt 'unmask=/proc/*'`;
+the agent launcher restores sensitive proc masks inside its own PID namespace.
+Existing containers need recreation to pick up these create-time settings.
+Rootless Podman devcontainers need the same security option in `runArgs`
+and, when using GPUs, the sandbox-specific CDI device. The changed procfs
+setup has been CUDA-tested on the workstation; RHEL8 and Docker still need
+live validation.
 
 For other hardware, repeat `--device` with individual device nodes:
 
