@@ -205,7 +205,8 @@ The host needs its NVIDIA driver and the
 Docker uses `--gpus all`; Podman uses `--device nvidia.com/gpu=all` and needs
 the toolkit's [CDI configuration](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/cdi-support.html).
 The runtime supplies driver libraries; install your workload's CUDA or other
-user-space dependencies in the container as needed.
+user-space dependencies in the container as needed. For the CUDA toolkit, use
+the installer in [CUDA development](cuda-development.md).
 
 If Podman reports `unresolvable CDI devices nvidia.com/gpu=all`, it cannot
 find the NVIDIA CDI specification. When the host driver works (`nvidia-smi`)

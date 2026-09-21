@@ -9,7 +9,8 @@ For day-to-day use, see [container options](how-to/use-the-container-image.md),
 The devcontainer and organisation guides cover custom toolchains and rollout.
 
 For agent-driven UI testing, see [browser automation](how-to/browser-automation.md)
-and [VS Code automation](how-to/vscode-automation.md). Both use optional tools
+and [VS Code automation](how-to/vscode-automation.md). For GPU work, see
+[CUDA development](how-to/cuda-development.md). All three use optional tools
 you install in the outer container and shipped skills the agent runs inside
 its sandbox.
 
@@ -54,5 +55,6 @@ how-to/share-skills-between-agents
 
 how-to/browser-automation
 how-to/vscode-automation
+how-to/cuda-development
 how-to/contribute
 ```
