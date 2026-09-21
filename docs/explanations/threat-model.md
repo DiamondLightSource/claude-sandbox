@@ -65,6 +65,14 @@ rationale matters:
 - **Workspace contents** are out of scope because Claude *has to* read your
   workspace to be useful. This is the one irreducible exposure — see the
   [caveat](#the-irreducible-workspace-visibility-caveat) below.
+- **Explicit device access** (`--gpu`, `--device`, `gpu`, `allow-device`)
+  exposes the selected hardware to all processes in the agent session.
+  GPU/device driver ioctls add host-kernel attack surface; a driver exploit
+  can cross the sandbox boundary. GPU memory/compute exhaustion and device
+  side effects are not contained. Raw block devices can bypass filesystem
+  restrictions entirely. These opt-ins retain the other isolation layers
+  and do not enable privileged-container mode, but require trusting the
+  workload with the selected device. Device passthrough is off by default.
 - **The container host kernel** is out of scope because a bwrap-aware kernel
   exploit is a different class of problem. This tool isolates credentials; it
   does not claim to contain arbitrary native code. The devcontainer host is the

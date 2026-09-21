@@ -190,7 +190,108 @@ Use `--mount-rw` for a path outside the parent that an agent must edit. The
 `workspace-root` config key only widens the sandbox bind within what the
 container mounted, so on its own it cannot make a read-only mount writable.
 
-Mounts, network mode and forwarded `CLAUDE_SANDBOX_*` variables are fixed
+### GPUs and other devices
+
+Expose all NVIDIA GPUs to both the container shell and sandboxed agents:
+
+```bash
+claude-sandbox --gpu
+claude-sandbox --recreate --gpu   # if the project container already exists
+claude-sandbox --gpu shell       # then run nvidia-smi to check the container
+```
+
+The host needs its NVIDIA driver and the
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+Docker uses `--gpus all`; Podman uses `--device nvidia.com/gpu=all` and needs
+the toolkit's [CDI configuration](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/cdi-support.html).
+The runtime supplies driver libraries; install your workload's CUDA or other
+user-space dependencies in the container as needed.
+
+If Podman reports `unresolvable CDI devices nvidia.com/gpu=all`, it cannot
+find the NVIDIA CDI specification. When the host driver works (`nvidia-smi`)
+and `nvidia-ctk` is installed, the repository provides a helper that generates
+a specification in your user configuration directory without sudo. This
+requires Podman with `--cdi-spec-dir` support (check `podman --help`). Older
+versions, including upstream 4.9, ignore the custom CDI directory setting
+when loading devices; merely writing a user configuration file is not enough.
+The helper checks for this capability before changing any files. On the
+**host**, download it, inspect it, then run it:
+
+```bash
+curl -fL -o setup-nvidia-cdi.sh \
+  https://raw.githubusercontent.com/DiamondLightSource/claude-sandbox/main/container/setup-nvidia-cdi.sh
+less setup-nvidia-cdi.sh
+bash setup-nvidia-cdi.sh
+claude-sandbox --gpu shell
+```
+
+From a checkout, run `bash container/setup-nvidia-cdi.sh` instead. For an
+unmerged change, replace `main` in the download URL with its commit SHA.
+
+The helper writes `~/.config/cdi/nvidia.yaml` and a dedicated
+`~/.config/containers/containers.conf.d/90-claude-sandbox-nvidia-cdi.conf`
+file; it uses `$XDG_CONFIG_HOME` instead of `~/.config` when set. It retains
+the standard CDI search directories and adds the user directory, leaving
+your main `containers.conf` untouched. Any custom `cdi_spec_dirs` setting
+should be reconciled with this drop-in. The helper marks both files as
+managed and refuses to replace either file when an existing copy lacks the
+mark, so a specification you generated yourself stays intact. It installs no packages and grants
+no new device permissions. Missing host tools or GPU permissions need your
+host administrator. Toolkit 1.13.5 is supported; `nvidia-ctk cdi list` is
+not required. Re-run after driver updates or GPU configuration changes.
+
+If Podman lacks custom CDI directory support, an administrator can generate
+the specification in a system directory that the older engine searches:
+
+```bash
+sudo mkdir -p /etc/cdi
+sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+```
+
+Run these on the host, then retry `claude-sandbox --gpu shell` as your normal
+user. The administrator must regenerate that file after driver or GPU
+configuration changes. Alternatively, use a Podman build with the custom
+directory support added by [upstream PR 25717](https://github.com/containers/podman/pull/25717).
+Recreating the container does not fix an undiscoverable CDI specification.
+
+If generation fails, the previous specification and Podman configuration
+are preserved. After setup, run `nvidia-smi` inside the container shell and
+ask an agent to run it too, to check both layers of device access.
+
+For other hardware, repeat `--device` with individual device nodes:
+
+```bash
+claude-sandbox --device /dev/ttyUSB0
+claude-sandbox --device /dev/dri/renderD128                 # Intel/AMD rendering
+claude-sandbox --device /dev/kfd --device /dev/dri/renderD128 # AMD compute
+```
+
+Paths must name existing character or block devices under `/dev`. Symlinks
+are resolved and the canonical path is used inside the container and sandbox.
+Directories and Docker-style `host:container:permissions` mappings are not
+accepted. The host user must have access to the devices. With Podman,
+`--device` adds `--group-add keep-groups`, so a node that only a group can
+open, such as `dialout` or `render`, works for a member of that group. This
+needs the crun runtime. Docker does not get this flag. `--device` is create-time, so an existing container
+needs `--recreate`. Devices are exposed read-write to agents, including
+their ioctl interface and, for disks, raw contents. Choose only the devices
+the workload needs.
+
+Device access widens the sandbox's trust boundary: every process in the agent
+session can use the device, including downloaded tools and project scripts.
+A vulnerability in the host GPU/device driver could allow a sandbox escape;
+GPU workloads can also exhaust shared GPU memory or compute. Raw disk access
+can bypass filesystem protections. These options are off by default and do
+not enable privileged-container mode, but the remaining sandbox protections
+cannot contain a compromised host driver.
+
+The sandbox keeps its private `/dev` and adds the selected nodes. `--gpu`
+adds NVIDIA and DRM device nodes available inside the container. For an
+existing devcontainer, configure device access in its container runtime and
+add `gpu` or repeatable `allow-device = /dev/…` entries to
+`/etc/claude-sandbox.conf` to expose those devices to agents too.
+
+Mounts, devices, GPU access, network mode and forwarded `CLAUDE_SANDBOX_*` variables are fixed
 when a container is created. For an existing container, include
 `--recreate` when changing them. For example:
 

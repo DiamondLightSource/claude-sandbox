@@ -290,6 +290,31 @@ bwrap_argv_build() {
         --tmpfs /tmp
     )
 
+    # Keep the private /dev and its isolated terminal namespace. Only the
+    # explicitly selected device nodes are restored, with --dev-bind so
+    # bubblewrap does not apply the nodev flag used for ordinary binds.
+    local device resolved
+    if [ -n "${CLAUDE_SANDBOX_ALLOW_DEVICES:-}" ]; then
+        while IFS= read -r device; do
+            [ -n "$device" ] || continue
+            resolved="$(realpath -e -- "$device")" || return 1
+            if [[ "$device" != /dev/* || "$resolved" != /dev/* ]] ||
+                { [ ! -c "$resolved" ] && [ ! -b "$resolved" ]; }; then
+                echo "claude-sandbox: allow-device needs a character or block device under /dev: $device" >&2
+                return 1
+            fi
+            argv+=( --dev-bind "$resolved" "$resolved" )
+        done <<< "$CLAUDE_SANDBOX_ALLOW_DEVICES"
+    fi
+    if [ "${CLAUDE_SANDBOX_GPU:-0}" = 1 ]; then
+        # The container runtime supplies driver libraries in the read-only
+        # root and selects the available GPUs. Never bind all of /dev.
+        for device in /dev/nvidia* /dev/nvidia-caps/* /dev/dri/*; do
+            [ -c "$device" ] || continue
+            argv+=( --dev-bind "$device" "$device" )
+        done
+    fi
+
     # /run/{user,secrets} masks are emitted only when the host has the
     # source dir. Bwrap can't mkdir into a read-only /run when the
     # parent has no such subdir (typical of GHA's ubuntu-24.04 runner).
@@ -660,6 +685,16 @@ parse_config() {
                 CLAUDE_SANDBOX_CALLBACK_PORTS="${CLAUDE_SANDBOX_CALLBACK_PORTS:+${CLAUDE_SANDBOX_CALLBACK_PORTS}
 }${value}"
                 export CLAUDE_SANDBOX_CALLBACK_PORTS
+                ;;
+            gpu)
+                : "${CLAUDE_SANDBOX_GPU:=${value:-1}}"
+                export CLAUDE_SANDBOX_GPU
+                ;;
+            allow-device)
+                [ -n "$value" ] || continue
+                CLAUDE_SANDBOX_ALLOW_DEVICES="${CLAUDE_SANDBOX_ALLOW_DEVICES:+${CLAUDE_SANDBOX_ALLOW_DEVICES}
+}$value"
+                export CLAUDE_SANDBOX_ALLOW_DEVICES
                 ;;
             allow-write)
                 [ -z "$value" ] && continue
