@@ -413,6 +413,12 @@ create_container() {
         args+=( --device "$device" )
         allow_devices="${allow_devices:+$allow_devices$'\n'}$device"
     done
+    # Rootless Podman drops the host user's supplementary groups, so nodes
+    # that only a group may open (ttyUSB* is dialout, renderD*/kfd render)
+    # fail with EACCES. keep-groups carries them in. Docker has no equivalent.
+    if [ -n "${devices[*]+x}" ] && [ "${ENGINE##*/}" = podman ]; then
+        args+=( --group-add keep-groups )
+    fi
     [ -z "$allow_devices" ] || args+=( -e "CLAUDE_SANDBOX_ALLOW_DEVICES=$allow_devices" )
     if [ "$gpu" = 1 ]; then
         args+=( -e CLAUDE_SANDBOX_GPU=1 )

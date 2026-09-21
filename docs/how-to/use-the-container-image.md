@@ -267,8 +267,11 @@ claude-sandbox --device /dev/kfd --device /dev/dri/renderD128 # AMD compute
 Paths must name existing character or block devices under `/dev`. Symlinks
 are resolved and the canonical path is used inside the container and sandbox.
 Directories and Docker-style `host:container:permissions` mappings are not
-accepted. The host user must have access to the devices; rootless engine
-permissions still apply. Devices are exposed read-write to agents, including
+accepted. The host user must have access to the devices. With Podman,
+`--device` adds `--group-add keep-groups`, so a node that only a group can
+open, such as `dialout` or `render`, works for a member of that group. This
+needs the crun runtime. Docker does not get this flag. `--device` is create-time, so an existing container
+needs `--recreate`. Devices are exposed read-write to agents, including
 their ioctl interface and, for disks, raw contents. Choose only the devices
 the workload needs.
 

@@ -124,6 +124,12 @@ run CLAUDE_SANDBOX_ALLOW_DEVICES=/dev/full -- --gpu --device /dev/null --device 
 assert_parse 'first device reaches engine' grep -Fq -- '--device /dev/null' <<< "$(create_line)"
 assert_parse 'second device reaches engine' grep -Fq -- '--device /dev/zero' <<< "$(create_line)"
 assert_eq 'device list merges environment' $'/dev/full\n/dev/null\n/dev/zero' "$(cat "$LOG.device-env")"
+assert_parse 'Podman device keeps host groups' grep -Fq -- '--group-add keep-groups' <<< "$(create_line)"
+run -- --gpu
+assert_parse 'no host groups without --device' grep -Fvq -- 'keep-groups' <<< "$(create_line)"
+run CLAUDE_SANDBOX_ENGINE=docker -- --device /dev/null
+assert_parse 'Docker has no keep-groups' grep -Fvq -- 'keep-groups' <<< "$(create_line)"
+run CLAUDE_SANDBOX_ALLOW_DEVICES=/dev/full -- --gpu --device /dev/null --device /dev/zero
 binds="$(
     export CLAUDE_SHADOW_SOURCE_ONLY=1
     source "$HERE/../.devcontainer/claude-sandbox/claude-shadow"
