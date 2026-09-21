@@ -1,108 +1,63 @@
 # Verification checks
 
-The shipped `verify-sandbox` skill runs two phases in the current agent sandbox: a
-deterministic **21-check PASS/FAIL battery**, then — only when all 21
-pass — **10 adversarial breakout probes**. The battery exits non-zero on
-failure. The slash command is an agent-driven audit: inspect its reported
-results rather than relying on the interactive agent's exit status for CI.
+`claude-sandbox verify` runs the installed 21-check battery and exits nonzero
+on failure. The `verify-sandbox` skill adds ten agent-driven adversarial probes
+only after all checks pass. See [how to run verification](../how-to/verify-the-sandbox.md).
 
-```{include} ../_snippets/clone-note.md
-```
-
-The exact bash for each check is the committed battery script
-`.devcontainer/claude-sandbox/verify-sandbox-battery.sh` (installed to
-`/usr/libexec/claude-sandbox/`, so it is read-only inside the sandbox);
-the *why* of each check lives in the spec at
-`skills/verify-sandbox/references/checks.md`. The summaries below state what
-each check asserts; see
-[locked-down defences](locked-down-defences.md) for the
-defence → primitive mapping.
-
-The battery passes whether or not the
-{ref}`egress jail <adr-network-egress-jail>` is active (the jail is on
-by default): the capability check asserts the *effective* set, which
-stays empty inside the jail's nested userns, and the two jail checks
-(19–20) treat a deliberately disabled jail as a pass with a
-"disabled" note rather than a failure.
+The implementation is `.devcontainer/claude-sandbox/verify-sandbox-battery.sh`,
+installed under `/usr/libexec/claude-sandbox/`. Detailed rationale lives in
+`skills/verify-sandbox/references/checks.md`.
 
 ## Phase 1 — the 21-check battery
 
-| # | Asserts |
+| # | Assertion |
 |---|---|
-| 01 | `IS_SANDBOX=1` is set (the fall-through sentinel proving bwrap was entered, not the real binary run directly). |
-| 02 | `/proc/self/status` reports `NoNewPrivs: 1` (NO_NEW_PRIVS blocks setuid escalation). |
-| 03 | Strict-under-`/root`: only the allowed top-level entries exist under `$HOME` (`.cache`, `.config`, `.local`, the masked dotfiles, and **only the running agent's own config** — `.claude`/`.claude.json` for Claude, `.codex` for Codex, `.pi` for Pi — plus `.agents`, which may contain only the shared `skills` bind), and `$HOME/.config` contains only `gh` / `glab-cli` — no leaked sibling configs and no browser `NativeMessagingHosts` dirs. The *other* agent's credentials turning up in a session is a cross-agent leak and FAILs here. |
-| 04 | `GH_TOKEN` and `OPENAI_API_KEY` are empty (host env scrubbed by `--clearenv` + allow-list). |
-| 05 | `DISPLAY` is empty (kept out of the allow-list, closing the X11 path). |
-| 06 | `CapEff` in `/proc/self/status` is all zeros (`--cap-drop ALL`). |
-| 07 | `/proc/self/status:NSpid:` has ≥ 2 entries (nested PID namespace; kill/ptrace scoped away from host/devcontainer processes). |
-| 08 | `/proc/self/ns/ipc` is a symlink of the form `ipc:[<inum>]` (`--unshare-ipc`). |
-| 09 | `/proc/self/ns/uts` is a symlink of the form `uts:[<inum>]` (`--unshare-uts`). |
-| 10 | `/dev` is a fresh `tmpfs`/`devtmpfs` mount, not a bind of the host's `/dev` (private devpts; with the `script(1)` pty wrap, TIOCSTI cannot inject into the parent shell). |
-| 11 | No `vscode-ipc-*.sock` / `vscode-git-*.sock` visible in `/tmp` (`--tmpfs /tmp` masks the VS Code IPC sockets). |
-| 12 | `/run/user` is empty (`--tmpfs /run/user` masks the user runtime dir / DBus sockets). |
-| 13 | `/run/secrets` is empty (`--tmpfs /run/secrets` masks Docker/Compose secrets). |
-| 14 | `$HOME/.netrc` is empty (`--bind-try /dev/null` mask). |
-| 15 | `$HOME/.Xauthority` is empty (`--bind-try /dev/null` mask). |
-| 16 | `GIT_CONFIG_GLOBAL=/etc/claude-gitconfig` is exported and `git config --get user.email` returns a value (curated gitconfig active). |
-| 17 | Workspace is scoped to `$PWD`, not a broad rw `/workspaces` bind, unless `CLAUDE_SANDBOX_WORKSPACE_ROOT=/workspaces` is the explicit opt-in. |
-| 18 | The installed shadow pins `CONFIG_PATH="/etc/claude-sandbox.conf"` and feeds it to `parse_config`, with no `parse_config` call reading from `.devcontainer` (config read from `/etc`, not the attacker-writable workspace). |
-| 19 | Egress jail active: the netns routing table carries the full blackhole set (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, CGNAT `100.64.0.0/10`) plus a default route — or the jail is deliberately disabled (pass with a "disabled" note; partial programming is a FAIL). |
-| 20 | Behavioural counterpart to 19: representative non-allow-listed RFC1918/CGNAT addresses (and the connected subnet's base) get no forwardable route, while the gateway stays routable. Disabled jail ⇒ nothing to assert (pass). |
-| 21 | Agent binary mask: in a Codex session `$HOME/.codex/packages` is an empty `tmpfs` (or absent). The vendor unpacks Codex's own binary there — *inside* the read-write `~/.codex` bind — so an unmasked tree is a writable copy of the agent's binary in its own session: a persistence foothold that bypasses the read-only `/usr/libexec` copy actually exec'd. Check 03 cannot catch this, since it inspects only `$HOME`'s top level where `.codex` is legitimately allow-listed. Claude sessions have nothing to assert (pass with a note). |
+| 01 | `IS_SANDBOX=1` is set; a launch marker, not independent proof of isolation |
+| 02 | `NoNewPrivs: 1` prevents setuid escalation |
+| 03 | Home contains only allowed entries, the running agent's own state and shared skills; `.config` contains only forge stores |
+| 04 | `GH_TOKEN` and `OPENAI_API_KEY` are empty |
+| 05 | `DISPLAY` is empty |
+| 06 | Effective capabilities (`CapEff`) are zero |
+| 07 | PID namespace is isolated: non-GPU mode checks `NSpid` nesting; GPU mode compares namespaces and checks fresh procfs process/thread entries and protected kernel controls |
+| 08 | The IPC namespace entry is present |
+| 09 | The UTS namespace entry is present |
+| 10 | `/dev` is a fresh `tmpfs`/`devtmpfs` mount |
+| 11 | No VS Code IPC or Git sockets are visible in `/tmp` |
+| 12 | `/run/user` is empty |
+| 13 | `/run/secrets` is empty |
+| 14 | `~/.netrc` is empty |
+| 15 | `~/.Xauthority` is empty |
+| 16 | The curated Git config is selected and supplies `user.email` |
+| 17 | Writable workspace scope matches the launch directory or explicit override |
+| 18 | The installed wrapper reads config from `/etc/claude-sandbox.conf`, not the workspace |
+| 19 | Network routes contain the required RFC1918/CGNAT blackholes and a default route |
+| 20 | Representative blocked destinations have no forwardable route; the gateway remains routable |
+| 21 | Codex's writable `packages` binary cache is masked or absent; other profiles pass with a note |
 
-On any FAIL the battery exits non-zero and names the regressed defence.
-The audit instructions require the agent to skip phase 2 in that case.
+**Checks 19–20 pass with a note when the network jail is deliberately disabled.**
+A green battery alone does not establish that network isolation is enabled.
+Check 06 inspects effective capabilities, which are zero even when the nested
+user namespace retains a full bounding set.
 
-```{note}
-Check 06 asserts the *effective* capability set, which bwrap's
-`--cap-drop ALL` empties even when the {ref}`egress jail
-<adr-network-egress-jail>` nests bwrap's userns inside the holder's. In
-a jailed session `CapBnd` reads full (`...1ffffffffff`, a nested-userns
-artifact) but `CapEff` is still 0, so the battery passes unchanged — no
-jail-aware variant of `/verify-sandbox` is needed.
-```
+The [defence table](locked-down-defences.md) maps these assertions to controls.
+Checks of markers or namespace entries do not prove every aspect of isolation;
+the [live procfs test](../explanations/sandbox-internals.md#the-procfs-view) adds
+behavioural signal and debugger checks.
 
 ## Phase 2 — adversarial breakout probes
 
-Runs only when all 21 checks pass. The command reasons up **10 novel
-breakout attempts** aimed at gaps the deterministic matrix does not
-directly exercise — escaping the filesystem inversion, recovering
-scrubbed env vars, reaching the host's network identity, signalling or
-observing processes outside the pidns, or otherwise violating the
-[threat model](../explanations/threat-model.md).
+After a clean battery, the skill directs the agent to try ten distinct,
+reversible attacks beyond those checks: for example, credential recovery,
+namespace crossings, unexpected writable paths or forbidden service access.
+It stops on a demonstrated escape.
 
-Constraints on the probes:
+| Result | Meaning |
+|---|---|
+| `[BLOCKED]` | The attempted breach was prevented |
+| `[ESCAPED]` | A demonstrated violation of the threat model; report `SANDBOX LEAKING` |
+| `[INCONCLUSIVE]` | No demonstrated breach or block; report `AUDIT INCOMPLETE` and a follow-up |
 
-- Each must be distinct from the others and from phase 1 (not a
-  re-test of `--cap-drop ALL` or `--clearenv` from another angle).
-- Bias toward novelty: kernel interfaces (eBPF, perf events, kernel
-  keyrings, io_uring), filesystem corners (proc, sys, debugfs, cgroup,
-  securityfs, `/proc/<pid>/root` traversal), env-var recovery paths,
-  IPC channels (abstract unix sockets, signalfd, pidfd, fanotify),
-  network reachability (loopback services, `/etc/resolv.conf`,
-  AF_NETLINK, raw sockets), credential paths, exec-chain escalation
-  (setuid binaries despite NO_NEW_PRIVS, file capabilities), and
-  bwrap-specific cases (`--die-with-parent` race, `--new-session`
-  bypass, env-redirect bypasses routing `git` back to a host
-  gitconfig).
-
-With the {ref}`egress jail <adr-network-egress-jail>` on (the default),
-an attempted connection to an RFC1918 or `169.254.169.254` address is a
-candidate phase-2 probe — phase-2 probes are reasoned up dynamically, not a
-fixed list — and if run it should classify `[BLOCKED]` (blackholed route)
-rather than `[ESCAPED]`.
-
-Each probe is classified on one line:
-
-| Classification | Meaning | Effect |
-|---|---|---|
-| `[BLOCKED]` | The attempt failed the way the sandbox expects (EACCES, EPERM, ENOENT for masked paths, etc.). | None. |
-| `[ESCAPED]` | The attempt succeeded in a way that violates the threat model (readable host credential, writable host path outside the workspace, signal to a process outside the pidns, etc.). | Audit reports `SANDBOX LEAKING`. |
-| `[INCONCLUSIVE]` | No error, but no demonstrated breach either. | Audit reports `AUDIT INCOMPLETE`, with a suggested follow-up. |
-
-Use reversible probes and stop on a demonstrated escape. If fewer than ten
-probes run, report the untested items and mark the audit incomplete.
-
-If all 10 probes are `[BLOCKED]`, the final line is
+Fewer than ten completed probes also means an incomplete audit. Only ten
+blocked probes after a clean battery produce
 `RESULT: SANDBOX OK (21 deterministic + 10 adversarial)`.
+The interactive agent's exit status is not a CI result; inspect its report.

@@ -1,9 +1,8 @@
 # Locked-down defences
 
-The canonical map of every defence the sandbox enforces, the `bwrap`
-primitive that delivers it, and the [`/verify-sandbox`](verification-checks.md)
-check number that proves it. Each row corresponds to one observed
-exfiltration path closed by the matching primitive.
+The main isolation controls and the [verification checks](verification-checks.md)
+that inspect them. A passing check is evidence for its stated assertion,
+not a complete proof against every attack on that interface.
 
 ## Defence → primitive → check
 
@@ -11,9 +10,9 @@ exfiltration path closed by the matching primitive.
 |---|---|---|
 | Sandbox is actually entered | `IS_SANDBOX=1` sentinel | check 01 |
 | Setuid escalation blocked | `NO_NEW_PRIVS` (set by bwrap before exec) | check 02 |
-| Strict-under-`/root` by inversion | `--tmpfs /root` then re-bind `.claude` / `.claude.json` / `.cache` / `.config/{gh,glab-cli}` / `.local/share` (with `applications/` + `claude/` tmpfs-masked) | check 03 |
+| Home credentials masked | `--tmpfs /root`, then selected agent state, shared skills, forge stores and tool data bound back | check 03 |
 | Host env vars scrubbed | `--clearenv` + explicit allow-list | checks 04, 05 |
-| Zero capabilities | `--cap-drop ALL` | check 06 |
+| No effective capabilities | `--cap-drop ALL` | check 06 |
 | PID namespace (kill/ptrace scoping) | `--unshare-pid` | check 07 |
 | SysV IPC namespace | `--unshare-ipc` | check 08 |
 | UTS namespace | `--unshare-uts` | check 09 |
@@ -27,43 +26,13 @@ exfiltration path closed by the matching primitive.
 | Chrome browser-extension RPC channel disabled | shadow injects `--no-chrome` and strips user `--chrome` so Claude Code never writes its `NativeMessagingHosts` manifest | check 03 (regression manifests as browser dirs under `~/.config`) |
 | Lateral-movement egress isolation | netns + `pasta` routing allowlist around bwrap; blocks RFC1918, CGNAT, connected subnets and link-local ({ref}`adr-network-egress-jail`) | checks 19–20 inspect blackhole routes and representative destinations; a disabled jail is reported as a pass with a note |
 
-## Notes
+## Reading the results
 
-### Network egress is jailed by default
+Check 06 inspects effective capabilities (`CapEff=0`), not the bounding set.
+Checks 19–20 inspect network routes but report a deliberately disabled jail
+as a pass with a note. Read those notes before concluding that network
+isolation is enabled.
 
-As of 2026-06-18 the egress jail ({ref}`adr-network-egress-jail`) is the
-default posture: Claude runs in its own per-process network namespace,
-bridged to the internet by `pasta`, with a routing allowlist that
-blackholes RFC1918 (`10/8`, `172.16/12`, `192.168/16`, the connected
-subnet) and link-local (`169.254/16`) so a compromised session cannot
-pivot to internal hosts or lab devices. `api.anthropic.com`,
-GitHub/GitLab, DNS resolvers, and any configured `allow-ip` devices stay
-reachable so Claude still works.
-
-It is **fail-closed** — if `/dev/net/tun`, `pasta`, or `unshare` is
-missing, `claude` refuses to launch rather than silently dropping back to
-open egress. An operator opt-out exists that restores the older
-shared-host-netns world (`--share-net`, NOT unshared;
-{ref}`adr-network-egress-open`); it is deliberately not documented here —
-weakening the sandbox is discouraged. Only that opt-out path shares the
-host netns, which is what makes the host's network identity disclosable
-from inside.
-
-Check 06 asserts `CapEff=0` even in the nested user namespace.
-Checks 19–20 inspect the jail's routes and representative destinations.
-They report a disabled jail as a pass with a note, so a green battery alone
-does not establish that network isolation is enabled. See
-[Verification checks](verification-checks.md) and the
-[threat model](../explanations/threat-model.md).
-
-### `--die-with-parent`
-
-Implicit: `--die-with-parent` — the sandbox disappears the moment
-Claude does.
-
-### Refusal-on-failure
-
-If the host cannot run unprivileged user namespaces, the installer
-refuses with a specific actionable diagnostic. Silent degradation to
-"Claude installed but not sandboxed" is itself a UX failure mode, so it
-is not allowed to happen.
+Missing namespace or network-jail prerequisites cause launch to fail.
+`--die-with-parent` also terminates bubblewrap when its parent dies.
+See [Architecture](../explanations/architecture.md) for the launch sequence.

@@ -1,9 +1,7 @@
 # Share skills between agents
 
-Every sandboxed session of Claude, Codex and Pi sees the same
-`~/.agents/skills` directory, read-write. Use it for skills you want more
-than one agent to have. Each agent also keeps its own skills directory for
-skills only it should see.
+Put reusable skills in `~/.agents/skills`. Claude, Codex and Pi can all read
+and write this directory; keep agent-specific skills in their own directories.
 
 | Directory | Seen by |
 |---|---|
@@ -21,9 +19,8 @@ mkdir -p ~/.agents/skills/my-skill
 $EDITOR ~/.agents/skills/my-skill/SKILL.md
 ```
 
-Codex and Pi load it in their next session. Sessions already running see
-the files straight away, as do sessions in other devcontainers sharing the
-same terminal config.
+Codex and Pi load it in their next session. The files are also visible to
+other sessions sharing the same terminal config.
 
 ## Give Claude a shared skill
 
@@ -34,13 +31,6 @@ have:
 mkdir -p ~/.claude/skills
 ln -s ../../.agents/skills/my-skill ~/.claude/skills/my-skill
 ```
-
-Skills you do not link stay out of Claude.
-
-## Keep a skill to one agent
-
-Put it in that agent's own directory instead. To keep a skill away from
-Codex or Pi, do not put it in `~/.agents/skills`.
 
 Always link **from** an agent's directory **to** `~/.agents/skills`. A link
 from `~/.agents/skills` into, say, `~/.claude/skills` is dangling in Codex
