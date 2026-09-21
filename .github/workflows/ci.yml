@@ -86,6 +86,9 @@ jobs:
       - name: Run container launcher tests
         run: bash tests/launcher.sh
 
+      - name: Run user NVIDIA CDI setup tests
+        run: bash tests/nvidia_cdi.sh
+
       - name: Run doctor tests
         run: bash tests/doctor.sh
 

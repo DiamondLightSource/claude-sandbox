@@ -207,6 +207,37 @@ the toolkit's [CDI configuration](https://docs.nvidia.com/datacenter/cloud-nativ
 The runtime supplies driver libraries; install your workload's CUDA or other
 user-space dependencies in the container as needed.
 
+If Podman reports `unresolvable CDI devices nvidia.com/gpu=all`, it cannot
+find the NVIDIA CDI specification. When the host driver works (`nvidia-smi`)
+and `nvidia-ctk` is installed, the repository provides a helper that generates
+a specification in your user configuration directory without sudo. On the
+**host**, download it, inspect it, then run it:
+
+```bash
+curl -fL -o setup-nvidia-cdi.sh \
+  https://raw.githubusercontent.com/DiamondLightSource/claude-sandbox/main/container/setup-nvidia-cdi.sh
+less setup-nvidia-cdi.sh
+bash setup-nvidia-cdi.sh
+claude-sandbox --gpu shell
+```
+
+From a checkout, run `bash container/setup-nvidia-cdi.sh` instead. For an
+unmerged change, replace `main` in the download URL with its commit SHA.
+
+The helper writes `~/.config/cdi/nvidia.yaml` and a dedicated
+`~/.config/containers/containers.conf.d/90-claude-sandbox-nvidia-cdi.conf`
+file; it uses `$XDG_CONFIG_HOME` instead of `~/.config` when set. It retains
+the standard CDI search directories and adds the user directory, leaving
+your main `containers.conf` untouched. Any custom `cdi_spec_dirs` setting
+should be reconciled with this drop-in. It installs no packages and grants
+no new device permissions. Missing host tools or GPU permissions need your
+host administrator. Toolkit 1.13.5 is supported; `nvidia-ctk cdi list` is
+not required. Re-run after driver updates or GPU configuration changes.
+
+If generation fails, the previous specification and Podman configuration
+are preserved. After setup, run `nvidia-smi` inside the container shell and
+ask an agent to run it too, to check both layers of device access.
+
 For other hardware, repeat `--device` with individual device nodes:
 
 ```bash
