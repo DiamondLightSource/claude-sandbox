@@ -8,10 +8,10 @@ configured extra paths.
 On the host, add a directory to both the container and sandbox:
 
 ```bash
-claude-sandbox --mount ~/src/shared-lib
+claude-sandbox --mount-rw ~/src/shared-lib
 ```
 
-For an existing project container, use `--recreate --mount ~/src/shared-lib`.
+For an existing project container, use `--recreate --mount-rw ~/src/shared-lib`.
 Recreation removes container-local packages and forge logins.
 
 ## Inside your own devcontainer

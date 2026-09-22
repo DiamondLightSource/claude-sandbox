@@ -49,20 +49,15 @@ or delete files in the project.
 
 ## 3. Check the sandbox
 
-Exit Claude, then open a container shell:
-
-Already in a devcontainer with the sandbox installed? Skip the first and last
-lines; run the verification command in your normal container terminal.
+Exit Claude and run from the same project directory:
 
 ```bash
-claude-sandbox shell        # Skip if already in your devcontainer terminal
 claude-sandbox verify
-exit                       # Only if you opened the shell above
 ```
 
-The shell is outside the inner sandbox; `verify` launches a sandboxed agent
-to run the checks. See [Verify the sandbox](../how-to/verify-the-sandbox.md)
-to interpret results.
+This runs the checks inside the sandbox without starting an agent or needing
+a login. The same command works in your own devcontainer terminal.
+See [Verify the sandbox](../how-to/verify-the-sandbox.md) to interpret results.
 
 ## Keep working
 

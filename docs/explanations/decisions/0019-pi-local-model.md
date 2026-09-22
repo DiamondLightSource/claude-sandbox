@@ -44,7 +44,7 @@ holder's network namespace forwards a loopback listener to that socket. bwrap
 masks the host socket under `/tmp`; both relays remain outside the agent's PID
 namespace. Each relay owns a process
 group so cleanup also terminates forked streaming connections. No additional
-IP route, firewall capability, GPU mount or model installation is needed.
+IP route, firewall capability, device mount or model installation is needed.
 
 Make pasta's port forwarding explicit for **all agents**: `-t none -u none
 -T none -U none --no-map-gw`. In the tested Ubuntu 24.04 pasta package, default

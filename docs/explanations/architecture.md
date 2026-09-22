@@ -1,313 +1,68 @@
 # Architecture
 
-## At a glance
+The host launcher starts a project container. Inside it, the same wrapper
+launches Claude, Codex or Pi in a bubblewrap jail. A custom devcontainer uses
+that wrapper too.
 
-The recommended entry point is `uv tool install claude-sandbox`, then
-`claude-sandbox` from a host project directory. The PyPI launcher starts a
-prebuilt container; the wrapper described below runs **inside** that container.
-Your own devcontainer can use the same wrapper via `uvx claude-sandbox install`.
+## Launch sequence
 
-`claude-sandbox` is a launch-time wrapper. A **shadow** `claude` sits first
-on `$PATH` at `/usr/local/bin/claude`; the real Anthropic binary is
-**relocated off-PATH** to `/usr/libexec/claude-sandbox/claude`. Every plain
-`claude` invocation therefore resolves to the shadow, which re-execs the real
-binary inside a `bwrap` jail. Inside that jail the filesystem is mounted
-read-only and `$HOME` is wiped to a `tmpfs`, so host credentials, IDE bridges,
-and the shell environment are unreachable — while the current workspace stays
-read-write and the internet stays reachable, because Claude needs both to work.
-By default Claude's egress is also *jailed* ({ref}`adr-network-egress-jail`): a
-per-process network namespace blackholes the internal RFC1918 network so a
-compromised session cannot pivot sideways to internal hosts, while
-`api.anthropic.com`, the forges, DNS, and configured `allow-ip` devices stay
-reachable. The wrapper refuses to launch if its isolation prerequisites fail.
-Use explicit verification to inspect the running sandbox.
+1. The shell resolves `claude`, `codex` or `pi` to a wrapper in
+   `/usr/local/bin`. The vendor binaries live off PATH under
+   `/usr/libexec/claude-sandbox`.
+2. The wrapper reads `/etc/claude-sandbox.conf`, refreshes the curated Git
+   config from your name and email, and selects the agent's profile.
+3. It creates a private network namespace, attaches `pasta` for internet
+   access, and installs the routing restrictions.
+4. It starts bubblewrap with the filesystem mounts, scrubbed environment,
+   dropped capabilities and separate PID, IPC and UTS namespaces.
+5. The agent runs inside the jail. A `script(1)` pseudo-terminal separates
+   its terminal input from the outer shell.
 
-## Design philosophy
+Missing isolation prerequisites cause launch to fail. Nested agent calls use
+`IS_SANDBOX=1` to avoid wrapping again; that marker alone is not proof of
+isolation. See [verification](../how-to/verify-the-sandbox.md).
 
-Four ideas run through the whole system, and every file below is an expression
-of one of them:
+## Filesystem and credentials
 
-- **Small enough to audit in one read.** The security implementation is Bash;
-  the PyPI package bundles and launches it. The shadow
-  is a single file you can read top-to-bottom; the `bwrap` argv builder is
-  inlined, not sourced from elsewhere.
-- **Default-deny by inversion.** The base mount is `--ro-bind / /` and `$HOME`
-  is a `tmpfs`; access is granted by an explicit short bind-back list. Anything
-  not enumerated stays masked.
-- **`/etc`, never the workspace.** Config and policy that govern the *next*
-  launch live under `/etc` (outside the read-write workspace), so a compromised
-  session cannot rewrite them to widen its own binds.
-- **Protected launch path.** Real agent binaries live off PATH; updater
-  controls keep the wrapper as the normal entry point.
+The container filesystem starts read-only. Empty temporary filesystems cover
+`$HOME`, `/tmp` and available runtime/secret directories. The wrapper then
+binds back the workspace, the selected agent's state, shared skills, tool data
+and configured extra paths.
 
-Two protections live here: **credential isolation** (the `bwrap` bind model) and
-**lateral / sideways network isolation** (the egress jail,
-{ref}`adr-network-egress-jail`, on by default). A third, complementary surface —
-internet *domain* allow-listing — is Claude Code's *native* sandbox; this tool
-*meshes* with it rather than replacing it, so you can run both layers together
-(see [the egress jail and the native sandbox](threat-model.md#the-egress-jail-and-the-native-sandbox)).
+Each agent sees its own login store. Forge tokens are deliberately available
+unless `no-forge` is set. Other home-directory credentials, including SSH keys,
+remain hidden. The exact paths are in
+[Deliberately exposed](../reference/deliberately-exposed.md); the bind rationale
+is in [Sandbox internals](sandbox-internals.md).
 
-For the full inventory of what is locked down vs. deliberately exposed, see the
-[threat model](threat-model.md). This page is the *map* — how the pieces fit.
+## Network and configuration
 
-## 1. System context
+The default network jail blocks private networks, connected subnets and
+link-local destinations, with exceptions for the gateway, DNS and configured
+`allow-ip` addresses. Internet access remains available. See the
+[threat model](threat-model.md#the-egress-jail-and-the-native-sandbox) for its limits.
 
-The trust boundary is the edge of the `bwrap` jail. Outside it sit everything an
-LLM-driven attack would want: host dotfiles and the host gitconfig, the host
-environment, `/run/secrets`, the VS Code IPC sockets in `/tmp`, X11/runtime
-sockets. The shadow on `$PATH` is the only doorway, and it constructs the jail
-so those things land on the outside. Two exposures are deliberately *inside*:
-the workspace (`$PWD`, read-write) and the network — but the network is jailed:
-by default the internet, DNS, and `allow-ip` devices are reachable while the
-internal RFC1918 network is blackholed ({ref}`adr-network-egress-jail`).
+Configuration lives under `/etc`, outside the writable workspace. An agent
+cannot edit it to widen the next session's filesystem or network access.
+Change it from a container terminal, or through the host launcher's mounted
+[configuration file](../reference/configuration.md).
 
-```{mermaid}
-graph TB
-    user["developer shell<br/>types: claude"]
+## Installation and updates
 
-    subgraph host["devcontainer host (trust boundary)"]
-        direction TB
-        subgraph creds["OUTSIDE the jail — masked"]
-            dotfiles["$HOME dotfiles<br/>.ssh .aws .gnupg .netrc"]
-            hostenv["host env<br/>GH_TOKEN ANTHROPIC_API_KEY"]
-            secrets["/run/secrets"]
-            ipc["VS Code IPC sockets<br/>/tmp"]
-            x11["X11 / /run/user"]
-        end
-        shadow["/usr/local/bin/claude<br/>(shadow, first on PATH)"]
-        real["/usr/libexec/claude-sandbox/claude<br/>(real binary, off-PATH)"]
-    end
+The PyPI package, published image and custom devcontainers use the same Bash
+installer. Projects reference it rather than copying security code into their
+own repositories. [Architecture decisions](decisions.md) record the history.
 
-    subgraph jail["bwrap jail in the holder netns (IS_SANDBOX=1)"]
-        direction TB
-        ro["--ro-bind / /<br/>--tmpfs $HOME"]
-        ws["workspace $PWD (rw)<br/>deliberate exposure"]
-        net["egress jail (default)<br/>internet + DNS + forges + allow-ip<br/>RFC1918 blackholed"]
-    end
-
-    user --> shadow
-    shadow -->|holder netns + pasta attach,<br/>then bwrap wrapped in script pty| jail
-    real -->|exec'd in-jail as<br/>~/.local/bin/claude| jail
-    creds -.->|excluded| jail
-```
-
-The shadow never lets the real binary run unwrapped from a normal shell: because
-the real binary is relocated off `$HOME/.local/bin`, plain `claude` cannot
-resolve past the shadow. (Anthropic's installer drops the binary at
-`~/.local/bin/claude` and prepends that dir to your shell rc; relocating the
-binary makes that rc-mutation inert.) The dashed line shows the credential set
-being *excluded* from the jail, not bound into it.
-
-The `bwrap` jail nests inside the holder network namespace: the shadow forks an
-`unshare -rn` holder, `pasta` attaches to it from outside by PID and locks the
-routing allowlist, and `bwrap` inherits that netns (it keeps omitting
-`--unshare-net`). Setting `CLAUDE_SANDBOX_EGRESS_JAIL=0` skips the holder and
-restores ADR 0005's shared-host-netns world. See
-{ref}`adr-network-egress-jail` and
-[Configure the network egress jail](../how-to/network-egress-jail.md).
-
-## 2. Launch sequence
-
-A plain `claude` triggers the shadow, which does three host-side reads
-(read the `/etc` config, regenerate the gitconfig from your live git identity,
-build the argv). By default it then sets up the egress jail (`netns_launch`): it
-forks an `unshare -rn` holder that owns a fresh user+network namespace, attaches
-`pasta` from outside by PID, and has the holder lock the routing allowlist
-before exec-ing `bwrap` (wrapped in `script(1)`) — which inherits the holder's
-netns. With `CLAUDE_SANDBOX_EGRESS_JAIL=0` it skips the holder and execs `bwrap`
-wrapped in `script(1)` directly (ADR 0005's open-egress world). The `script(1)`
-wrap allocates a fresh pseudo-terminal — that is the TIOCSTI defence: an `ioctl`
-inside the sandbox lands in `script`'s pty, which reads it back as bytes, not
-keystrokes, to the host terminal.
-
-A nested `claude` invocation (a hook or skill spawning `claude` *inside* the
-jail, where `IS_SANDBOX=1` is already set) must not re-wrap. The recursion guard
-at the top of the shadow handles this: it execs the real binary directly.
-
-```{mermaid}
-sequenceDiagram
-    autonumber
-    participant U as shell
-    participant S as shadow<br/>/usr/local/bin/claude
-    participant FS as host /etc
-    participant H as holder<br/>unshare -rn (netns)
-    participant P as pasta<br/>(attaches by PID)
-    participant B as bwrap + script(1)
-    participant R as real claude<br/>~/.local/bin/claude (in jail)
-
-    U->>S: claude [args]
-    alt IS_SANDBOX=1 (nested call inside jail)
-        S->>R: exec ~/.local/bin/claude --no-chrome (no re-wrap)
-    else normal launch from host shell
-        S->>S: touch ~/.claude.json (bind-back target)
-        S->>FS: parse_config /etc/claude-sandbox.conf
-        S->>FS: regenerate /etc/claude-gitconfig<br/>from host user.name / user.email
-        S->>S: resolve_workspace_root ($PWD or override)
-        S->>S: bwrap_argv_build(argv, workspace, real, args)
-        alt egress jail enabled (default) — netns_launch
-            S->>H: fork unshare -rn holder
-            S->>P: pasta attach to holder by PID
-            H->>H: netns_holder locks routing allowlist<br/>(RFC1918 blackholed, gw/DNS/allow-ip punched back)
-            H->>B: exec script -q -c [bwrap argv] /dev/null<br/>(inherits holder netns)
-        else CLAUDE_SANDBOX_EGRESS_JAIL=0 — open egress
-            S->>B: exec script -q -c [bwrap argv] /dev/null
-        end
-        B->>R: exec --no-chrome [args] with IS_SANDBOX=1
-    end
-```
-
-The gitconfig is regenerated on *every* launch, not just at install: VS Code's
-`copyGitConfig` runs after `postCreate`, so an install-time render could capture
-an empty `user.name`. Re-rendering at launch means a host gitconfig edit takes
-effect on the next `claude` with nothing to re-run. The shadow also injects
-`--no-chrome` and strips any user `--chrome` on both paths, so Claude Code never
-writes its browser-extension native-messaging manifest.
-
-## 3. Filesystem inversion
-
-This is the core security idea. The sandbox does not enumerate what to hide; it
-hides everything by default and enumerates the short list of what to *show*. The
-base is `--ro-bind / /`. On top of that, `$HOME`, `/tmp`, and (when the host has
-them) `/run/user` and `/run/secrets` become `tmpfs` — wiped, empty. Then a
-single bind-back list restores exactly what Claude legitimately needs under
-`$HOME`, split by XDG category.
-
-```{mermaid}
-graph TD
-    base["--ro-bind / /<br/>read-only base"]
-    base --> tmpfs
-
-    subgraph tmpfs["tmpfs masks (wiped)"]
-        h["$HOME"]
-        t["/tmp"]
-        ru["/run/user *"]
-        rs["/run/secrets *"]
-    end
-
-    h --> bindback
-
-    subgraph bindback["bind-back under $HOME (allow-list)"]
-        direction TB
-        claude[".claude · .claude.json"]
-        cache[".cache"]
-        forge[".config/gh · .config/glab-cli"]
-        share[".local/share<br/>helm · krew · uv"]
-        uv[".local/bin/uv · uvx"]
-        realbin["real claude"]
-    end
-
-    share --> masked
-
-    subgraph masked["re-masked (ephemeral)"]
-        apps[".local/share/applications"]
-        ccache[".local/share/claude"]
-    end
-
-    subgraph nullmask["bound to /dev/null"]
-        netrc[".netrc<br/>.Xauthority<br/>.ICEauthority"]
-    end
-
-    h -.-> nullmask
-```
-
-`*` `/run/user` and `/run/secrets` masks are emitted only when the host has the
-source directory — `bwrap` cannot `mkdir` into a read-only `/run` that lacks the
-subdir (the GitHub Actions `ubuntu-24.04` runner case).
-
-The split is the subtle part. `$HOME/.config/` stays a **strict allow-list**
-(`gh`, `glab-cli`, nothing else) because by XDG contract credentials live there
-— a new credentialed tool dropping files under `.config/<tool>/` is masked for
-free. `$HOME/.local/share/` and `.cache/` go the other way and are **bulk-bound**
-so host-installed plugin and data trees just work; two sub-dirs Claude Code
-writes itself (`applications/` for a `.desktop` URL handler, `claude/` for its
-versioned binary cache) are re-masked with `tmpfs` so those writes stay
-ephemeral. The `.netrc` / `.Xauthority` / `.ICEauthority` masks are
-belt-and-braces: `--tmpfs $HOME` already hides them, but binding `/dev/null`
-over them survives if that baseline ever regresses. The rationale for the XDG
-polarity split is in the [threat model](threat-model.md); the exact bind list is
-in the [reference](../explanations/sandbox-internals.md).
-
-## 4. Launch isolation and updates
-
-The wrapper establishes isolation before launching an agent. Vendor binaries
-live off PATH, and updater settings keep their installers from replacing the
-wrapper. Direct vendor-binary invocations are outside this launch path.
-See [launch isolation](launch-isolation.md) and
-[explicit verification](../how-to/verify-the-sandbox.md).
-
-## 5. Config trust flow
-
-The sandbox config (`workspace-root`, `no-forge`, `allow-write`, `pass-env`,
-`egress-jail`, `allow-ip`) lives outside the writable workspace. `install.sh` seeds `/etc` with the
-shipped defaults from the package or clone; you edit
-`/etc/claude-sandbox.conf` directly (an unsandboxed root shell — your
-container terminal); the shadow reads it from `/etc` at launch — never
-from `$PWD`. Like `allow-write`, the `allow-ip` device allowlist is read
-only from `/etc`, so a session cannot widen its own network reach.
-
-```{mermaid}
-graph LR
-    clone[".devcontainer/claude-sandbox.conf<br/>(shipped defaults in the clone)"]
-    etc["/etc/claude-sandbox.conf<br/>(outside the rw workspace — you edit here, as root)"]
-    shadow["shadow at launch<br/>parse_config()"]
-    argv["bwrap argv + netns routes<br/>WORKSPACE_ROOT, ALLOW_WRITE, NO_FORGE,<br/>EGRESS_JAIL, ALLOW_IP"]
-
-    clone -->|install.sh install_conf<br/>seeds defaults at install| etc
-    etc -->|read at launch| shadow
-    shadow --> argv
-
-    pwd["$PWD (rw workspace)<br/>compromised session can write here"]
-    pwd -. NOT read for config .-> shadow
-```
-
-This closes a cross-session bind-escalation vector. If the shadow read its
-config from the workspace, a compromised session could append
-`allow-write = /some/sensitive/path` and the *next* launch would widen its own
-binds. Reading exclusively from `/etc` — which the in-jail Claude sees only
-read-only — means a session can never escalate the binds of a future session.
-The config keys themselves are documented in
-[configuration](../reference/configuration.md).
-
-## 6. One auditable home; consumers reference it, never embed it
-
-Every way of consuming the sandbox runs the **same** `install.sh` from
-the **same** repo — the machinery is never copied into consuming
-projects:
-
-- **The PyPI host launcher (recommended)** — `uv tool install claude-sandbox`,
-  then `claude-sandbox`, starts the published image at the package's version.
-- **The PyPI wheel** (guest) — `uvx claude-sandbox install` inside any
-  devcontainer (or a clone + `./install` without `uv`); a team wires the
-  same line into their project's `postCreate` at a pinned version
-  ([Sandbox a team devcontainer](../how-to/sandbox-a-team-devcontainer.md)).
-- **The published container image** — the image build sources
-  `install.sh` through the same seam.
-- **This repo's own devcontainer** — `postCreate` runs the installer for
-  development on the sandbox itself.
-
-An earlier mechanism, `just promote`, copied the install machinery *by
-value* into target workspaces. It was removed ({ref}`adr-remove-promote`,
-superseding {ref}`adr-promote-by-value`): frozen per-project copies of
-security-critical code have no update channel, and proliferating them
-defeats the single-auditable-repo principle the repo was extracted for
-({ref}`adr-standalone-repo`). Wiring a target's `devcontainer.json` stays
-manual either way — it is JSONC in the wild, and only you know whether a
-`postCreateCommand` needs combining with an existing one.
+Vendor auto-updaters are disabled to preserve the wrapper on PATH. Update
+through the image or devcontainer installation; see
+[Launch isolation and updates](launch-isolation.md).
 
 ## Where the code lives
 
-| Concern | File |
+| File | Purpose |
 |---|---|
-| Shadow + inlined `bwrap` argv builder, recursion guard, gitconfig render, `script(1)` wrap, egress-jail orchestration (`egress_jail_enabled` / `netns_launch` / `netns_holder`) | `.devcontainer/claude-sandbox/claude-shadow` |
-| Relocate real binary off-PATH; wire shadow; disable auto-updater; place `/etc` config | `.devcontainer/claude-sandbox/install.sh` |
-| Integrity-battery spec (21 checks + 10 adversarial probes) | `skills/verify-sandbox/SKILL.md` |
-| Tests CI runs (argv builder, smoke) | `tests/bwrap_argv.sh`, `tests/smoke.sh` |
-
-### See also
-
-- [Threat model](threat-model.md) — what is locked down, what is deliberately exposed, and why.
-- [Launch isolation](launch-isolation.md) — wrapper entry points and updater controls.
-- [Sandbox internals](../explanations/sandbox-internals.md) — the exact `bwrap` flags and bind list.
-- [Configuration](../reference/configuration.md) — `/etc/claude-sandbox.conf` keys and env-var overrides.
-- [Configure the network egress jail](../how-to/network-egress-jail.md) — turn the lateral-isolation jail on/off and allow-list device IPs.
-- The four sections: [tutorials](../tutorials.md), [how-to](../how-to.md), [reference](../reference.md), [explanations](../explanations.md).
+| `container/claude-container` | Host container launcher |
+| `.devcontainer/claude-sandbox/claude-shadow` | Agent profiles, mounts, environment and network jail |
+| `.devcontainer/claude-sandbox/install.sh` | Agent installation, wrappers and configuration |
+| `.devcontainer/claude-sandbox/verify-sandbox-battery.sh` | Deterministic isolation checks |
+| `skills/verify-sandbox/` | Adversarial audit instructions and check rationale |
