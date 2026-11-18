@@ -39,14 +39,6 @@ Without uv, use the [clone fallback](install-without-uv.md).
 To push to GitHub or GitLab, see
 [Authenticate with forges](authenticate-with-forges.md).
 
-:::{note} DLS: install across your devcontainers
-`python-copier-template` devcontainers source `/user-terminal-config/bashrc`.
-For personal use, add `uvx claude-sandbox install` to its run-once section
-to install on the first shell in each container. Each container still needs
-`/dev/net/tun`. For a shared, reviewed release pin, use the project postCreate
-recipe above.
-:::
-
 ## Team configuration
 
 Apply settings **after** the installer, which restores the shipped defaults.

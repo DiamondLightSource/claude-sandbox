@@ -88,7 +88,9 @@ Throughout these guides, `claude-sandbox shell` just opens a container terminal.
 If you are already in your devcontainer terminal, skip that step and the matching
 `exit`. The commands between them are identical and run outside an agent session.
 
-For the full setup, including installation on rebuild and login persistence,
-see [Set up a devcontainer](set-up-a-devcontainer.md) and
+To install into a devcontainer you already use, see
+[Use the sandbox in a devcontainer](../how-to/use-the-sandbox-in-a-devcontainer.md).
+For login persistence and a pinned install on every rebuild, see
+[Set up a devcontainer](set-up-a-devcontainer.md) and
 [Sandbox a team devcontainer](../how-to/sandbox-a-team-devcontainer.md).
 If uv is unavailable, see [Install without uv](../how-to/install-without-uv.md).

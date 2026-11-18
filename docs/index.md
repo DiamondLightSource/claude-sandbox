@@ -19,7 +19,7 @@ claude-sandbox
 The launcher creates the container and starts sandboxed Claude. No clone or
 devcontainer setup is needed. [Getting started](tutorials/getting-started.md)
 covers prerequisites, login and verification. Already have a project
-devcontainer? [Install into it](how-to/sandbox-a-team-devcontainer.md).
+devcontainer? [Install into it](how-to/use-the-sandbox-in-a-devcontainer.md).
 
 ## How the documentation is structured
 

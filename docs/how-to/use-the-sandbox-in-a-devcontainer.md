@@ -36,7 +36,10 @@ is rebuilt; run the install command again after a rebuild.
 To push to GitHub or GitLab, see
 [Authenticate with forges](authenticate-with-forges.md).
 To keep your agent login across rebuilds, add the
-[terminal-config mount](../tutorials/set-up-a-devcontainer.md#persist-agent-logins).
+[terminal-config mount](../tutorials/set-up-a-devcontainer.md#persist-agent-logins);
+DLS `python-copier-template` devcontainers already mount it.
+For DLS terminal settings (devcontainer CLI, Podman, UID remapping), see
+[Terminal access](../tutorials/set-up-a-devcontainer.md#terminal-access).
 
 :::{note} DLS: install across your devcontainers
 `python-copier-template` devcontainers source `/user-terminal-config/bashrc`.

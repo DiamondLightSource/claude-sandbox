@@ -184,7 +184,7 @@ Set `CLAUDE_SANDBOX_CACHE` to another volume name, or empty to disable it.
 
 npm lifecycle scripts are disabled by default, though project configuration
 can override that. Install system dependencies in a container shell. For
-site-specific toolchains, use [your own devcontainer](sandbox-a-team-devcontainer.md).
+site-specific toolchains, use [your own devcontainer](use-the-sandbox-in-a-devcontainer.md).
 
 ## Networking and platform limits
 

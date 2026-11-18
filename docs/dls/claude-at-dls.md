@@ -22,9 +22,10 @@ Log in when prompted. Your project is writable, and your agent login and
 memory persist. Run `claude-sandbox` in the same directory for later sessions.
 
 :::{note}
-If your project has its own devcontainer, follow
+If you already work inside your project's devcontainer (for example with
+VS Code's **Reopen in Container**), follow
 [Use the sandbox in a devcontainer](../how-to/use-the-sandbox-in-a-devcontainer.md)
-instead of this page.
+instead of the steps above.
 :::
 
 ## Why use the sandbox?
