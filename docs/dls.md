@@ -1,7 +1,7 @@
 # Diamond Light Source
 
 How Claude Code is used at DLS: the policy-and-instructions page
-reviewed by the DLS AI committee. To use the sandbox in your devcontainer, see
+reviewed by the DLS AI committee. If you already work in a devcontainer, see
 [Use the sandbox in a devcontainer](how-to/use-the-sandbox-in-a-devcontainer.md);
 [team installation](how-to/sandbox-a-team-devcontainer.md) pins a release for
 everyone on a project.

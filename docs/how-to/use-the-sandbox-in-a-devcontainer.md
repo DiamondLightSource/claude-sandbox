@@ -1,12 +1,13 @@
 # Use the sandbox in a devcontainer
 
-Use this route when the agent needs your project's existing Debian/Ubuntu
-toolchain. For a standalone agent container, use the
+Use this route if you already work inside your project's devcontainer and
+want the agent to use its toolchain. Otherwise, use the
 [PyPI quick start](../tutorials/getting-started.md).
 
 ## Check the container
 
-The devcontainer must run as root under rootless Podman, have uv available
+The devcontainer must be Debian or Ubuntu based, run as root under rootless
+Podman, have uv available
 and have the `/dev/net/tun` device, which the network jail requires. If
 `.devcontainer/devcontainer.json` does not already pass the device, merge
 this into it and rebuild once:
@@ -15,7 +16,8 @@ this into it and rebuild once:
 "runArgs": ["--device=/dev/net/tun"]
 ```
 
-Preserve existing run arguments. Without uv, use the
+Preserve existing run arguments. The installer warns if the device is
+missing. Without uv, use the
 [clone fallback](install-without-uv.md).
 
 ## Install and run
@@ -30,7 +32,7 @@ claude
 `codex` and `pi` are installed too; add `--minimal` after `install` if you
 use only Claude
 ([Claude-only installation](../reference/whats-installed.md#claude-only-installation)).
-The installation changes nothing in the project and lasts until the container
+Apart from the device, the installation changes nothing in the project. It lasts until the container
 is rebuilt; run the install command again after a rebuild.
 
 To push to GitHub or GitLab, see

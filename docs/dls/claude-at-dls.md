@@ -48,8 +48,7 @@ sandbox within the configured container.
 
 Claude can still access your project, its own login credentials, any forge
 tokens you provide, and the internet. The sandbox limits the damage an agent
-can do; it does not make every action safe. See the
-[threat model](../explanations/threat-model.md) for the full boundaries.
+can do; it does not make every action safe.
 
 ## Push to GitHub or Diamond GitLab
 
