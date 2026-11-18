@@ -1,8 +1,8 @@
 # Sandbox a team devcontainer
 
-Use this route when the agent needs your project's existing Debian/Ubuntu
-toolchain. For a standalone agent container, use the
-[PyPI quick start](../tutorials/getting-started.md).
+Use this route to install a pinned, reviewed release for everyone who uses
+a project's devcontainer. To run the sandbox in a devcontainer for yourself,
+see [Use the sandbox in a devcontainer](use-the-sandbox-in-a-devcontainer.md).
 
 The devcontainer must run as root under rootless Podman and have uv available.
 
@@ -36,6 +36,8 @@ Preserve existing commands and run arguments. Rebuild, then run `claude`,
 For login persistence, add the
 [terminal-config mount](../tutorials/set-up-a-devcontainer.md#persist-agent-logins).
 Without uv, use the [clone fallback](install-without-uv.md).
+To push to GitHub or GitLab, see
+[Authenticate with forges](authenticate-with-forges.md).
 
 :::{note} DLS: install across your devcontainers
 `python-copier-template` devcontainers source `/user-terminal-config/bashrc`.

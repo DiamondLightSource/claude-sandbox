@@ -9,6 +9,7 @@ Start with [Getting started](tutorials/getting-started.md), or choose a task bel
 
 how-to/use-the-container-image
 how-to/install-without-uv
+how-to/use-the-sandbox-in-a-devcontainer
 how-to/sandbox-a-team-devcontainer
 how-to/enforce-org-wide
 how-to/upgrade
