@@ -2,8 +2,9 @@
 
 ## Policy
 
-You must use **claude-sandbox** when running Claude Code on DLS workstations.
-Running Claude Code directly on the workstation outside the sandbox is not
+You must use **claude-sandbox** when running Claude Code on DLS workstations,
+to prevent unauthorised access to your and Diamond's files, or accidental
+leaking of credentials. Running Claude Code directly on the workstation outside the sandbox is not
 permitted. We will soon enforce this requirement through enterprise settings.
 
 ## Install and run
