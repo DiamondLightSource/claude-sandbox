@@ -3,12 +3,38 @@
 ## Policy
 
 You must use **claude-sandbox** when running Claude Code on DLS workstations.
-Running Claude Code directly on the workstation outside the sandbox is not
-permitted. We will soon enforce this requirement through enterprise settings.
+It prevents unauthorised access to your files and Diamond's, and the
+accidental leaking of credentials.
+
+## What the sandbox does
+
+Claude Code runs commands and edits files for you. Without a sandbox it can do
+anything you can: read any file in your home directory, use your SSH keys and
+passwords, and reach any machine on Diamond's network. It could misuse that
+access by mistake, or because of instructions hidden in a web page or file it
+reads.
+
+claude-sandbox runs Claude in a separate, locked-down environment on your
+workstation:
+
+- It can only see your project folder. The rest of your home directory, your
+  SSH keys and other credentials are hidden from it.
+- It can only change files inside your project folder.
+- It cannot reach machines on Diamond's internal network, apart from Diamond
+  GitLab, unless you allow them.
+
+Claude can still read and change everything in your project, use the
+internet, and use its own login and any GitHub or GitLab token you give it.
+So keep secrets out of the project folder, and still review what Claude does:
+the sandbox limits the damage it can do, but it doesn't make every action
+safe.
+
+The [threat model](../explanations/threat-model.md) explains what the sandbox
+protects against, and why, in more detail.
 
 ## Install and run
 
-On your DLS Linux workstation, outside any container:
+In a normal terminal on your DLS Linux workstation:
 
 ```bash
 module load uv
@@ -17,76 +43,46 @@ cd /path/to/my-project
 claude-sandbox
 ```
 
-The launcher pulls the prebuilt image and starts Claude inside the sandbox.
-Log in when prompted. Your project is writable, and your agent login and
-memory persist. Run `claude-sandbox` in the same directory for later sessions.
+Change `/path/to/my-project` to the folder you want Claude to work on, for
+example a git repository. Claude can see everything in the folder you start
+in, so don't run it in your home directory.
 
-:::{note} Already use a project devcontainer?
-That is often the preferred route: Claude can use your project's existing
-tooling. [Install the sandbox there](../how-to/sandbox-a-team-devcontainer.md)
-and run `claude` directly. In the recipe below, skip `claude-sandbox shell`;
-run the remaining commands in your normal devcontainer terminal,
-outside an agent session.
+The first run downloads the sandbox, which can take a few minutes, then
+starts Claude. Log in when prompted. Next time, run `claude-sandbox` in the same
+folder; you stay logged in.
+
+:::{note}
+If you use devcontainers, follow
+[Use claude-sandbox inside your existing devcontainer](../tutorials/use-claude-sandbox-in-your-devcontainer.md).
 :::
-
-## Why use the sandbox?
-
-An agent can run commands and edit files. Prompt injection can steer it through
-malicious instructions hidden in content it reads, and even a well-intentioned
-prompt can lead to unintended actions. On a workstation, either can expose SSH
-keys, tokens, IDE state and facility networks.
-
-The launcher runs on the host; the agent runs inside its container and
-bubblewrap jail.
-
-The sandbox hides your workstation credentials, restricts which files Claude
-can change, and blocks access to internal networks unless you explicitly allow
-a destination. The wrapper launches Claude inside the
-sandbox within the configured container.
-
-Claude can still access your project, its own login credentials, any forge
-tokens you provide, and the internet. The sandbox limits the damage an agent
-can do; it does not make every action safe. See the
-[threat model](../explanations/threat-model.md) for the full boundaries.
 
 ## Push to GitHub or Diamond GitLab
 
-In a container terminal, authenticate and start Claude:
+Run `claude-sandbox shell` to get a terminal inside the sandbox, then log in
+and start Claude:
 
 ```bash
-claude-sandbox shell     # Skip if already in your devcontainer terminal
+claude-sandbox shell
 claude-sandbox gh-auth   # GitHub, if needed
 claude-sandbox glab-auth # Diamond GitLab, if needed
 claude
 ```
 
-Use a short-lived token restricted to the project.
-[Authenticate with forges](../how-to/authenticate-with-forges.md) explains
-token permissions. The default network configuration allows Diamond GitLab.
+Use a short-lived token restricted to the project. See
+[which permissions to give a GitHub or GitLab token](../how-to/authenticate-with-forges.md#choose-permissions).
+The sandbox can reach Diamond GitLab by default.
 
 ## Stay current
 
-For the host launcher, run in your project directory:
+Run in your project folder:
 
 ```bash
 uv tool upgrade claude-sandbox
 claude-sandbox --recreate
 ```
 
-Recreation removes container-local packages and forge logins; project files
-and shared agent settings remain. Repeat recreation for other projects when
-you want them to use the new version.
+This rebuilds the sandbox: anything you installed inside it and your GitHub
+or GitLab logins are lost; your project files and Claude settings are kept.
+Run `claude-sandbox --recreate` in each of your other projects too when you
+want them to use the new version.
 
-For your own devcontainer, follow [devcontainer upgrades](../how-to/upgrade.md#installed-into-your-own-devcontainer).
-
-## Existing devcontainers and further help
-
-For a project's own toolchain, you can
-[install into its devcontainer](../how-to/sandbox-a-team-devcontainer.md)
-and run `claude` there. The published image may not contain site-specific
-build tools or module environments.
-
-[Devcontainer setup](../tutorials/set-up-a-devcontainer.md) covers persistence
-and DLS terminal settings.
-[Verify the sandbox](../how-to/verify-the-sandbox.md) explains how to check
-a running installation.
