@@ -50,7 +50,7 @@ allow-ip = 172.23.1.3
 This grants access to that device, not just one service. Review each addition.
 
 :::{note} DLS: Diamond GitLab
-The shipped config includes `allow-ip = 172.23.142.119` for Diamond GitLab.
+The shipped config includes `allow-ip = 172.23.143.237` for Diamond GitLab.
 Retain that line if you replace the config and need forge access.
 Authentication alone does not make a blocked internal IP reachable.
 :::

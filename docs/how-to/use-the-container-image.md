@@ -109,7 +109,7 @@ mounted read-only at `/etc/claude-sandbox.conf`. Retain defaults you need:
 
 ```ini
 allow-write = /cache
-allow-ip = 172.23.142.119   # Diamond GitLab
+allow-ip = 172.23.143.237   # Diamond GitLab
 local-model-port = 1920
 ```
 

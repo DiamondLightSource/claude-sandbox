@@ -54,7 +54,7 @@ allow-write = /workspaces/sibling-project
 pass-env = DOCKER_HOST
 
 # Keep these device IPs reachable past the RFC1918 blackhole (bare IP):
-allow-ip = 172.23.142.119  # internal GitLab
+allow-ip = 172.23.143.237  # internal GitLab
 ```
 
 ### `pass-env` deny-list
