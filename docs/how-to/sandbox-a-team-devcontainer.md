@@ -2,7 +2,7 @@
 
 Use this route to install a pinned, reviewed release for everyone who uses
 a project's devcontainer. To run the sandbox in a devcontainer for yourself,
-see [Use the sandbox in a devcontainer](use-the-sandbox-in-a-devcontainer.md).
+see [Use claude-sandbox inside your existing devcontainer](../tutorials/use-claude-sandbox-in-your-devcontainer.md).
 
 The devcontainer must run as root under rootless Podman and have uv available.
 

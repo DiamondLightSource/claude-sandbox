@@ -89,7 +89,7 @@ If you are already in your devcontainer terminal, skip that step and the matchin
 `exit`. The commands between them are identical and run outside an agent session.
 
 For persistence, DLS notes and updates, see
-[Use the sandbox in a devcontainer](../how-to/use-the-sandbox-in-a-devcontainer.md).
+[Use claude-sandbox inside your existing devcontainer](use-claude-sandbox-in-your-devcontainer.md).
 For login persistence and a pinned install on every rebuild, see
 [Set up a devcontainer](set-up-a-devcontainer.md) and
 [Sandbox a team devcontainer](../how-to/sandbox-a-team-devcontainer.md).

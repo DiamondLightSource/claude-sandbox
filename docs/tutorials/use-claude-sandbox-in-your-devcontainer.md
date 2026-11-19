@@ -1,8 +1,8 @@
-# Use the sandbox in a devcontainer
+# Use claude-sandbox inside your existing devcontainer
 
 Use this route if you already work inside your project's devcontainer and
 want the agent to use its toolchain. Otherwise, use the
-[PyPI quick start](../tutorials/getting-started.md).
+[PyPI quick start](getting-started.md).
 
 ## Check the container
 
@@ -18,7 +18,7 @@ this into it and rebuild once:
 
 Preserve existing run arguments. The installer warns if the device is
 missing. Without uv, use the
-[clone fallback](install-without-uv.md).
+[clone fallback](../how-to/install-without-uv.md).
 
 ## Install and run
 
@@ -36,12 +36,12 @@ Apart from the device, the installation changes nothing in the project. It lasts
 is rebuilt; run the install command again after a rebuild.
 
 To push to GitHub or GitLab, see
-[Authenticate with forges](authenticate-with-forges.md).
+[Authenticate with forges](../how-to/authenticate-with-forges.md).
 To keep your agent login across rebuilds, add the
-[terminal-config mount](../tutorials/set-up-a-devcontainer.md#persist-agent-logins);
+[terminal-config mount](set-up-a-devcontainer.md#persist-agent-logins);
 DLS `python-copier-template` devcontainers already mount it.
 For DLS terminal settings (devcontainer CLI, Podman, UID remapping), see
-[Terminal access](../tutorials/set-up-a-devcontainer.md#terminal-access).
+[Terminal access](set-up-a-devcontainer.md#terminal-access).
 
 :::{note} DLS: install across your devcontainers
 `python-copier-template` devcontainers source `/user-terminal-config/bashrc`.
@@ -57,7 +57,7 @@ claude-sandbox verify
 uvx claude-sandbox@latest install   # upgrade
 ```
 
-See [Upgrade](upgrade.md) for the distinction between sandbox and agent updates.
+See [Upgrade](../how-to/upgrade.md) for the distinction between sandbox and agent updates.
 
 To install a pinned release for everyone on a project, see
-[Sandbox a team devcontainer](sandbox-a-team-devcontainer.md).
+[Sandbox a team devcontainer](../how-to/sandbox-a-team-devcontainer.md).
