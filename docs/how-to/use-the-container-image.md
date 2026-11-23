@@ -142,8 +142,25 @@ parent mount until recreated; `--no-peers` explicitly selects the new default.
 These options do not change mounts in your own devcontainer.
 
 `workspace-root` can widen the sandbox's writable area only within paths the
-container already has writable. Automounted project trees such as `/dls_sw`
-use slave propagation so host automounter mounts appear inside.
+container already has writable.
+
+### Automounted trees
+
+Agents refuse to start when an automount point (an `autofs` mount, such as
+`/dls` or `/dls_sw` at DLS) is visible inside the sandbox. A share the
+automounter mounts there later arrives writable, even through a read-only
+bind, so `--mount /dls` would let the agent write to beamline storage.
+Instead:
+
+- Mount the specific share you need, once it is mounted on the host:
+  `claude-sandbox --recreate --mount /dls/i15/data/2026`.
+- Or expose the whole tree as a read-only bindfs view made on the host, as
+  builder2ibek's devcontainer does:
+  `bindfs -r --no-allow-other --perms=a+rX /dls_sw ~/.cache/dls-ro/dls_sw`,
+  then bind that directory at `/dls_sw`.
+
+An automount point at or under a path the sandbox binds read-write (such as a
+`--mount-rw` path) is allowed: you asked for that tree to be writable.
 
 ## Devices
 

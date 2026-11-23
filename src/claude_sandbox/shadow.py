@@ -30,6 +30,7 @@ from .bwrap import (
     GITCONFIG_PATH,
     SHADOW_DIR,
     bwrap_build,
+    inside,
     path_ahead_of_shadow,
 )
 from .config import (
@@ -163,6 +164,7 @@ def run(
             else:
                 env[jail.JAIL_RESOLV] = resolv
         workspace = resolve_workspace_root(config, working_directory(env))
+        writable: list[str] = []
         argv = bwrap_build(
             profile,
             config,
@@ -173,7 +175,9 @@ def run(
             verify=verify,
             shipped_skills_dir=host.shipped_skills_dir,
             gitconfig_path=host.gitconfig_path,
+            writable_roots=writable,
         )
+        check_automounts(writable, host.mountinfo)
         terminal, launch_env = terminal_command(argv, env, host)
         term.pause(verify)
         if jailed:
@@ -476,6 +480,55 @@ def _check_local_model_port(config: Config) -> None:
     forwards it into the jail with --setenv, jailed or not."""
     if not model_port_ok(config.local_model_port):
         _refuse(MODEL_PORT_ERROR)
+
+
+def check_automounts(writable: Sequence[str], mountinfo: str) -> None:
+    """Refuse when the jail would see an automount point it cannot write.
+
+    bwrap's ro-binds cover the mounts that exist at launch. A share the
+    automounter mounts later, under an autofs point, arrives with its own
+    rw flags, even through a read-only bind (a non-recursive ro; podman's
+    recursive rro needs kernel 5.12), so a session could write to it. Every
+    autofs mount in the shadow's namespace counts: the jail ro-binds / and
+    /proc recursively, so it sees them all. A container's fresh /proc has
+    no systemd binfmt_misc autofs; a host install (refused by default) may,
+    and is refused too. One
+    at or under a directory the jail binds read-write is left alone: the
+    operator asked for that tree writable. Fails closed: without the mount
+    table the shadow cannot tell whether the read-only view holds.
+    """
+    try:
+        found = automount_points(mountinfo)
+    except OSError as e:
+        _refuse(f"claude-sandbox: refusing to launch: {mountinfo}: {e.strerror}")
+    exposed = [point for point in found if not inside(point, writable)]
+    if exposed:
+        _refuse(
+            "claude-sandbox: refusing to launch: automount point(s) visible in the"
+            f" sandbox: {', '.join(exposed)}\n"
+            "  A share mounted there later would be writable inside the sandbox,"
+            " read-only bind or not.\n"
+            "  Bind only the shares you need, mounted on the host before the"
+            " container starts\n"
+            "  (e.g. --mount /dls/<beamline>/data/<year>), or expose the tree as a"
+            " host-side read-only bindfs view\n"
+            "  (bindfs -r --no-allow-other --perms=a+rX /dls_sw"
+            " ~/.cache/dls-ro/dls_sw, bound at /dls_sw)."
+        )
+
+
+def automount_points(mountinfo: str) -> list[str]:
+    """The mount point of every autofs mount in ``mountinfo``."""
+    with open(mountinfo, "rb") as f:
+        table = f.read()
+    points: list[str] = []
+    for line in table.splitlines():
+        # Optional fields end at " - "; the filesystem type follows it.
+        before, sep, after = line.partition(b" - ")
+        fields = before.split(b" ")
+        if sep and len(fields) > 4 and after.split(b" ")[0] == b"autofs":
+            points.append(os.fsdecode(_unescape(fields[4])))
+    return points
 
 
 def terminal_command(

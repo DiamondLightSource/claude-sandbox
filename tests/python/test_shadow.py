@@ -389,6 +389,54 @@ def test_entry_points_the_guard_left_or_behind_the_shadow_launch(
     fx.run()
 
 
+def autofs(point: Path | str, fstype: str = "autofs") -> str:
+    """A mountinfo line (with an optional field), as the kernel escapes it."""
+    escaped = str(point).replace("\\", "\\134").replace(" ", "\\040")
+    return f"30 1 0:40 / {escaped} rw,relatime shared:9 - {fstype} map rw,fd=5\n"
+
+
+def test_an_automount_point_in_view_refuses(
+    fx: Fixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    Path(fx.host.mountinfo).write_text(
+        "short\n" + autofs("/dls") + autofs("/dls/b01", "nfs") + autofs("/a b\\c")
+    )
+    assert fx.refused() == 1
+    err = capsys.readouterr().err
+    assert "automount point(s) visible in the sandbox: /dls, /a b\\c\n" in err
+    assert "--mount /dls/<beamline>/data/<year>" in err
+    assert "bindfs -r --no-allow-other" in err
+    # fx.refused saw an exit, not Exec: script (and so bwrap) never ran.
+
+
+def test_fixed_shares_and_bindfs_views_launch(fx: Fixture) -> None:
+    Path(fx.host.mountinfo).write_text(
+        autofs("/dls_sw", "fuse") + autofs("/dls/i15/data/2026", "nfs")
+    )
+    fx.run()
+
+
+def test_an_automount_under_a_writable_bind_launches(fx: Fixture) -> None:
+    rw = fx.root / "dls"
+    rw.mkdir()
+    fx.env["CLAUDE_SANDBOX_ALLOW_WRITE"] = str(rw)
+    Path(fx.host.mountinfo).write_text(
+        autofs(rw) + autofs(rw / "b01") + autofs(fx.root / "work/auto")
+    )
+    fx.run()
+    # A sibling sharing the prefix is not under it.
+    Path(fx.host.mountinfo).write_text(autofs(fx.root / "dls_sw"))
+    assert fx.refused() == 1
+
+
+def test_an_unreadable_mount_table_refuses(
+    fx: Fixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    Path(fx.host.mountinfo).unlink()
+    assert fx.refused() == 1
+    assert "refusing to launch: " in capsys.readouterr().err
+
+
 def test_tools_never_come_from_path(fx: Fixture) -> None:
     """ADR 26: no executable is found through PATH."""
     planted, system = fx.root / "on-path", fx.root / "system"
