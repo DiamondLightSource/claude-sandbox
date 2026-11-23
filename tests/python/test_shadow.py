@@ -404,15 +404,13 @@ def test_an_automount_point_in_view_refuses(
     assert fx.refused() == 1
     err = capsys.readouterr().err
     assert "automount point(s) visible in the sandbox: /dls, /a b\\c\n" in err
-    assert "--mount /dls/<beamline>/data/<year>" in err
-    assert "bindfs -r --no-allow-other" in err
-    assert "--mount ~/.cache/dls-ro/dls_sw);" in err
-    assert "In a devcontainer: bind a read-only bindfs view" in err
+    assert "--mount /dls/i15/data/2026, not --mount /dls" in err
+    assert "bindfs" not in err
     assert "recreate with --no-peers" in err
     # fx.refused saw an exit, not Exec: script (and so bwrap) never ran.
 
 
-def test_fixed_shares_and_bindfs_views_launch(fx: Fixture) -> None:
+def test_fixed_shares_and_fuse_views_launch(fx: Fixture) -> None:
     Path(fx.host.mountinfo).write_text(
         autofs("/dls_sw", "fuse") + autofs("/dls/i15/data/2026", "nfs")
     )

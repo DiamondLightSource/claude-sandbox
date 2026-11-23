@@ -514,14 +514,17 @@ wherever the agent starts (`cd /dls` with `/dls` bound ro), and on 4.18
 podman's ro covers only the top of an rbind, so an autofs nested under a
 ro `--mount` still shows `rw`. Host installs (`CLAUDE_SANDBOX_HOST_INSTALL=1`) on hosts with
 autofs (every DLS RHEL host; Ubuntu's binfmt_misc) can no longer launch:
-accepted, host installs are second-class. The launcher's `--mount` is
-src=dst, so launcher users mount a bindfs view at its own path; binding it
-at the original path is the devcontainer recipe. The supported ways to expose a
-tree: bind specific host-mounted shares (`--mount /dls/<bl>/data/<year>`,
-fstype nfs), or a host-side `bindfs -r` view (fstype fuse; builder2ibek's
-devcontainer does `/dls` and `/dls_sw` this way). Docs:
-`docs/how-to/use-the-container-image.md` ("Automounted trees"),
-`docs/dls/claude-at-dls.md`.
+accepted, host installs are second-class. The user-facing fix (message
+and docs) is only: mount the subfolder you need, not a folder above the
+automount points (`--mount /dls/<bl>/data/<year>`, fstype nfs, not
+`--mount /dls`), and drop `--peers` when the project's parent is the
+automount point. Owner decision: no bindfs advice in the message or user
+docs, and nothing about this on the DLS landing page
+(`docs/dls/claude-at-dls.md`; mounting /dls there is not to be
+encouraged). A devcontainer that really needs a whole tree can copy
+builder2ibek's pattern: a host-side `bindfs -r` view (fstype fuse) bound
+at `/dls` / `/dls_sw`, which passes the check by construction. Docs:
+`docs/how-to/use-the-container-image.md` ("Automounted trees").
 
 **Refuse as regressions:** relaxing the refusal (warning instead, or an
 allowlist of autofs paths); an opt-out switch (the policy below); podman

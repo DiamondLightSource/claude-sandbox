@@ -512,17 +512,11 @@ def check_automounts(allow_write: Sequence[str], mountinfo: str) -> None:
             f" sandbox: {', '.join(exposed)}\n"
             "  A share mounted there later would be writable inside the sandbox,"
             " read-only bind or not.\n"
-            "  With the claude-sandbox launcher: --mount only the shares you"
-            " need, mounted on the host first\n"
-            "  (e.g. --mount /dls/<beamline>/data/<year>), or a host-side"
-            " read-only bindfs view at its own path\n"
-            "  (bindfs -r --no-allow-other --perms=a+rX /dls_sw"
-            " ~/.cache/dls-ro/dls_sw; --mount ~/.cache/dls-ro/dls_sw);\n"
-            "  if it is your project's parent (--peers), recreate with"
-            " --no-peers.\n"
-            "  In a devcontainer: bind a read-only bindfs view of the tree, as"
-            " builder2ibek's devcontainer does,\n"
-            "  instead of the automount point."
+            "  Mount the subfolder you need, not a folder above the automount"
+            " points\n"
+            "  (e.g. --mount /dls/i15/data/2026, not --mount /dls). If it is"
+            " your project's parent (--peers),\n"
+            "  recreate with --no-peers."
         )
 
 

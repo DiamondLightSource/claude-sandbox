@@ -56,19 +56,6 @@ If you use devcontainers, follow
 [Use claude-sandbox inside your existing devcontainer](../tutorials/use-claude-sandbox-in-your-devcontainer.md).
 :::
 
-## Beamline data and /dls_sw
-
-Claude refuses to start if it can see `/dls` or `/dls_sw` themselves. They
-are automounted: a beamline share mounted there after Claude starts would be
-writable by Claude. Give it only what it needs instead:
-
-- A specific share, such as one visit's data:
-  `claude-sandbox --recreate --mount /dls/i15/data/2026`.
-- A read-only view of the whole tree, made on your workstation with bindfs
-  and mounted at its own path (`--mount ~/.cache/dls-ro/dls_sw`). The
-  builder2ibek devcontainer binds such a view at `/dls_sw` itself. The
-  [container image guide](../how-to/use-the-container-image.md) shows how.
-
 ## Push to GitHub or Diamond GitLab
 
 Run `claude-sandbox shell` to get a terminal inside the sandbox, then log in

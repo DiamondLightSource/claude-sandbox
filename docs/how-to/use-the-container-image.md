@@ -150,18 +150,15 @@ Agents refuse to start when an automount point (an `autofs` mount, such as
 `/dls` or `/dls_sw` at DLS) is visible inside the sandbox. A share the
 automounter mounts there later arrives writable, even through a read-only
 bind, so `--mount /dls` would let the agent write to beamline storage.
-Instead:
+Instead, mount the subfolder you need rather than a folder above the
+automount points:
 
-- Mount the specific share you need, once it is mounted on the host:
-  `claude-sandbox --recreate --mount /dls/i15/data/2026`.
-- Or make a read-only bindfs view of the whole tree on the host and mount
-  that, at its own path:
-  `bindfs -r --no-allow-other --perms=a+rX /dls_sw ~/.cache/dls-ro/dls_sw`,
-  then `claude-sandbox --recreate --mount ~/.cache/dls-ro/dls_sw`. In your
-  own devcontainer you can bind the view at the original path, as
-  builder2ibek's devcontainer does for `/dls_sw`.
-- If the automount point is your project's parent, mounted by `--peers`,
-  recreate with `--no-peers`.
+```bash
+claude-sandbox --recreate --mount /dls/i15/data/2026    # not --mount /dls
+```
+
+If the automount point is your project's parent, mounted by `--peers`,
+recreate with `--no-peers`.
 
 An automount point that is mounted read-write, at or under a `--mount-rw` (or
 `allow-write`) path, is allowed: you asked for that tree to be writable. The
