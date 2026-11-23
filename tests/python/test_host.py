@@ -459,13 +459,15 @@ def test_a_view_is_made_with_bindfs_read_only(host: Host, tmp_path: Path) -> Non
     assert os.path.isdir(mnt)
 
 
-def test_a_view_under_a_symlinked_home_is_found_again(
-    host: Host, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def test_a_view_under_a_symlinked_cache_is_found_again(
+    host: Host, tmp_path: Path
 ) -> None:
-    (tmp_path / "link").symlink_to(tmp_path / "home")
-    monkeypatch.setenv("HOME", str(tmp_path / "link"))
+    """~/.cache links elsewhere (DLS: /scratch), and mountinfo has the target."""
+    (tmp_path / "scratch").mkdir()
+    (tmp_path / "home").mkdir()
+    (tmp_path / "home" / ".cache").symlink_to(tmp_path / "scratch")
     r = run()
-    real = f"{tmp_path}/home/.cache/claude-sandbox/ro/dls"
+    real = f"{tmp_path}/scratch/claude-sandbox/ro/dls"
     assert r.view("/dls") == real
     os.makedirs(real)
     (tmp_path / "mountinfo").write_text(f"1 0 0:1 / {real} ro - fuse /dls rw\n")
