@@ -538,7 +538,9 @@ class Launcher:
         return [*args, self.image, "bash", "-c", KEEPER_CMD]
 
     def view(self, path: str) -> str:
-        return f"{self.home}/{VIEWS}{path}"
+        # Resolved: mountinfo holds the real path, and a home reached
+        # through a symlink would never match it.
+        return f"{os.path.realpath(self.home)}/{VIEWS}{path}"
 
     def ensure_views(self, paths: list[str]) -> None:
         """A live bindfs -r view of each path, made again if its daemon died
@@ -575,7 +577,7 @@ class Launcher:
 
     def mounted_views(self) -> list[str]:
         """The paths the container mounts through a view."""
-        root = f"{self.home}/{VIEWS}"
+        root = self.view("")
         sources = self.inspect("{{range .Mounts}}{{println .Source}}{{end}}", self.name)
         return [
             s[len(root) :] for s in (sources or "").split("\n") if s.startswith(root)

@@ -459,6 +459,20 @@ def test_a_view_is_made_with_bindfs_read_only(host: Host, tmp_path: Path) -> Non
     assert os.path.isdir(mnt)
 
 
+def test_a_view_under_a_symlinked_home_is_found_again(
+    host: Host, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    (tmp_path / "link").symlink_to(tmp_path / "home")
+    monkeypatch.setenv("HOME", str(tmp_path / "link"))
+    r = run()
+    real = f"{tmp_path}/home/.cache/claude-sandbox/ro/dls"
+    assert r.view("/dls") == real
+    os.makedirs(real)
+    (tmp_path / "mountinfo").write_text(f"1 0 0:1 / {real} ro - fuse /dls rw\n")
+    r.ensure_views(["/dls"])
+    assert host.calls == []
+
+
 def test_a_live_view_is_reused_and_a_stale_one_replaced(
     host: Host, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
