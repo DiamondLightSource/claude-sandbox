@@ -163,9 +163,9 @@ Instead:
 - If the automount point is your project's parent, mounted by `--peers`,
   recreate with `--no-peers`.
 
-An automount point that is mounted read-write, at or under a path the sandbox
-binds read-write (such as a `--mount-rw` path), is allowed: you asked for that
-tree to be writable.
+An automount point that is mounted read-write, at or under a `--mount-rw` (or
+`allow-write`) path, is allowed: you asked for that tree to be writable. The
+project directory does not count.
 
 ## Devices
 

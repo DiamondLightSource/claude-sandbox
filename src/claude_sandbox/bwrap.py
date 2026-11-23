@@ -203,7 +203,6 @@ def bwrap_build(
     shipped_skills_dir: str = SHIPPED_SKILLS_DIR,
     gitconfig_path: str = GITCONFIG_PATH,
     probe: Probe = HOST,
-    writable_roots: list[str] | None = None,
 ) -> list[str]:
     """The full ``bwrap ... -- agent args`` command.
 
@@ -214,9 +213,7 @@ def bwrap_build(
     place of the agent. ``shipped_skills_dir`` and ``gitconfig_path`` are
     constants a caller overrides only in tests, never read from the
     environment. ``env["PATH"]`` is the launching PATH, read
-    only for the entry-point guard. ``writable_roots``, when given, is
-    filled with every directory bound read-write, resolved, for the
-    shadow's automount check. Raises SandboxError for an allow-device
+    only for the entry-point guard. Raises SandboxError for an allow-device
     entry that is not a device node under /dev, and for an allow-write entry
     that is not an absolute path.
     """
@@ -414,8 +411,6 @@ def bwrap_build(
             roots.append(probe.realpath(root))
         except OSError:
             continue
-    if writable_roots is not None:
-        writable_roots[:] = roots
     guarded = [
         directory
         for directory in path_ahead_of_shadow(env.get("PATH", ""), probe)

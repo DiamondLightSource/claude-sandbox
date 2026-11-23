@@ -507,11 +507,12 @@ bind (including `--mount`) still receives later HOST-side mounts beneath it
 with host flags (a manual mount, an NFSv4 crossmnt triggered on the host),
 and autofs points created after launch are missed. NFS submounts the jail
 triggers inherit the parent's ro. Exempt: an autofs point whose own
-per-mount options are `rw` AND that lies at or under a directory the jail
-binds read-write (`bwrap_build` fills `writable_roots`; allow-write /
-`--mount-rw` / workspace / home binds). Both conditions: the workspace is
-wherever the agent starts, so `cd /dls` with `/dls` bound ro must not
-exempt it. Host installs (`CLAUDE_SANDBOX_HOST_INSTALL=1`) on hosts with
+per-mount options are `rw` AND that lies at or under an allow-write path
+(conf `allow-write` + `CLAUDE_SANDBOX_ALLOW_WRITE`, i.e. `--mount-rw`,
+resolved). Never the workspace, tmpdir or home binds: the workspace is
+wherever the agent starts (`cd /dls` with `/dls` bound ro), and on 4.18
+podman's ro covers only the top of an rbind, so an autofs nested under a
+ro `--mount` still shows `rw`. Host installs (`CLAUDE_SANDBOX_HOST_INSTALL=1`) on hosts with
 autofs (every DLS RHEL host; Ubuntu's binfmt_misc) can no longer launch:
 accepted, host installs are second-class. The launcher's `--mount` is
 src=dst, so launcher users mount a bindfs view at its own path; binding it

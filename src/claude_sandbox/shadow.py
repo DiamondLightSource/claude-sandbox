@@ -38,6 +38,7 @@ from .config import (
     MODEL_PORT_ERROR,
     Config,
     egress_jail_enabled,
+    lines,
     model_port_ok,
     parse_config,
     resolve_workspace_root,
@@ -164,7 +165,6 @@ def run(
             else:
                 env[jail.JAIL_RESOLV] = resolv
         workspace = resolve_workspace_root(config, working_directory(env))
-        writable: list[str] = []
         argv = bwrap_build(
             profile,
             config,
@@ -175,9 +175,8 @@ def run(
             verify=verify,
             shipped_skills_dir=host.shipped_skills_dir,
             gitconfig_path=host.gitconfig_path,
-            writable_roots=writable,
         )
-        check_automounts(writable, host.mountinfo)
+        check_automounts(lines(config.allow_write), host.mountinfo)
         terminal, launch_env = terminal_command(argv, env, host)
         term.pause(verify)
         if jailed:
@@ -482,7 +481,7 @@ def _check_local_model_port(config: Config) -> None:
         _refuse(MODEL_PORT_ERROR)
 
 
-def check_automounts(writable: Sequence[str], mountinfo: str) -> None:
+def check_automounts(allow_write: Sequence[str], mountinfo: str) -> None:
     """Refuse when the jail would see an automount point it cannot write.
 
     bwrap's ro-binds cover the mounts that exist at launch. A share the
@@ -494,30 +493,36 @@ def check_automounts(writable: Sequence[str], mountinfo: str) -> None:
     no systemd binfmt_misc autofs; a host install (refused by default) may,
     and is refused too.
 
-    Left alone: an autofs point that is itself mounted rw AND lies at or
-    under a directory the jail binds read-write (the operator asked for
-    that tree writable). Both, because the workspace is wherever the agent
-    starts: `cd /dls` in a container with /dls bound read-only would
-    otherwise exempt it. Fails closed: without the mount table the shadow
-    cannot tell whether the read-only view holds.
+    Left alone: an autofs point mounted rw AND at or under an allow-write
+    path (the operator asked for that tree writable). Not the workspace:
+    it is wherever the agent starts, and on kernel 4.18 an autofs nested
+    under a read-only podman bind still shows rw. Called after bwrap_build,
+    which has refused a relative allow-write entry. Fails closed: without
+    the mount table the shadow cannot tell whether the read-only view holds.
     """
+    roots = [os.path.realpath(path) for path in allow_write]
     try:
         found = automount_points(mountinfo)
     except OSError as e:
         _refuse(f"claude-sandbox: refusing to launch: {mountinfo}: {e.strerror}")
-    exposed = [p for p, rw in found if not (rw and inside(p, writable))]
+    exposed = [p for p, rw in found if not (rw and inside(p, roots))]
     if exposed:
         _refuse(
             "claude-sandbox: refusing to launch: automount point(s) visible in the"
             f" sandbox: {', '.join(exposed)}\n"
             "  A share mounted there later would be writable inside the sandbox,"
             " read-only bind or not.\n"
-            "  Bind only the shares you need, mounted on the host before the"
-            " container starts (e.g. --mount /dls/<beamline>/data/<year>),\n"
-            "  or a host-side read-only bindfs view of the tree (bindfs -r"
-            " --no-allow-other --perms=a+rX /dls_sw ~/.cache/dls-ro/dls_sw,\n"
-            "  then --mount ~/.cache/dls-ro/dls_sw). If it is your project's"
-            " parent (--peers), recreate with --no-peers."
+            "  With the claude-sandbox launcher: --mount only the shares you"
+            " need, mounted on the host first\n"
+            "  (e.g. --mount /dls/<beamline>/data/<year>), or a host-side"
+            " read-only bindfs view at its own path\n"
+            "  (bindfs -r --no-allow-other --perms=a+rX /dls_sw"
+            " ~/.cache/dls-ro/dls_sw; --mount ~/.cache/dls-ro/dls_sw);\n"
+            "  if it is your project's parent (--peers), recreate with"
+            " --no-peers.\n"
+            "  In a devcontainer: bind a read-only bindfs view of the tree, as"
+            " builder2ibek's devcontainer does,\n"
+            "  instead of the automount point."
         )
 
 
