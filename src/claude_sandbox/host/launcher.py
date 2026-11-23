@@ -58,6 +58,41 @@ NOT_PASSED = frozenset(
 )
 DIGITS = "0123456789"
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+# --mount binds a bindfs -r view of PATH kept here, not PATH itself: a
+# read-only bind is not recursive on the RHEL8 kernel, so an autofs submount
+# made under PATH later arrives read-write. bindfs refuses writes in its own
+# daemon, whose lookups on the host trigger autofs (as builder2ibek's
+# devcontainer does for /dls). The daemons outlive the container.
+VIEWS = ".cache/claude-sandbox/ro"
+MOUNTINFO = "/proc/self/mountinfo"
+
+
+def _unescape(field: str) -> str:
+    return re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), field)
+
+
+def mount_at(path: str) -> tuple[str, str, set[str]] | None:
+    """Type, source and options of the topmost mount at ``path``, if any."""
+    try:
+        with open(MOUNTINFO) as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return None
+    found = None
+    for line in lines:
+        head, _, tail = line.partition(" - ")
+        mnt, fs = head.split(), tail.split()
+        if len(mnt) > 5 and len(fs) > 2 and _unescape(mnt[4]) == path:
+            found = (fs[0], _unescape(fs[1]), {*mnt[5].split(","), *fs[2].split(",")})
+    return found
+
+
+def listable(path: str) -> bool:
+    try:
+        os.listdir(path)
+    except OSError:
+        return False
+    return True
 
 
 def run(
@@ -481,7 +516,11 @@ class Launcher:
         if os.path.isfile(self.conf):
             args += ["-v", f"{self.conf}:/etc/claude-sandbox.conf:ro"]
         for m in o.mounts_ro:
-            args += ["--mount", f"type=bind,src={m},dst={m},ro,bind-propagation=slave"]
+            view = self.view(m)
+            args += [
+                "--mount",
+                f"type=bind,src={view},dst={m},ro,bind-propagation=slave",
+            ]
         allow_write = [w for w in [env.get("CLAUDE_SANDBOX_ALLOW_WRITE", "")] if w]
         for m in o.mounts_rw:
             args += ["--mount", f"type=bind,src={m},dst={m},bind-propagation=slave"]
@@ -498,8 +537,53 @@ class Launcher:
                 args += ["-e", f"{v}={env[v]}"]
         return [*args, self.image, "bash", "-c", KEEPER_CMD]
 
+    def view(self, path: str) -> str:
+        return f"{self.home}/{VIEWS}{path}"
+
+    def ensure_views(self, paths: list[str]) -> None:
+        """A live bindfs -r view of each path, made again if its daemon died
+        (a reboot, or a dead one: "Transport endpoint is not connected")."""
+        for src in paths:
+            mnt = self.view(src)
+            found = mount_at(mnt)
+            if found:
+                fstype, source, flags = found
+                if (
+                    fstype.startswith("fuse")
+                    and source == src
+                    and "ro" in flags
+                    and listable(mnt)
+                ):
+                    continue
+                run(["fusermount", "-u", mnt])
+            if shutil.which("bindfs", path=self.env.get("PATH")) is None:
+                say(
+                    "bindfs not found: --mount needs it to keep autofs mounts read-only"
+                )
+                note("install", "dnf install bindfs  (or apt-get install bindfs)")
+                raise SystemExit(1)
+            os.makedirs(mnt, exist_ok=True)
+            # bindfs adds allow_other, which fusermount refuses without
+            # user_allow_other in /etc/fuse.conf. Rootless podman does not
+            # need it (container root is this user); docker's daemon does.
+            # bindfs leaves NFS ACLs to the kernel's mode check, so a+rX
+            # shows everything readable and the server applies the ACLs.
+            other = ["--no-allow-other"] if self.engine.endswith("podman") else []
+            if run(["bindfs", "-r", *other, "--perms=a+rX", src, mnt]).returncode:
+                say(f"bindfs could not make a read-only view of {src}")
+                raise SystemExit(1)
+
+    def mounted_views(self) -> list[str]:
+        """The paths the container mounts through a view."""
+        root = f"{self.home}/{VIEWS}"
+        sources = self.inspect("{{range .Mounts}}{{println .Source}}{{end}}", self.name)
+        return [
+            s[len(root) :] for s in (sources or "").split("\n") if s.startswith(root)
+        ]
+
     def create(self) -> None:
         os.makedirs(self.shared, exist_ok=True)
+        self.ensure_views(self.opts.mounts_ro)
         self.must(*self.create_args())
         say(f"created {self.name}")
         note("image", self.image)
@@ -585,6 +669,8 @@ class Launcher:
         else:
             self.create()
         if not self.running():
+            # A stopped container binds its views again at start.
+            self.ensure_views(self.mounted_views())
             self.must("start", self.name)
             if not self.running():
                 # The entrypoint refused (typically: no nested user namespaces).

@@ -61,6 +61,9 @@ esac
 FAKE
 chmod +x "$TMP/bin/podman"
 ln -s podman "$TMP/bin/docker"
+# The fake bindfs, for --mount's read-only views: logs, mounts nothing.
+printf '#!/bin/sh\necho "bindfs $*" >> "$LOG"\n' > "$TMP/bin/bindfs"
+chmod +x "$TMP/bin/bindfs"
 
 # run [ENV=VAL ...] -- ARGS...: fresh engine state, from the project dir.
 run() {
@@ -175,7 +178,7 @@ assert_parse 'no-peers skips parent mount' grep -Fvq -- "src=$TMP/ws,dst=$TMP/ws
 assert_parse 'no-peers retains project mount' grep -Fq -- "-v $TMP/ws/project:$TMP/ws/project -w $TMP/ws/project" <<< "$(create_line)"
 assert_parse 'no-peers is not an agent argument' grep -Fvq -- '--no-peers' <<< "$(exec_line)"
 PROJECT="$TMP/ws/project" run -- --no-peers --mount "$TMP/ro" --mount-rw "$TMP/rw"
-assert_parse 'no-peers retains explicit read-only mount' grep -Fq -- "src=$TMP/ro,dst=$TMP/ro,ro,bind-propagation=slave" <<< "$(create_line)"
+assert_parse 'no-peers retains explicit read-only mount' grep -Fq -- "src=$TMP/.cache/claude-sandbox/ro$TMP/ro,dst=$TMP/ro,ro,bind-propagation=slave" <<< "$(create_line)"
 assert_parse 'no-peers retains explicit writable mount' grep -Fq -- "src=$TMP/rw,dst=$TMP/rw,bind-propagation=slave" <<< "$(create_line)"
 assert_eq 'no-peers retains sandbox write permission' "$TMP/rw" "$(cat "$LOG.mount-env")"
 # Reuse an existing container: create-time options must not silently imply
@@ -209,7 +212,11 @@ run -- --peers   # project directly under $HOME: parent holds ~, must not be mou
 assert_not_contains "parent containing HOME is not mounted" "$(create_line)" "src=$TMP,dst=$TMP,"
 case "$ERR" in *"contains your home directory"*) pass ;; *) fail "HOME guard silent: $ERR" ;; esac
 run -- --mount "$TMP/ro" --mount-rw "$TMP/rw"
-case "$(create_line)" in *"src=$TMP/ro,dst=$TMP/ro,ro,bind-propagation=slave"*) pass ;; *) fail "--mount not ro: $(create_line)" ;; esac
+# --mount binds a bindfs -r view, so autofs submounts made later stay ro too.
+view="$TMP/.cache/claude-sandbox/ro$TMP/ro"
+case "$(create_line)" in *"src=$view,dst=$TMP/ro,ro,bind-propagation=slave"*) pass ;; *) fail "--mount not a ro view: $(create_line)" ;; esac
+grep -qx "bindfs -r --no-allow-other --perms=a+rX $TMP/ro $view" "$LOG" && [ -d "$view" ] && pass || fail "no bindfs view: $(cat "$LOG")"
+assert_not_contains "--mount-rw has no view" "$(cat "$LOG")" "bindfs -r --no-allow-other --perms=a+rX $TMP/rw"
 case "$(create_line)" in *"src=$TMP/rw,dst=$TMP/rw,bind-propagation=slave"*) pass ;; *) fail "--mount-rw not rw: $(create_line)" ;; esac
 case "$(create_line)" in *"-e CLAUDE_SANDBOX_ALLOW_WRITE=$TMP/rw "*) pass ;; *) fail "allow-write missing rw mount: $(create_line)" ;; esac
 assert_not_contains "ro mount not in allow-write" "$(create_line)" "ALLOW_WRITE=$TMP/rw:$TMP/ro"

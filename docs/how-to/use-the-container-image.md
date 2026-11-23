@@ -132,6 +132,14 @@ claude-sandbox --mount-rw ~/src/other-repo    # writable in container and sandbo
 claude-sandbox --recreate --peers            # mount the project's parent
 ```
 
+`--mount` needs [bindfs](https://bindfs.org) on the host (`dnf install
+bindfs`). The launcher mounts a read-only bindfs view of the path under
+`~/.cache/claude-sandbox/ro` and binds that, so the whole tree stays
+read-only, including autofs mounts such as `/dls/<beamline>` that appear after
+the container starts. A plain read-only bind does not cover those. The bindfs
+processes outlive the container, and the launcher reuses them. Containers
+created by earlier releases bind the path directly; recreate them.
+
 `--peers` lets you enter sibling projects from a container shell and launch
 agents there. Each agent can read the siblings, including their secrets,
 but its writable root remains its launch directory. The parent mount is

@@ -261,6 +261,20 @@ already extended here:
   (loses propagation); mounting the parent when it holds `$HOME`; making
   `--mount` rw again "for convenience"; forwarding DISPLAY into the
   shadow's pass-through list.
+  **`--mount` binds a bindfs view, not the path (2026-11-23).** Found
+  live: with `--mount /dls`, `ls /dls/b01` in the jail produced an NFS
+  mount flagged `rw` and `touch` wrote to beamline storage. A ro bind is
+  not recursive on the RHEL8 kernel (4.18, no `MOUNT_ATTR_RDONLY`
+  recursive), so autofs submounts that propagate in later keep their
+  own rw flags. The launcher (`ensure_views`) runs `bindfs -r
+  --perms=a+rX` on the host into `~/.cache/claude-sandbox/ro<path>` and
+  binds that; bindfs refuses writes in its daemon and its host-side
+  lookups trigger autofs. Recipe from builder2ibek's
+  `initializeCommand.sh`. Views are re-made before every container
+  start (reboots kill the daemons); `--no-allow-other` under podman
+  only (rootful docker needs `user_allow_other`). bindfs missing is a
+  hard stop. Refuse: falling back to a plain ro bind when bindfs is
+  absent; `--mount-rw` through a view (it is rw by request).
 - **/cache volume + per-project venv (PR #43, 2026-09-14)**: the launcher
   mounts ONE named volume `claude-sandbox-cache` at `/cache` and sets
   `UV_PROJECT_ENVIRONMENT`/`VIRTUAL_ENV=/cache/venv-for<project path>`,

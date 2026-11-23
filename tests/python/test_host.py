@@ -232,7 +232,7 @@ def test_create_argv(
         f"{home}/.Xauthority:/root/.Xauthority:ro",
         f"{home}/.gitconfig:/root/.gitconfig-host:ro",
         f"{home}/sandbox.conf:/etc/claude-sandbox.conf:ro",
-        "--mount type=bind,src=/r,dst=/r,ro,bind-propagation=slave",
+        f"src={home}/.cache/claude-sandbox/ro/r,dst=/r,ro,bind-propagation=slave",
         "-e CLAUDE_SANDBOX_ALLOW_WRITE=/srv\n/w",
         "-e CLAUDE_SANDBOX_EGRESS_JAIL=0",
     ]:
@@ -396,6 +396,114 @@ def test_reuse_warns_and_recreate_removes(
     assert not engine.called("create") and not engine.called("start")
     assert run(Options(recreate=True)).session(["pi"], pause=False) == 0
     assert engine.called("rm") and engine.called("create")
+
+
+# --- --mount through a bindfs -r view ---------------------------------------
+
+
+def test_mount_at_reads_the_topmost_mount(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    info = tmp_path / "mountinfo"
+    info.write_text(
+        "1 0 0:1 / /a\\040b rw - ext4 /dev/x rw\n"
+        "2 1 0:2 / /a\\040b ro,nosuid - fuse /src\\040d rw,user_id=0\n"
+        "garbage\n"
+    )
+    monkeypatch.setattr(launcher, "MOUNTINFO", str(info))
+    assert launcher.mount_at("/a b") == (
+        "fuse",
+        "/src d",
+        {"ro", "nosuid", "rw", "user_id=0"},
+    )
+    assert launcher.mount_at("/c") is None
+    monkeypatch.setattr(launcher, "MOUNTINFO", str(tmp_path / "none"))
+    assert launcher.mount_at("/a b") is None
+
+
+class Host:
+    """The host commands the views run, each answering ``rc[program]``."""
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+        self.rc: dict[str, int] = {}
+
+    def run(
+        self, argv: list[str], *, stdout: int | None = None, stderr: int | None = None
+    ) -> "subprocess.CompletedProcess[str]":
+        self.calls.append(argv)
+        return subprocess.CompletedProcess(argv, self.rc.get(argv[0], 0), "", "")
+
+
+@pytest.fixture
+def host(engine: Engine, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Host:
+    """A bindfs on PATH and an empty mountinfo."""
+    fake = Host()
+    monkeypatch.setattr(launcher, "run", fake.run)
+    bindfs = tmp_path / "bin" / "bindfs"
+    bindfs.parent.mkdir()
+    bindfs.write_text("#!/bin/sh\n")
+    bindfs.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bindfs.parent))
+    (tmp_path / "mountinfo").write_text("")
+    monkeypatch.setattr(launcher, "MOUNTINFO", str(tmp_path / "mountinfo"))
+    return fake
+
+
+def test_a_view_is_made_with_bindfs_read_only(host: Host, tmp_path: Path) -> None:
+    run().ensure_views(["/dls"])
+    mnt = f"{tmp_path}/home/.cache/claude-sandbox/ro/dls"
+    assert host.calls == [
+        ["bindfs", "-r", "--no-allow-other", "--perms=a+rX", "/dls", mnt]
+    ]
+    assert os.path.isdir(mnt)
+
+
+def test_a_live_view_is_reused_and_a_stale_one_replaced(
+    host: Host, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("CLAUDE_SANDBOX_ENGINE", "docker")
+    r = run()
+    live, stale = r.view("/dls"), r.view("/old")
+    os.makedirs(live)
+    (tmp_path / "mountinfo").write_text(
+        f"1 0 0:1 / {live} ro - fuse /dls rw\n2 0 0:2 / {stale} rw - fuse /old rw\n"
+    )
+    r.ensure_views(["/dls", "/old"])
+    # docker's daemon is not this user: bindfs keeps its allow_other.
+    assert host.calls == [
+        ["fusermount", "-u", stale],
+        ["bindfs", "-r", "--perms=a+rX", "/old", stale],
+    ]
+
+
+def test_a_missing_or_failing_bindfs_stops_the_run(
+    host: Host, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    host.rc["bindfs"] = 1
+    with pytest.raises(SystemExit):
+        run().ensure_views(["/dls"])
+    assert "could not make a read-only view of /dls" in capsys.readouterr().err
+    monkeypatch.setenv("PATH", "/nonexistent")
+    with pytest.raises(SystemExit):
+        run().ensure_views(["/dls"])
+    assert "bindfs not found" in capsys.readouterr().err
+
+
+def test_a_stopped_container_gets_its_views_back_before_start(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ensured: list[list[str]] = []
+
+    def ensure(self: Launcher, paths: list[str]) -> None:
+        ensured.append(paths)
+
+    monkeypatch.setattr(Launcher, "ensure_views", ensure)
+    r = run()
+    sources = "{{range .Mounts}}{{println .Source}}{{end}}"
+    engine.add(r.name)[sources] = f"/x\n{r.view('/dls')}\n"
+    assert r.session(["claude"], pause=False) == 0
+    assert ensured == [["/dls"]] and engine.called("start")
 
 
 def test_a_container_without_the_keeper_is_refused(
