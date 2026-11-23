@@ -596,7 +596,10 @@ class Launcher:
                 say(
                     "bindfs not found: --mount needs it to keep autofs mounts read-only"
                 )
-                note("install", "dnf install bindfs  (or apt-get install bindfs)")
+                note(
+                    "install",
+                    "dnf install bindfs  (from EPEL on RHEL; apt-get elsewhere)",
+                )
                 raise SystemExit(1)
             os.makedirs(mnt, exist_ok=True)
             # --no-allow-other: only this user can enter the view, which
