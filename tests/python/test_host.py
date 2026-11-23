@@ -476,9 +476,8 @@ def test_a_view_under_a_symlinked_cache_is_found_again(
 
 
 def test_a_live_view_is_reused_and_a_stale_one_replaced(
-    host: Host, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    host: Host, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("CLAUDE_SANDBOX_ENGINE", "docker")
     r = run()
     live, stale = r.view("/dls"), r.view("/old")
     os.makedirs(live)
@@ -486,10 +485,9 @@ def test_a_live_view_is_reused_and_a_stale_one_replaced(
         f"1 0 0:1 / {live} ro - fuse /dls rw\n2 0 0:2 / {stale} rw - fuse /old rw\n"
     )
     r.ensure_views(["/dls", "/old"])
-    # docker's daemon is not this user: bindfs keeps its allow_other.
     assert host.calls == [
         ["fusermount", "-u", stale],
-        ["bindfs", "-r", "--perms=a+rX", "/old", stale],
+        ["bindfs", "-r", "--no-allow-other", "--perms=a+rX", "/old", stale],
     ]
 
 

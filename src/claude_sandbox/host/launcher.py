@@ -565,13 +565,13 @@ class Launcher:
                 note("install", "dnf install bindfs  (or apt-get install bindfs)")
                 raise SystemExit(1)
             os.makedirs(mnt, exist_ok=True)
-            # bindfs adds allow_other, which fusermount refuses without
-            # user_allow_other in /etc/fuse.conf. Rootless podman does not
-            # need it (container root is this user); docker's daemon does.
+            # --no-allow-other: only this user can enter the view, which
+            # reads as this user (rootless podman's container root is this
+            # user; a rootful engine cannot read it, and fails loudly).
             # bindfs leaves NFS ACLs to the kernel's mode check, so a+rX
             # shows everything readable and the server applies the ACLs.
-            other = ["--no-allow-other"] if self.engine.endswith("podman") else []
-            if run(["bindfs", "-r", *other, "--perms=a+rX", src, mnt]).returncode:
+            argv = ["bindfs", "-r", "--no-allow-other", "--perms=a+rX", src, mnt]
+            if run(argv).returncode:
                 say(f"bindfs could not make a read-only view of {src}")
                 raise SystemExit(1)
 
