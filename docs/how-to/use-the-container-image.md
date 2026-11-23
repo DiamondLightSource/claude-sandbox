@@ -134,7 +134,9 @@ claude-sandbox --recreate --peers            # mount the project's parent
 ```
 
 `--mount` takes a directory and needs [bindfs](https://bindfs.org) on the host
-(`dnf install bindfs`); `--mount-rw` also takes a file. The launcher mounts a
+(from EPEL on RHEL: `dnf install epel-release`, then `dnf install bindfs`) and
+rootless podman, because the view is mounted for your user only; `--mount-rw`
+also takes a file. The launcher mounts a
 read-only bindfs view of the path under `~/.cache/claude-sandbox/ro` and binds
 that, so the whole tree stays read-only, including autofs mounts such as
 `/dls/<beamline>` that appear after the container starts. A plain read-only

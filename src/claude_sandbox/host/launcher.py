@@ -570,7 +570,16 @@ class Launcher:
     def ensure_views(self, paths: list[str]) -> None:
         """A live bindfs -r view of each path, made again if its daemon died
         (a reboot, or a dead one: "Transport endpoint is not connected")."""
+        root = self.view("")
         for src in paths:
+            # A view inside its own source would expose itself recursively
+            # (--mount ~, or /scratch/<user> where DLS links ~/.cache).
+            if f"{root}/".startswith(f"{os.path.realpath(src).rstrip('/')}/"):
+                say(
+                    f"--mount {src} contains the launcher's view directory {root};"
+                    " mount a directory inside it instead"
+                )
+                raise SystemExit(1)
             mnt = self.view(src)
             found = mount_at(mnt)
             if found:
@@ -605,7 +614,9 @@ class Launcher:
         root = self.view("")
         sources = self.inspect("{{range .Mounts}}{{println .Source}}{{end}}", name)
         return [
-            s[len(root) :] for s in (sources or "").split("\n") if s.startswith(root)
+            s[len(root) :]
+            for s in (sources or "").split("\n")
+            if s.startswith(f"{root}/")
         ]
 
     def create(self) -> None:

@@ -534,6 +534,30 @@ def test_a_missing_or_failing_bindfs_stops_the_run(
     assert "bindfs not found" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("src", ["/", "home", "home/.cache", "scratch"])
+def test_a_mount_containing_the_views_is_refused(
+    host: Host, tmp_path: Path, capsys: pytest.CaptureFixture[str], src: str
+) -> None:
+    """DLS links ~/.cache to /scratch, so /scratch/<user> holds the views;
+    without that link, ~ holds them."""
+    (tmp_path / "scratch").mkdir()
+    (tmp_path / "home").mkdir()
+    if src != "home":
+        (tmp_path / "home" / ".cache").symlink_to(tmp_path / "scratch")
+    path = src if src == "/" else f"{tmp_path}/{src}"
+    with pytest.raises(SystemExit):
+        run().ensure_views([path])
+    assert "contains the launcher's view directory" in capsys.readouterr().err
+    assert host.calls == []
+
+
+def test_a_mount_beside_the_views_is_not_refused(host: Host, tmp_path: Path) -> None:
+    """A sibling sharing a name prefix (home vs home2) is not a parent."""
+    (tmp_path / "home2").mkdir()
+    run().ensure_views([f"{tmp_path}/home2"])
+    assert host.calls[0][-2] == f"{tmp_path}/home2"
+
+
 def test_a_stopped_container_gets_its_views_back_before_start(
     engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -653,18 +677,18 @@ def test_clean_unmounts_the_views_no_container_binds(
 ) -> None:
     """A running container kept without --force keeps its view."""
     engine, r = host.engine, run()
-    used, unused = r.view("/dls"), r.view("/old")
+    used, unused = r.view("/dls_sw"), r.view("/dls")
     engine.add("claude-sandbox-run-1", running=True)[SOURCES] = f"{used}\n"
     engine.add("claude-sandbox-a-2")[SOURCES] = f"{unused}\n"
     engine.listing["ps"] = "claude-sandbox-run-1\nclaude-sandbox-a-2"
     (tmp_path / "mountinfo").write_text(
-        f"1 0 0:1 / {used} ro - fuse /dls rw\n2 0 0:2 / {unused} ro - fuse /old rw\n"
+        f"1 0 0:1 / {used} ro - fuse /dls_sw rw\n2 0 0:2 / {unused} ro - fuse /dls rw\n"
         "3 0 0:3 / /elsewhere ro - fuse /x rw\n"
     )
     r.clean(force=False, images=False)
     assert host.calls == [["fusermount", "-u", unused]]
     err = capsys.readouterr().err
-    assert "unmounted view of /old" in err and "1 view(s) unmounted" in err
+    assert "unmounted view of /dls\n" in err and "1 view(s) unmounted" in err
 
 
 def test_clean_without_a_cache_volume_runs_no_helper_container(
