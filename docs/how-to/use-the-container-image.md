@@ -154,13 +154,18 @@ Instead:
 
 - Mount the specific share you need, once it is mounted on the host:
   `claude-sandbox --recreate --mount /dls/i15/data/2026`.
-- Or expose the whole tree as a read-only bindfs view made on the host, as
-  builder2ibek's devcontainer does:
+- Or make a read-only bindfs view of the whole tree on the host and mount
+  that, at its own path:
   `bindfs -r --no-allow-other --perms=a+rX /dls_sw ~/.cache/dls-ro/dls_sw`,
-  then bind that directory at `/dls_sw`.
+  then `claude-sandbox --recreate --mount ~/.cache/dls-ro/dls_sw`. In your
+  own devcontainer you can bind the view at the original path, as
+  builder2ibek's devcontainer does for `/dls_sw`.
+- If the automount point is your project's parent, mounted by `--peers`,
+  recreate with `--no-peers`.
 
-An automount point at or under a path the sandbox binds read-write (such as a
-`--mount-rw` path) is allowed: you asked for that tree to be writable.
+An automount point that is mounted read-write, at or under a path the sandbox
+binds read-write (such as a `--mount-rw` path), is allowed: you asked for that
+tree to be writable.
 
 ## Devices
 

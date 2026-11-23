@@ -501,11 +501,21 @@ later; bwrap's ro-binds cover only mounts present at launch.
 
 Decision: `shadow.check_automounts` refuses the launch when an `autofs`
 mount appears in `/proc/self/mountinfo` (fails closed if unreadable), right
-after `bwrap_build` and before anything execs. Only an automount point can
-sprout a later rw mount; fixed NFS shares can't. Exempt: an autofs point at
-or under a directory the jail binds read-write (`bwrap_build` fills
-`writable_roots`; the `--mount-rw` / allow-write / workspace binds), since
-the operator asked for that tree writable. The supported ways to expose a
+after `bwrap_build` and before anything execs. It closes the practical
+case, jail-triggered automounts; it is not complete. Any slave-propagated
+bind (including `--mount`) still receives later HOST-side mounts beneath it
+with host flags (a manual mount, an NFSv4 crossmnt triggered on the host),
+and autofs points created after launch are missed. NFS submounts the jail
+triggers inherit the parent's ro. Exempt: an autofs point whose own
+per-mount options are `rw` AND that lies at or under a directory the jail
+binds read-write (`bwrap_build` fills `writable_roots`; allow-write /
+`--mount-rw` / workspace / home binds). Both conditions: the workspace is
+wherever the agent starts, so `cd /dls` with `/dls` bound ro must not
+exempt it. Host installs (`CLAUDE_SANDBOX_HOST_INSTALL=1`) on hosts with
+autofs (every DLS RHEL host; Ubuntu's binfmt_misc) can no longer launch:
+accepted, host installs are second-class. The launcher's `--mount` is
+src=dst, so launcher users mount a bindfs view at its own path; binding it
+at the original path is the devcontainer recipe. The supported ways to expose a
 tree: bind specific host-mounted shares (`--mount /dls/<bl>/data/<year>`,
 fstype nfs), or a host-side `bindfs -r` view (fstype fuse; builder2ibek's
 devcontainer does `/dls` and `/dls_sw` this way). Docs:

@@ -389,10 +389,10 @@ def test_entry_points_the_guard_left_or_behind_the_shadow_launch(
     fx.run()
 
 
-def autofs(point: Path | str, fstype: str = "autofs") -> str:
+def autofs(point: Path | str, fstype: str = "autofs", opts: str = "rw") -> str:
     """A mountinfo line (with an optional field), as the kernel escapes it."""
     escaped = str(point).replace("\\", "\\134").replace(" ", "\\040")
-    return f"30 1 0:40 / {escaped} rw,relatime shared:9 - {fstype} map rw,fd=5\n"
+    return f"30 1 0:40 / {escaped} {opts},relatime shared:9 - {fstype} map rw,fd=5\n"
 
 
 def test_an_automount_point_in_view_refuses(
@@ -406,6 +406,8 @@ def test_an_automount_point_in_view_refuses(
     assert "automount point(s) visible in the sandbox: /dls, /a b\\c\n" in err
     assert "--mount /dls/<beamline>/data/<year>" in err
     assert "bindfs -r --no-allow-other" in err
+    assert "then --mount ~/.cache/dls-ro/dls_sw" in err
+    assert "recreate with --no-peers" in err
     # fx.refused saw an exit, not Exec: script (and so bwrap) never ran.
 
 
@@ -426,6 +428,32 @@ def test_an_automount_under_a_writable_bind_launches(fx: Fixture) -> None:
     fx.run()
     # A sibling sharing the prefix is not under it.
     Path(fx.host.mountinfo).write_text(autofs(fx.root / "dls_sw"))
+    assert fx.refused() == 1
+
+
+@pytest.mark.parametrize("under", ["work", "dls"])
+def test_a_read_only_automount_under_a_writable_bind_refuses(
+    fx: Fixture, capsys: pytest.CaptureFixture[str], under: str
+) -> None:
+    """`cd /dls && claude` with /dls bound read-only: the workspace is /dls,
+    but the autofs point is ro, so a share mounted there later is not
+    something the operator asked to be writable."""
+    (fx.root / "dls").mkdir()
+    fx.env["CLAUDE_SANDBOX_ALLOW_WRITE"] = str(fx.root / "dls")
+    point = fx.root / under
+    Path(fx.host.mountinfo).write_text(autofs(point, opts="ro"))
+    assert fx.refused() == 1
+    assert f"visible in the sandbox: {point}\n" in capsys.readouterr().err
+
+
+def test_a_writable_root_reached_through_a_symlink_is_resolved(fx: Fixture) -> None:
+    """DLS homes link ~/.cache to /scratch: the bind root is the link's target."""
+    scratch = fx.root / "scratch/cache"
+    scratch.mkdir(parents=True)
+    (fx.home / ".cache").symlink_to(scratch)
+    Path(fx.host.mountinfo).write_text(autofs(scratch / "auto"))
+    fx.run()
+    Path(fx.host.mountinfo).write_text(autofs(fx.root / "scratch/auto"))
     assert fx.refused() == 1
 
 

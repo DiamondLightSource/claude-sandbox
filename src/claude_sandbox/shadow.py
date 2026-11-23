@@ -492,16 +492,20 @@ def check_automounts(writable: Sequence[str], mountinfo: str) -> None:
     autofs mount in the shadow's namespace counts: the jail ro-binds / and
     /proc recursively, so it sees them all. A container's fresh /proc has
     no systemd binfmt_misc autofs; a host install (refused by default) may,
-    and is refused too. One
-    at or under a directory the jail binds read-write is left alone: the
-    operator asked for that tree writable. Fails closed: without the mount
-    table the shadow cannot tell whether the read-only view holds.
+    and is refused too.
+
+    Left alone: an autofs point that is itself mounted rw AND lies at or
+    under a directory the jail binds read-write (the operator asked for
+    that tree writable). Both, because the workspace is wherever the agent
+    starts: `cd /dls` in a container with /dls bound read-only would
+    otherwise exempt it. Fails closed: without the mount table the shadow
+    cannot tell whether the read-only view holds.
     """
     try:
         found = automount_points(mountinfo)
     except OSError as e:
         _refuse(f"claude-sandbox: refusing to launch: {mountinfo}: {e.strerror}")
-    exposed = [point for point in found if not inside(point, writable)]
+    exposed = [p for p, rw in found if not (rw and inside(p, writable))]
     if exposed:
         _refuse(
             "claude-sandbox: refusing to launch: automount point(s) visible in the"
@@ -509,25 +513,27 @@ def check_automounts(writable: Sequence[str], mountinfo: str) -> None:
             "  A share mounted there later would be writable inside the sandbox,"
             " read-only bind or not.\n"
             "  Bind only the shares you need, mounted on the host before the"
-            " container starts\n"
-            "  (e.g. --mount /dls/<beamline>/data/<year>), or expose the tree as a"
-            " host-side read-only bindfs view\n"
-            "  (bindfs -r --no-allow-other --perms=a+rX /dls_sw"
-            " ~/.cache/dls-ro/dls_sw, bound at /dls_sw)."
+            " container starts (e.g. --mount /dls/<beamline>/data/<year>),\n"
+            "  or a host-side read-only bindfs view of the tree (bindfs -r"
+            " --no-allow-other --perms=a+rX /dls_sw ~/.cache/dls-ro/dls_sw,\n"
+            "  then --mount ~/.cache/dls-ro/dls_sw). If it is your project's"
+            " parent (--peers), recreate with --no-peers."
         )
 
 
-def automount_points(mountinfo: str) -> list[str]:
-    """The mount point of every autofs mount in ``mountinfo``."""
+def automount_points(mountinfo: str) -> list[tuple[str, bool]]:
+    """(mount point, mounted rw) for every autofs mount in ``mountinfo``."""
     with open(mountinfo, "rb") as f:
         table = f.read()
-    points: list[str] = []
+    points: list[tuple[str, bool]] = []
     for line in table.splitlines():
         # Optional fields end at " - "; the filesystem type follows it.
+        # Field 6 is the per-mount options, rw or ro first.
         before, sep, after = line.partition(b" - ")
         fields = before.split(b" ")
-        if sep and len(fields) > 4 and after.split(b" ")[0] == b"autofs":
-            points.append(os.fsdecode(_unescape(fields[4])))
+        if sep and len(fields) > 5 and after.split(b" ")[0] == b"autofs":
+            rw = fields[5].split(b",")[0] == b"rw"
+            points.append((os.fsdecode(_unescape(fields[4])), rw))
     return points
 
 
