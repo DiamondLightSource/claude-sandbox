@@ -264,21 +264,28 @@ already extended here:
   **`--mount` binds a bindfs view, not the path (2026-11-23).** Found
   live: with `--mount /dls`, `ls /dls/b01` in the jail produced an NFS
   mount flagged `rw` and `touch` wrote to beamline storage. A ro bind is
-  not recursive on the RHEL8 kernel (4.18, no `MOUNT_ATTR_RDONLY`
-  recursive), so autofs submounts that propagate in later keep their
-  own rw flags. The launcher (`ensure_views`) runs `bindfs -r
+  not recursive on the RHEL8 kernel (4.18: no
+  `mount_setattr`/`AT_RECURSIVE` before kernel 5.12, so podman's `rro`
+  is unavailable), so autofs submounts that propagate in later keep
+  their own rw flags. The launcher (`ensure_views`) runs `bindfs -r
   --perms=a+rX` on the host into `~/.cache/claude-sandbox/ro<path>` and
   binds that; bindfs refuses writes in its daemon and its host-side
   lookups trigger autofs. Recipe from builder2ibek's
   `initializeCommand.sh`. Views are re-made before every container
   start (reboots kill the daemons), one per path and shared by every
-  container that mounts it (so not unmounted on exit). Always
+  container that mounts it (so not unmounted on exit); `clean` unmounts
+  the views no remaining container binds, and `reuse` warns of a
+  container that still binds a `--mount` path directly. Always
   `--no-allow-other`: the daemon reads as the user, so `allow_other`
   with `a+rX` would let every local user read through the user's
   access (DLS runs podman only; rootful docker just fails to read it).
   bindfs missing is a hard stop. Refuse: falling back to a plain ro
   bind when bindfs is absent; `allow_other`/`allow_root` for docker;
-  `--mount-rw` through a view (it is rw by request).
+  `--mount-rw` through a view (it is rw by request); podman's `rro`
+  while hosts run kernels < 5.12; `bind-propagation=private` on
+  `--mount` (blocks autofs: shares show empty). `--peers`' parent bind
+  has the same non-recursive ro issue inside the jail for later
+  submounts; left as is (parents are rarely autofs roots).
 - **/cache volume + per-project venv (PR #43, 2026-09-14)**: the launcher
   mounts ONE named volume `claude-sandbox-cache` at `/cache` and sets
   `UV_PROJECT_ENVIRONMENT`/`VIRTUAL_ENV=/cache/venv-for<project path>`,

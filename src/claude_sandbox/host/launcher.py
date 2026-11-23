@@ -71,25 +71,33 @@ def _unescape(field: str) -> str:
     return re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), field)
 
 
-def mount_at(path: str) -> tuple[str, str, set[str]] | None:
-    """Type, source and options of the topmost mount at ``path``, if any."""
+def mounts() -> list[tuple[str, str, str, set[str]]]:
+    """Mountpoint, type, source and options of every mount, oldest first."""
     try:
         with open(MOUNTINFO) as f:
             lines = f.read().splitlines()
     except OSError:
-        return None
-    found = None
+        return []
+    found: list[tuple[str, str, str, set[str]]] = []
     for line in lines:
         head, _, tail = line.partition(" - ")
         mnt, fs = head.split(), tail.split()
-        if len(mnt) > 5 and len(fs) > 2 and _unescape(mnt[4]) == path:
-            found = (fs[0], _unescape(fs[1]), {*mnt[5].split(","), *fs[2].split(",")})
+        if len(mnt) > 5 and len(fs) > 2:
+            opts = {*mnt[5].split(","), *fs[2].split(",")}
+            found.append((_unescape(mnt[4]), fs[0], _unescape(fs[1]), opts))
     return found
 
 
-def listable(path: str) -> bool:
+def mount_at(path: str) -> tuple[str, str, set[str]] | None:
+    """Type, source and options of the topmost mount at ``path``, if any."""
+    found = [(fs, src, opts) for mnt, fs, src, opts in mounts() if mnt == path]
+    return found[-1] if found else None
+
+
+def alive(path: str) -> bool:
+    """A dead FUSE daemon fails stat ("Transport endpoint is not connected")."""
     try:
-        os.listdir(path)
+        os.stat(path)
     except OSError:
         return False
     return True
@@ -383,16 +391,19 @@ class Launcher:
 
     # --- clean --------------------------------------------------------------
 
-    def clean(self, force: bool, images: bool) -> None:
-        """Remove this launcher's stopped containers (running too with
-        force), unused image tags with images, and orphaned venvs."""
-        removed = kept = 0
+    def containers(self) -> list[str]:
+        """This launcher's keeper containers, running or not."""
         listing = self.out(
             "ps", "-a", "--filter", "name=^claude-sandbox-", "--format", "{{.Names}}"
         )
-        for n in (listing or "").split("\n"):
-            if not n or not self.is_keeper(n):
-                continue
+        return [n for n in (listing or "").split("\n") if n and self.is_keeper(n)]
+
+    def clean(self, force: bool, images: bool) -> None:
+        """Remove this launcher's stopped containers (running too with
+        force), unused image tags with images, the --mount views no
+        remaining container binds, and orphaned venvs."""
+        removed = kept = 0
+        for n in self.containers():
             if not force and self.inspect("{{.State.Running}}", n) == "true":
                 say(f"kept {n} (running; --force removes it and ends its sessions)")
                 kept += 1
@@ -410,7 +421,21 @@ class Launcher:
                 # rmi refuses an image a remaining container uses: that is right.
                 if img and self.call("rmi", img, quiet=True) == 0:
                     say(f"removed image {img}")
+        self.clean_views()
         self.clean_venvs()
+
+    def clean_views(self) -> None:
+        """Unmount the bindfs views that no remaining container binds."""
+        root = self.view("")
+        used = {p for n in self.containers() for p in self.mounted_views(n)}
+        unmounted = 0
+        for mnt, *_ in mounts():
+            path = mnt[len(root) :]
+            if mnt.startswith(f"{root}/") and path not in used:
+                run(["fusermount", "-u", mnt])
+                say(f"unmounted view of {path}")
+                unmounted += 1
+        say(f"{unmounted} view(s) unmounted")
 
     def clean_venvs(self) -> None:
         """Venvs on the cache volume whose project container is gone, listed
@@ -554,7 +579,7 @@ class Launcher:
                     fstype.startswith("fuse")
                     and source == src
                     and "ro" in flags
-                    and listable(mnt)
+                    and alive(mnt)
                 ):
                     continue
                 run(["fusermount", "-u", mnt])
@@ -575,10 +600,10 @@ class Launcher:
                 say(f"bindfs could not make a read-only view of {src}")
                 raise SystemExit(1)
 
-    def mounted_views(self) -> list[str]:
-        """The paths the container mounts through a view."""
+    def mounted_views(self, name: str) -> list[str]:
+        """The paths container ``name`` mounts through a view."""
         root = self.view("")
-        sources = self.inspect("{{range .Mounts}}{{println .Source}}{{end}}", self.name)
+        sources = self.inspect("{{range .Mounts}}{{println .Source}}{{end}}", name)
         return [
             s[len(root) :] for s in (sources or "").split("\n") if s.startswith(root)
         ]
@@ -624,6 +649,17 @@ class Launcher:
         ).split("\n"):
             self.warn("mounts the parent directory; peers are now off by default")
             rebuild = True
+        # Made before --mount used views: a ro bind of the path itself, which
+        # automounts made under it later do not inherit (X11 is no --mount).
+        direct = self.inspect(
+            "{{range .Mounts}}{{if and (eq .Source .Destination) (not .RW)}}"
+            "{{println .Destination}}{{end}}{{end}}",
+            self.name,
+        )
+        for m in (direct or "").split("\n"):
+            if m and m != "/tmp/.X11-unix":
+                self.warn(f"binds {m} directly, so automounts under it can be writable")
+                rebuild = True
         if self.opts.create_opts:
             self.warn(
                 "ignored on an existing container: " + " ".join(self.opts.create_opts)
@@ -672,7 +708,7 @@ class Launcher:
             self.create()
         if not self.running():
             # A stopped container binds its views again at start.
-            self.ensure_views(self.mounted_views())
+            self.ensure_views(self.mounted_views(self.name))
             self.must("start", self.name)
             if not self.running():
                 # The entrypoint refused (typically: no nested user namespaces).

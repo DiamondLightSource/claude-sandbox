@@ -58,7 +58,8 @@ claude-sandbox clean --force            # also ends running sessions
 claude-sandbox clean --force --images   # also removes unused sandbox images
 ```
 
-Cleanup also prunes venvs for removed containers. The next launch creates a
+Cleanup also prunes venvs for removed containers and unmounts the `--mount`
+views no remaining container uses. The next launch creates a
 container from the installed package's image version.
 
 ## Authentication and persistence
@@ -132,13 +133,15 @@ claude-sandbox --mount-rw ~/src/other-repo    # writable in container and sandbo
 claude-sandbox --recreate --peers            # mount the project's parent
 ```
 
-`--mount` needs [bindfs](https://bindfs.org) on the host (`dnf install
-bindfs`). The launcher mounts a read-only bindfs view of the path under
-`~/.cache/claude-sandbox/ro` and binds that, so the whole tree stays
-read-only, including autofs mounts such as `/dls/<beamline>` that appear after
-the container starts. A plain read-only bind does not cover those. The bindfs
-processes outlive the container, and the launcher reuses them. Containers
-created by earlier releases bind the path directly; recreate them.
+`--mount` takes a directory and needs [bindfs](https://bindfs.org) on the host
+(`dnf install bindfs`); `--mount-rw` also takes a file. The launcher mounts a
+read-only bindfs view of the path under `~/.cache/claude-sandbox/ro` and binds
+that, so the whole tree stays read-only, including autofs mounts such as
+`/dls/<beamline>` that appear after the container starts. A plain read-only
+bind does not cover those. The bindfs processes outlive the container, and the
+launcher reuses them; they last until `claude-sandbox clean` finds no container
+using them, or a reboot. Containers created by earlier releases bind the path
+directly: the launcher warns when it reuses one, and you should recreate it.
 
 `--peers` lets you enter sibling projects from a container shell and launch
 agents there. Each agent can read the siblings, including their secrets,

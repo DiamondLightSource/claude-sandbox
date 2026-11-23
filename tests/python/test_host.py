@@ -22,6 +22,11 @@ RUNNING = "{{.State.Running}}"
 KEEPER = '{{join .Config.Cmd " "}}'
 
 
+SOURCES = "{{range .Mounts}}{{println .Source}}{{end}}"
+DIRECT = (
+    "{{range .Mounts}}{{if and (eq .Source .Destination) (not .RW)}}"
+    "{{println .Destination}}{{end}}{{end}}"
+)
 LABEL = f'{{{{index .Config.Labels "{launcher.VERSION_LABEL}"}}}}'
 
 
@@ -187,6 +192,7 @@ def test_options_then_the_verb_and_its_arguments_untouched(tmp_path: Path) -> No
         (["--mount"], 1, "--mount needs a PATH"),
         (["--mount-rw", "/nonexistent/x"], 1, "No such file or directory"),
         (["--mount", ""], 1, "No such file or directory"),
+        (["--mount", "/etc/passwd"], 1, "--mount needs a directory: /etc/passwd"),
     ],
 )
 def test_options_stop(
@@ -393,9 +399,23 @@ def test_reuse_warns_and_recreate_removes(
     assert "mounts the parent directory" in err
     assert "ignored on an existing container: --gpu" in err
     assert "rebuild     claude-sandbox --recreate" in err
+    assert "directly" not in err
     assert not engine.called("create") and not engine.called("start")
     assert run(Options(recreate=True)).session(["pi"], pause=False) == 0
     assert engine.called("rm") and engine.called("create")
+
+
+def test_reuse_warns_of_a_mount_bound_directly(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Made before --mount used views: /dls itself bound ro, which autofs
+    submounts made later under it do not inherit."""
+    r = run()
+    engine.add(r.name, running=True)[DIRECT] = "/dls\n/tmp/.X11-unix\n"
+    assert r.session(["claude"], pause=False) == 0
+    err = capsys.readouterr().err
+    assert "binds /dls directly, so automounts under it can be writable" in err
+    assert "X11" not in err and "rebuild     claude-sandbox --recreate" in err
 
 
 # --- --mount through a bindfs -r view ---------------------------------------
@@ -422,15 +442,19 @@ def test_mount_at_reads_the_topmost_mount(
 
 
 class Host:
-    """The host commands the views run, each answering ``rc[program]``."""
+    """The host commands the views run, each answering ``rc[program]``; the
+    rest go to the engine."""
 
-    def __init__(self) -> None:
+    def __init__(self, engine: Engine) -> None:
+        self.engine = engine
         self.calls: list[list[str]] = []
         self.rc: dict[str, int] = {}
 
     def run(
         self, argv: list[str], *, stdout: int | None = None, stderr: int | None = None
     ) -> "subprocess.CompletedProcess[str]":
+        if argv[0] not in ("bindfs", "fusermount"):
+            return self.engine.run(argv, stdout=stdout, stderr=stderr)
         self.calls.append(argv)
         return subprocess.CompletedProcess(argv, self.rc.get(argv[0], 0), "", "")
 
@@ -438,7 +462,7 @@ class Host:
 @pytest.fixture
 def host(engine: Engine, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Host:
     """A bindfs on PATH and an empty mountinfo."""
-    fake = Host()
+    fake = Host(engine)
     monkeypatch.setattr(launcher, "run", fake.run)
     bindfs = tmp_path / "bin" / "bindfs"
     bindfs.parent.mkdir()
@@ -475,19 +499,25 @@ def test_a_view_under_a_symlinked_cache_is_found_again(
     assert host.calls == []
 
 
-def test_a_live_view_is_reused_and_a_stale_one_replaced(
+def test_a_live_view_is_reused_and_a_stale_or_dead_one_replaced(
     host: Host, tmp_path: Path
 ) -> None:
+    """A dead daemon's mount stays in mountinfo but fails stat: here, a
+    view never made on disk."""
     r = run()
-    live, stale = r.view("/dls"), r.view("/old")
+    live, stale, dead = r.view("/dls"), r.view("/old"), r.view("/gone")
     os.makedirs(live)
     (tmp_path / "mountinfo").write_text(
         f"1 0 0:1 / {live} ro - fuse /dls rw\n2 0 0:2 / {stale} rw - fuse /old rw\n"
+        f"3 0 0:3 / {dead} ro - fuse /gone rw\n"
     )
-    r.ensure_views(["/dls", "/old"])
+    r.ensure_views(["/dls", "/old", "/gone"])
+    bindfs = ["bindfs", "-r", "--no-allow-other", "--perms=a+rX"]
     assert host.calls == [
         ["fusermount", "-u", stale],
-        ["bindfs", "-r", "--no-allow-other", "--perms=a+rX", "/old", stale],
+        [*bindfs, "/old", stale],
+        ["fusermount", "-u", dead],
+        [*bindfs, "/gone", dead],
     ]
 
 
@@ -514,10 +544,23 @@ def test_a_stopped_container_gets_its_views_back_before_start(
 
     monkeypatch.setattr(Launcher, "ensure_views", ensure)
     r = run()
-    sources = "{{range .Mounts}}{{println .Source}}{{end}}"
-    engine.add(r.name)[sources] = f"/x\n{r.view('/dls')}\n"
+    engine.add(r.name)[SOURCES] = f"/x\n{r.view('/dls')}\n"
     assert r.session(["claude"], pause=False) == 0
     assert ensured == [["/dls"]] and engine.called("start")
+
+
+def test_no_view_means_no_start(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def ensure(self: Launcher, paths: list[str]) -> None:
+        raise SystemExit(1)
+
+    monkeypatch.setattr(Launcher, "ensure_views", ensure)
+    r = run()
+    engine.add(r.name)
+    with pytest.raises(SystemExit):
+        r.session(["claude"], pause=False)
+    assert not engine.called("start")
 
 
 def test_a_container_without_the_keeper_is_refused(
@@ -603,6 +646,25 @@ def test_clean(engine: Engine, capsys: pytest.CaptureFixture[str]) -> None:
     assert "removed venv for /ws/gone" in err and "1 venv(s) removed" in err
     run().clean(force=True, images=False)
     assert "claude-sandbox-run-2" not in engine.containers
+
+
+def test_clean_unmounts_the_views_no_container_binds(
+    host: Host, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A running container kept without --force keeps its view."""
+    engine, r = host.engine, run()
+    used, unused = r.view("/dls"), r.view("/old")
+    engine.add("claude-sandbox-run-1", running=True)[SOURCES] = f"{used}\n"
+    engine.add("claude-sandbox-a-2")[SOURCES] = f"{unused}\n"
+    engine.listing["ps"] = "claude-sandbox-run-1\nclaude-sandbox-a-2"
+    (tmp_path / "mountinfo").write_text(
+        f"1 0 0:1 / {used} ro - fuse /dls rw\n2 0 0:2 / {unused} ro - fuse /old rw\n"
+        "3 0 0:3 / /elsewhere ro - fuse /x rw\n"
+    )
+    r.clean(force=False, images=False)
+    assert host.calls == [["fusermount", "-u", unused]]
+    err = capsys.readouterr().err
+    assert "unmounted view of /old" in err and "1 view(s) unmounted" in err
 
 
 def test_clean_without_a_cache_volume_runs_no_helper_container(

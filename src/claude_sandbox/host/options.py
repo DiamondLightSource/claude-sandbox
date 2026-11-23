@@ -101,6 +101,11 @@ def parse(args: list[str], verbs: Collection[str], version: str) -> Options:
             if i + 1 >= len(args):
                 raise Stop(1, f"claude-sandbox: {arg} needs a PATH")
             path = _realpath(args[i + 1])
+            # A read-only view is a bindfs of a directory; --mount-rw binds files.
+            if arg == "--mount" and not os.path.isdir(path):
+                raise Stop(
+                    1, f"claude-sandbox: --mount needs a directory: {args[i + 1]}"
+                )
             (opts.mounts_ro if arg == "--mount" else opts.mounts_rw).append(path)
             opts.create_opts.append(f"{arg} {args[i + 1]}")
             i += 1
