@@ -76,6 +76,8 @@ def launch(
     (root / "etc/claude-sandbox.conf").write_text("egress-jail = 0\n")
     (root / "skills").mkdir(exist_ok=True)
     (root / "home").mkdir(exist_ok=True)
+    # No autofs: a CI runner's systemd binfmt_misc automount would refuse.
+    (root / "mountinfo").write_text("")
     if persistent and not (root / "home/.pi").exists():
         (root / "shared").mkdir()
         (root / "home/.pi").symlink_to(root / "shared")
@@ -86,6 +88,7 @@ def launch(
         "gitconfig": str(root / "etc/claude-gitconfig"),
         "skills": str(root / "skills"),
         "tools": str(root / "bin"),
+        "mountinfo": str(root / "mountinfo"),
         "signal": sig,
     }
     argv = [sys.executable, "-I", str(DRIVER), json.dumps(spec), agent, *args]
