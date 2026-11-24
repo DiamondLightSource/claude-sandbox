@@ -30,6 +30,7 @@ from .bwrap import (
     GITCONFIG_PATH,
     SHADOW_DIR,
     bwrap_build,
+    inside,
     path_ahead_of_shadow,
 )
 from .config import (
@@ -37,6 +38,7 @@ from .config import (
     MODEL_PORT_ERROR,
     Config,
     egress_jail_enabled,
+    lines,
     model_port_ok,
     parse_config,
     resolve_workspace_root,
@@ -174,6 +176,7 @@ def run(
             shipped_skills_dir=host.shipped_skills_dir,
             gitconfig_path=host.gitconfig_path,
         )
+        check_automounts(lines(config.allow_write), host.mountinfo)
         terminal, launch_env = terminal_command(argv, env, host)
         term.pause(verify)
         if jailed:
@@ -476,6 +479,61 @@ def _check_local_model_port(config: Config) -> None:
     forwards it into the jail with --setenv, jailed or not."""
     if not model_port_ok(config.local_model_port):
         _refuse(MODEL_PORT_ERROR)
+
+
+def check_automounts(allow_write: Sequence[str], mountinfo: str) -> None:
+    """Refuse when the jail would see an automount point it cannot write.
+
+    bwrap's ro-binds cover the mounts that exist at launch. A share the
+    automounter mounts later, under an autofs point, arrives with its own
+    rw flags, even through a read-only bind (a non-recursive ro; podman's
+    recursive rro needs kernel 5.12), so a session could write to it. Every
+    autofs mount in the shadow's namespace counts: the jail ro-binds / and
+    /proc recursively, so it sees them all. A container's fresh /proc has
+    no systemd binfmt_misc autofs; a host install (refused by default) may,
+    and is refused too.
+
+    Left alone: an autofs point mounted rw AND at or under an allow-write
+    path (the operator asked for that tree writable). Not the workspace:
+    it is wherever the agent starts, and on kernel 4.18 an autofs nested
+    under a read-only podman bind still shows rw. Called after bwrap_build,
+    which has refused a relative allow-write entry. Fails closed: without
+    the mount table the shadow cannot tell whether the read-only view holds.
+    """
+    roots = [os.path.realpath(path) for path in allow_write]
+    try:
+        found = automount_points(mountinfo)
+    except OSError as e:
+        _refuse(f"claude-sandbox: refusing to launch: {mountinfo}: {e.strerror}")
+    exposed = [p for p, rw in found if not (rw and inside(p, roots))]
+    if exposed:
+        _refuse(
+            "claude-sandbox: refusing to launch: automount point(s) visible in the"
+            f" sandbox: {', '.join(exposed)}\n"
+            "  A share mounted there later would be writable inside the sandbox,"
+            " read-only bind or not.\n"
+            "  Mount the subfolder you need, not a folder above the automount"
+            " points\n"
+            "  (e.g. --mount /dls/i15/data/2026, not --mount /dls). If it is"
+            " your project's parent (--peers),\n"
+            "  recreate with --no-peers."
+        )
+
+
+def automount_points(mountinfo: str) -> list[tuple[str, bool]]:
+    """(mount point, mounted rw) for every autofs mount in ``mountinfo``."""
+    with open(mountinfo, "rb") as f:
+        table = f.read()
+    points: list[tuple[str, bool]] = []
+    for line in table.splitlines():
+        # Optional fields end at " - "; the filesystem type follows it.
+        # Field 6 is the per-mount options, rw or ro first.
+        before, sep, after = line.partition(b" - ")
+        fields = before.split(b" ")
+        if sep and len(fields) > 5 and after.split(b" ")[0] == b"autofs":
+            rw = fields[5].split(b",")[0] == b"rw"
+            points.append((os.fsdecode(_unescape(fields[4])), rw))
+    return points
 
 
 def terminal_command(

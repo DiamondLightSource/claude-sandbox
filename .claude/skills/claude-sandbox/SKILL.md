@@ -490,6 +490,50 @@ adding a doc recipe or example that binds a *host* engine socket in
 that `pass-env` a token/credential var. Mechanism stays; the docs must
 keep saying what it costs.
 
+## Automount points — the shadow refuses them (2026-11)
+
+Found live at DLS (RHEL8, kernel 4.18): a container with `/dls` bound
+read-only (`--mount /dls`, or a devcontainer binding `/dls`/`/dls_sw` with
+slave propagation). `ls /dls/b01` in the jail triggered the automount, the
+NFS share propagated in with its own `rw` flags, and `touch` wrote to
+beamline storage. A read-only bind is not recursive for mounts that arrive
+later; bwrap's ro-binds cover only mounts present at launch.
+
+Decision: `shadow.check_automounts` refuses the launch when an `autofs`
+mount appears in `/proc/self/mountinfo` (fails closed if unreadable), right
+after `bwrap_build` and before anything execs. It closes the practical
+case, jail-triggered automounts; it is not complete. Any slave-propagated
+bind (including `--mount`) still receives later HOST-side mounts beneath it
+with host flags (a manual mount, an NFSv4 crossmnt triggered on the host),
+and autofs points created after launch are missed. NFS submounts the jail
+triggers inherit the parent's ro. Exempt: an autofs point whose own
+per-mount options are `rw` AND that lies at or under an allow-write path
+(conf `allow-write` + `CLAUDE_SANDBOX_ALLOW_WRITE`, i.e. `--mount-rw`,
+resolved). Never the workspace, tmpdir or home binds: the workspace is
+wherever the agent starts (`cd /dls` with `/dls` bound ro), and on 4.18
+podman's ro covers only the top of an rbind, so an autofs nested under a
+ro `--mount` still shows `rw`. Host installs (`CLAUDE_SANDBOX_HOST_INSTALL=1`) on hosts with
+autofs (every DLS RHEL host; Ubuntu's binfmt_misc) can no longer launch:
+accepted, host installs are second-class. The user-facing fix (message
+and docs) is only: mount the subfolder you need, not a folder above the
+automount points (`--mount /dls/<bl>/data/<year>`, fstype nfs, not
+`--mount /dls`), and drop `--peers` when the project's parent is the
+automount point. Owner decision: no bindfs advice in the message or user
+docs, and nothing about this on the DLS landing page
+(`docs/dls/claude-at-dls.md`; mounting /dls there is not to be
+encouraged). A devcontainer that really needs a whole tree can copy
+builder2ibek's pattern: a host-side `bindfs -r` view (fstype fuse) bound
+at `/dls` / `/dls_sw`, which passes the check by construction. Docs:
+`docs/how-to/use-the-container-image.md` ("Automounted trees").
+
+**Refuse as regressions:** relaxing the refusal (warning instead, or an
+allowlist of autofs paths); an opt-out switch (the policy below); podman
+`rro` as the fix while hosts run kernels < 5.12; `bind-propagation=private`,
+which only hides automounted shares (the tree then looks empty).
+Possible future enhancement: PR #122 (bindfs views for the launcher's
+`--mount`, kept as a draft). Follow-up: a battery check (an autofs line
+with `ro` per-mount options inside the jail).
+
 ## Policy — weakening switches exist but are never advertised
 
 DLS-rollout decision (2026-07-24, PR #5): making the sandbox trustworthy

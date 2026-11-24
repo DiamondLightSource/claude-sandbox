@@ -257,7 +257,10 @@ already extended here:
   changed). Parent and `--mount`/`--mount-rw` binds use `bind-propagation=slave`
   (as builder2ibek's devcontainer does for `/dls_sw`): a rootless
   container may not TRIGGER an autofs mount (`ls /dls_sw/work` → EPERM)
-  but host-made mounts propagate in. Refuse: plain `-v` for these
+  but host-made mounts propagate in. (Wrong at DLS, RHEL8: `ls /dls/b01`
+  from the jail DID trigger it, and the share arrived rw. The shadow now
+  refuses any autofs point outside the jail's rw binds; see the
+  claude-sandbox skill, "Automount points".) Refuse: plain `-v` for these
   (loses propagation); mounting the parent when it holds `$HOME`; making
   `--mount` rw again "for convenience"; forwarding DISPLAY into the
   shadow's pass-through list.

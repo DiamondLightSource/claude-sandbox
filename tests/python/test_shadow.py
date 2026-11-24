@@ -389,6 +389,83 @@ def test_entry_points_the_guard_left_or_behind_the_shadow_launch(
     fx.run()
 
 
+def autofs(point: Path | str, fstype: str = "autofs", opts: str = "rw") -> str:
+    """A mountinfo line (with an optional field), as the kernel escapes it."""
+    escaped = str(point).replace("\\", "\\134").replace(" ", "\\040")
+    return f"30 1 0:40 / {escaped} {opts},relatime shared:9 - {fstype} map rw,fd=5\n"
+
+
+def test_an_automount_point_in_view_refuses(
+    fx: Fixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    Path(fx.host.mountinfo).write_text(
+        "short\n" + autofs("/dls") + autofs("/dls/b01", "nfs") + autofs("/a b\\c")
+    )
+    assert fx.refused() == 1
+    err = capsys.readouterr().err
+    assert "automount point(s) visible in the sandbox: /dls, /a b\\c\n" in err
+    assert "--mount /dls/i15/data/2026, not --mount /dls" in err
+    assert "bindfs" not in err
+    assert "recreate with --no-peers" in err
+    # fx.refused saw an exit, not Exec: script (and so bwrap) never ran.
+
+
+def test_fixed_shares_and_fuse_views_launch(fx: Fixture) -> None:
+    Path(fx.host.mountinfo).write_text(
+        autofs("/dls_sw", "fuse") + autofs("/dls/i15/data/2026", "nfs")
+    )
+    fx.run()
+
+
+def test_an_automount_under_an_allow_write_path_launches(fx: Fixture) -> None:
+    rw = fx.root / "dls"
+    rw.mkdir()
+    fx.env["CLAUDE_SANDBOX_ALLOW_WRITE"] = str(rw)
+    Path(fx.host.mountinfo).write_text(autofs(rw) + autofs(rw / "b01"))
+    fx.run()
+    # The workspace is not an allow-write path: on kernel 4.18 an autofs
+    # nested under a read-only podman bind still shows rw.
+    Path(fx.host.mountinfo).write_text(autofs(fx.root / "work/auto"))
+    assert fx.refused() == 1
+    # A sibling sharing the prefix is not under it.
+    Path(fx.host.mountinfo).write_text(autofs(fx.root / "dls_sw"))
+    assert fx.refused() == 1
+
+
+@pytest.mark.parametrize("under", ["work", "dls"])
+def test_a_read_only_automount_under_a_writable_bind_refuses(
+    fx: Fixture, capsys: pytest.CaptureFixture[str], under: str
+) -> None:
+    """An autofs point bound read-only is refused even under an allow-write
+    path (and under the workspace, which never exempts)."""
+    (fx.root / "dls").mkdir()
+    fx.env["CLAUDE_SANDBOX_ALLOW_WRITE"] = str(fx.root / "dls")
+    point = fx.root / under
+    Path(fx.host.mountinfo).write_text(autofs(point, opts="ro"))
+    assert fx.refused() == 1
+    assert f"visible in the sandbox: {point}\n" in capsys.readouterr().err
+
+
+def test_an_allow_write_path_through_a_symlink_is_resolved(fx: Fixture) -> None:
+    """As DLS homes link ~/.cache to /scratch: the root is the link's target."""
+    scratch = fx.root / "scratch/cache"
+    scratch.mkdir(parents=True)
+    (fx.home / ".cache").symlink_to(scratch)
+    fx.env["CLAUDE_SANDBOX_ALLOW_WRITE"] = str(fx.home / ".cache")
+    Path(fx.host.mountinfo).write_text(autofs(scratch / "auto"))
+    fx.run()
+    Path(fx.host.mountinfo).write_text(autofs(fx.root / "scratch/auto"))
+    assert fx.refused() == 1
+
+
+def test_an_unreadable_mount_table_refuses(
+    fx: Fixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    Path(fx.host.mountinfo).unlink()
+    assert fx.refused() == 1
+    assert "refusing to launch: " in capsys.readouterr().err
+
+
 def test_tools_never_come_from_path(fx: Fixture) -> None:
     """ADR 26: no executable is found through PATH."""
     planted, system = fx.root / "on-path", fx.root / "system"
