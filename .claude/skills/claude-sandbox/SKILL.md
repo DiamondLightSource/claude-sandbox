@@ -514,7 +514,8 @@ wherever the agent starts (`cd /dls` with `/dls` bound ro), and on 4.18
 podman's ro covers only the top of an rbind, so an autofs nested under a
 ro `--mount` still shows `rw`. Host installs (`CLAUDE_SANDBOX_HOST_INSTALL=1`) on hosts with
 autofs (every DLS RHEL host; Ubuntu's binfmt_misc) can no longer launch:
-accepted, host installs are second-class. The user-facing fix (message
+accepted, a host install is not a supported deployment (ADR 30); the
+override exists for hermetic CI and tests. The user-facing fix (message
 and docs) is only: mount the subfolder you need, not a folder above the
 automount points (`--mount /dls/<bl>/data/<year>`, fstype nfs, not
 `--mount /dls`), and drop `--peers` when the project's parent is the

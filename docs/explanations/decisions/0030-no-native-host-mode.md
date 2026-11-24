@@ -6,7 +6,7 @@ Date: 2026-11-24
 
 ## Status
 
-Accepted
+Accepted. Extends {ref}`ADR 23 <adr-pypi-front-door>`.
 
 ## Context
 

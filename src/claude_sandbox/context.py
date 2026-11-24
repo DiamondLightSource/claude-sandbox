@@ -43,8 +43,7 @@ SHADOW = "/usr/local/bin/claude"
 # and writes /etc and /usr/libexec, which would reshape a host.
 HOST_INSTALL_REFUSAL = (
     "claude-sandbox: refusing to install outside a container.\n"
-    "  Run this inside a devcontainer (as root), or set\n"
-    "  CLAUDE_SANDBOX_HOST_INSTALL=1 to install on this host.\n"
+    "  Run this inside a devcontainer (as root).\n"
 )
 
 
