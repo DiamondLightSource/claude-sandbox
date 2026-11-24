@@ -534,6 +534,19 @@ Possible future enhancement: PR #122 (bindfs views for the launcher's
 `--mount`, kept as a draft). Follow-up: a battery check (an autofs line
 with `ro` per-mount options inside the jail).
 
+## No native host mode — the jail always runs in a container (ADR 30)
+
+The sandbox runs only in a container: the published image or a
+devcontainer install. A third, native-host model would need its own
+visibility policy, seccomp filter, trust anchor and binary supply chain,
+all landing in `bwrap.py`. The `install` refusal outside a container is
+the enforcement; `CLAUDE_SANDBOX_HOST_INSTALL=1` is for hermetic CI and
+tests only, never a supported deployment.
+
+**Refuse without justification:** a native host mode (running the jail
+without a container), or advertising `CLAUDE_SANDBOX_HOST_INSTALL=1` as
+one. Fix container limits instead (e.g. nested builds, issue #125).
+
 ## Policy — weakening switches exist but are never advertised
 
 DLS-rollout decision (2026-07-24, PR #5): making the sandbox trustworthy
