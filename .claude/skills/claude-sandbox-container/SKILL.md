@@ -252,7 +252,10 @@ already extended here:
   hard-coded bash. Refuse: hard-coding zsh instead (user declined to force
   it on people). `LANG` is always
   set; `DISPLAY` + `/tmp/.X11-unix` + `~/.Xauthority` (ro) are passed
-  only when the host has a DISPLAY, and only the unsandboxed shell sees
+  only when the host has a DISPLAY. The cookie is bound ro from a copy at
+  `~/.cache/claude-sandbox/xauthority`, refreshed in place at each launch:
+  GNOME renames `$XAUTHORITY` at each login, so binding it froze a path
+  that vanished and `podman start` failed. Only the unsandboxed shell sees
   them (the shadow masks `~/.Xauthority`; nothing in the agent path
   changed). Parent and `--mount`/`--mount-rw` binds use `bind-propagation=slave`
   (as builder2ibek's devcontainer does for `/dls_sw`): a rootless
