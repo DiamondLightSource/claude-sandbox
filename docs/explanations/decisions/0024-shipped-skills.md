@@ -14,6 +14,11 @@ known in the managed settings. The skill bind below stays the mechanism for
 shipped skills; see the amendment at the end for why the marketplace's
 costs, rejected here for shipped skills, are accepted for plugins.
 
+Amendment of 2026-10-08 withdrawn (2026-11-24): the `orchestrate` plugin
+and the plugin marketplace were removed, and the installer no longer adds
+the marketplace to the managed settings. Claude Code plugins are no longer
+offered from this repository; the amendment is kept below as history.
+
 Rests on {ref}`ADR 13 <adr-managed-settings-guard>`'s placement rule (trust
 anchors under `/etc` and `/usr/libexec`, read-only inside the session) and
 on the XDG home rebinds of {ref}`ADR 11 <adr-xdg-split>`.
@@ -87,6 +92,8 @@ function list.
   into their own `~/.claude/skills`.
 
 ## Amendment (2026-10-08): opt-in plugins from a managed marketplace
+
+(Withdrawn 2026-11-24, see Status.)
 
 Some things a user may want are not skills: the `orchestrate` plugin
 carries hooks and a mod, which a skill bind cannot deliver. They are also
