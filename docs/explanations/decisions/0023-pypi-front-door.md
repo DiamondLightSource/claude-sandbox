@@ -16,6 +16,10 @@ bash verbatim and become the implementation once that migration finishes
 pytest, which "The bash-only boundary holds" below ruled out. Until the
 switch-over the wheel still ships the bash and execs it, as described here.
 
+Extended by {ref}`ADR 30 <adr-no-native-host-mode>` (2026-11-24): the
+refusal of `install` outside a container is now the enforcement of a
+decision not to support a native host mode.
+
 Documentation update (2026-09-14): the recommended host workflow is
 `uv tool install claude-sandbox`, then `claude-sandbox`. The `uvx` launcher
 remains available for one-off use and `uvx claude-sandbox install` remains

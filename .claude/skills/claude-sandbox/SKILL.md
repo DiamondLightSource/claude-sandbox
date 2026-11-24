@@ -514,7 +514,8 @@ wherever the agent starts (`cd /dls` with `/dls` bound ro), and on 4.18
 podman's ro covers only the top of an rbind, so an autofs nested under a
 ro `--mount` still shows `rw`. Host installs (`CLAUDE_SANDBOX_HOST_INSTALL=1`) on hosts with
 autofs (every DLS RHEL host; Ubuntu's binfmt_misc) can no longer launch:
-accepted, host installs are second-class. The user-facing fix (message
+accepted, a host install is not a supported deployment (ADR 30); the
+override exists for hermetic CI and tests. The user-facing fix (message
 and docs) is only: mount the subfolder you need, not a folder above the
 automount points (`--mount /dls/<bl>/data/<year>`, fstype nfs, not
 `--mount /dls`), and drop `--peers` when the project's parent is the
@@ -533,6 +534,19 @@ which only hides automounted shares (the tree then looks empty).
 Possible future enhancement: PR #122 (bindfs views for the launcher's
 `--mount`, kept as a draft). Follow-up: a battery check (an autofs line
 with `ro` per-mount options inside the jail).
+
+## No native host mode — the jail always runs in a container (ADR 30)
+
+The sandbox runs only in a container: the published image or a
+devcontainer install. A third, native-host model would need its own
+visibility policy, seccomp filter, trust anchor and binary supply chain,
+all landing in `bwrap.py`. The `install` refusal outside a container is
+the enforcement; `CLAUDE_SANDBOX_HOST_INSTALL=1` is for hermetic CI and
+tests only, never a supported deployment.
+
+**Refuse without justification:** a native host mode (running the jail
+without a container), or advertising `CLAUDE_SANDBOX_HOST_INSTALL=1` as
+one. Fix container limits instead (e.g. nested builds, issue #125).
 
 ## Policy — weakening switches exist but are never advertised
 
