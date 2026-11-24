@@ -273,6 +273,8 @@ class Launcher:
         )
         # Unset means the default volume; set but empty means none.
         self.cache = env.get("CLAUDE_SANDBOX_CACHE", "claude-sandbox-cache")
+        # The X11 cookie's copy that containers bind (refresh_xauth).
+        self.xauth = f"{home}/.cache/claude-sandbox/xauthority"
         self.project = working_directory(env)
         self.name, self.tag = names(self.project)
 
@@ -472,9 +474,7 @@ class Launcher:
             args += ["-e", f"DISPLAY={env['DISPLAY']}"]
             if os.path.isdir("/tmp/.X11-unix"):
                 args += ["-v", "/tmp/.X11-unix:/tmp/.X11-unix:ro"]
-            xauth = env.get("XAUTHORITY") or f"{self.home}/.Xauthority"
-            if os.path.isfile(xauth):
-                args += ["-v", f"{xauth}:/root/.Xauthority:ro"]
+            args += ["-v", f"{self.xauth}:/root/.Xauthority:ro"]
         if os.path.isfile(f"{self.home}/.gitconfig"):
             args += ["-v", f"{self.home}/.gitconfig:/root/.gitconfig-host:ro"]
         # The conf READ-ONLY at the canonical path (Invariant 4).
@@ -497,6 +497,24 @@ class Launcher:
             ):
                 args += ["-e", f"{v}={env[v]}"]
         return [*args, self.image, "bash", "-c", KEEPER_CMD]
+
+    def refresh_xauth(self) -> None:
+        """Copy the X11 cookie to the one path containers bind. GNOME names
+        $XAUTHORITY afresh at each login, so a container that bound it
+        directly could not start after the next one."""
+        if not self.env.get("DISPLAY"):
+            return
+        src = self.env.get("XAUTHORITY") or f"{self.home}/.Xauthority"
+        try:
+            with open(src, "rb") as f:
+                cookie = f.read()
+        except OSError:
+            cookie = b""
+        os.makedirs(os.path.dirname(self.xauth), exist_ok=True)
+        # In place: a file bind holds the inode, so running containers see it.
+        with os.fdopen(os.open(self.xauth, os.O_WRONLY | os.O_CREAT, 0o600), "wb") as f:
+            f.write(cookie)
+            f.truncate()
 
     def create(self) -> None:
         os.makedirs(self.shared, exist_ok=True)
@@ -580,6 +598,7 @@ class Launcher:
         """Create or reuse the container, then exec ``command`` in it."""
         if self.opts.recreate and self.exists(self.name):
             self.must("rm", "-f", self.name)
+        self.refresh_xauth()
         if self.exists(self.name):
             self.reuse()
         else:

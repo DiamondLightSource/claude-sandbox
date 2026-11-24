@@ -227,10 +227,12 @@ assert_eq 'forward writable environment without mount flags' "$TMP/from-env" "$(
 # --- env: locale always, X11 only when the host has a DISPLAY --------------
 run --; case "$(create_line)" in *"-e LANG=en_US.UTF-8"*) pass ;; *) fail "LANG default: $(create_line)" ;; esac
 assert_not_contains "no DISPLAY without one on the host" "$(create_line)" "DISPLAY"
-touch "$TMP/.Xauthority"
+echo cookie > "$TMP/.Xauthority"
 run DISPLAY=:1 --
 case "$(create_line)" in *"-e DISPLAY=:1"*) pass ;; *) fail "DISPLAY not passed: $(create_line)" ;; esac
-case "$(create_line)" in *"-v $TMP/.Xauthority:/root/.Xauthority:ro"*) pass ;; *) fail "Xauthority not mounted ro: $(create_line)" ;; esac
+# A stable copy, not $XAUTHORITY itself: GNOME renames that at each login.
+case "$(create_line)" in *"-v $TMP/.cache/claude-sandbox/xauthority:/root/.Xauthority:ro"*) pass ;; *) fail "Xauthority not mounted ro: $(create_line)" ;; esac
+assert_eq 'cookie copied to the bound path' cookie "$(cat "$TMP/.cache/claude-sandbox/xauthority")"
 rm -f "$TMP/.Xauthority"
 
 # --- /cache on a named volume; per-project venv on it, as the devcontainer --
