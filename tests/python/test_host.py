@@ -229,7 +229,7 @@ def test_create_argv(
         "-e CLAUDE_SANDBOX_GPU=1",
         f"--mount type=bind,src={parent},dst={parent},bind-propagation=slave",
         "-e DISPLAY=:1",
-        f"{home}/.Xauthority:/root/.Xauthority:ro",
+        f"{home}/.cache/claude-sandbox/xauthority:/root/.Xauthority:ro",
         f"{home}/.gitconfig:/root/.gitconfig-host:ro",
         f"{home}/sandbox.conf:/etc/claude-sandbox.conf:ro",
         "--mount type=bind,src=/r,dst=/r,ro,bind-propagation=slave",
@@ -266,6 +266,30 @@ def test_gpu_needs_podman_or_docker(
     with pytest.raises(SystemExit):
         run(Options(gpu=True)).create_args()
     assert "--gpu requires podman or docker" in capsys.readouterr().err
+
+
+def test_session_refreshes_the_x11_cookie_in_place(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # GNOME's $XAUTHORITY is renamed at each login: containers bind a copy.
+    r = run()
+    assert r.session(["claude"], pause=False) == 0
+    assert Path(r.xauth).read_bytes() == b""  # no DISPLAY: an empty bind source
+    cookie = tmp_path / ".mutter-Xwaylandauth.ABC123"
+    cookie.write_bytes(b"cookie")
+    monkeypatch.setenv("DISPLAY", ":0")
+    monkeypatch.setenv("XAUTHORITY", str(cookie))
+    assert run().session(["claude"], pause=False) == 0
+    assert Path(r.xauth).read_bytes() == b"cookie"
+    inode = os.stat(r.xauth).st_ino
+    cookie.unlink()  # logged out: the next launch still finds a bind source
+    assert run().session(["claude"], pause=False) == 0
+    assert Path(r.xauth).read_bytes() == b""
+    assert os.stat(r.xauth).st_ino == inode
+    Path(r.xauth).write_bytes(b"kept")
+    monkeypatch.delenv("DISPLAY")
+    assert run().session(["claude"], pause=False) == 0
+    assert Path(r.xauth).read_bytes() == b"kept"  # no DISPLAY leaves a copy alone
 
 
 def test_peers_skip_a_parent_holding_home(
