@@ -502,9 +502,11 @@ class Launcher:
         """Copy the X11 cookie to the one path containers bind. GNOME names
         $XAUTHORITY afresh at each login, so a container that bound it
         directly could not start after the next one."""
-        if not self.env.get("DISPLAY"):
-            return
         src = self.env.get("XAUTHORITY") or f"{self.home}/.Xauthority"
+        if not self.env.get("DISPLAY"):
+            if os.path.exists(self.xauth):
+                return
+            src = os.devnull  # cache wiped: a stopped container still needs it
         try:
             with open(src, "rb") as f:
                 cookie = f.read()

@@ -274,7 +274,7 @@ def test_session_refreshes_the_x11_cookie_in_place(
     # GNOME's $XAUTHORITY is renamed at each login: containers bind a copy.
     r = run()
     assert r.session(["claude"], pause=False) == 0
-    assert not os.path.exists(r.xauth)  # no DISPLAY, no copy
+    assert Path(r.xauth).read_bytes() == b""  # no DISPLAY: an empty bind source
     cookie = tmp_path / ".mutter-Xwaylandauth.ABC123"
     cookie.write_bytes(b"cookie")
     monkeypatch.setenv("DISPLAY", ":0")
@@ -286,6 +286,10 @@ def test_session_refreshes_the_x11_cookie_in_place(
     assert run().session(["claude"], pause=False) == 0
     assert Path(r.xauth).read_bytes() == b""
     assert os.stat(r.xauth).st_ino == inode
+    Path(r.xauth).write_bytes(b"kept")
+    monkeypatch.delenv("DISPLAY")
+    assert run().session(["claude"], pause=False) == 0
+    assert Path(r.xauth).read_bytes() == b"kept"  # no DISPLAY leaves a copy alone
 
 
 def test_peers_skip_a_parent_holding_home(
