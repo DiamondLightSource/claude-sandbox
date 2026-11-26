@@ -17,10 +17,10 @@
 #                    installer, one audit surface.
 # Global-scope ARG: `COPY --from` cannot expand a stage-scoped one, so the
 # Node source is a named stage (used by the claude-sandbox stage below).
-ARG NODE_VERSION=22
+ARG NODE_VERSION=24
 FROM node:${NODE_VERSION}-slim AS node
 
-FROM ghcr.io/diamondlightsource/ubuntu-devcontainer:noble AS developer
+FROM ghcr.io/diamondlightsource/ubuntu-devcontainer:resolute AS developer
 
 FROM developer AS claude-sandbox
 
@@ -59,8 +59,11 @@ WORKDIR /opt/claude-sandbox
 # (provisioning), the base image already ships a uv for projects, and a
 # reinstall in a container fetches and checks it again. One uv in the image,
 # and the installer never has to trust the base image's unpinned one.
+# The upgrade picks up security fixes released since the base image was
+# built (trivy otherwise flags libc, expat, krb5, ...).
 RUN bash .devcontainer/claude-sandbox/install.sh --image-build \
     && rm -rf /usr/libexec/claude-sandbox/uv \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends vim \
     && rm -rf /var/lib/apt/lists/*
 
@@ -117,7 +120,7 @@ RUN uv venv --no-python-downloads --managed-python /cache/venv \
 
 # Node.js LTS for the agent — IMAGE-ONLY, same reasoning as the Python
 # block. Copied from the official image like uv is from astral's: the
-# noble base has no npm, and its apt `npm` is npm 9 on the end-of-life
+# resolute base has no npm, and its apt `npm` is npm 9 on the end-of-life
 # Node 18 (Playwright's package wants >= 20) behind ~360 dependency
 # packages. This gives `pi install npm:...` (extensions land on the shared
 # ~/.pi, so they persist across containers), npx, and a current node.
@@ -127,6 +130,10 @@ COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    # The npm bundled with the Node image lags its own dependency fixes
+    # (trivy flags them); take the newest npm of the same major.
+    && npm install -g --no-fund --no-audit npm@11 \
+    && npm cache clean --force \
     # Lifecycle scripts off by default: `pi install npm:...` and `npx` then
     # run no postinstall inside the jail (pi passes no --ignore-scripts).
     # This is npm's global config for the copied npm, ro in-session — a

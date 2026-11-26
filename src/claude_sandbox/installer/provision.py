@@ -25,14 +25,14 @@ from pathlib import Path
 
 from .actions import Owner, Remove, apply
 
-PYTHON_VERSION = "3.13.16"
+PYTHON_VERSION = "3.13.18"
 # The uv the bootstrap fetches: uv only installs the CPython releases it
-# knows, and 0.12.23 knows 3.13.16 (0.8.15 does not). Bump them together.
+# knows, and 0.13.10 knows 3.13.18 (0.8.15 does not). Bump them together.
 # install.sh reads these four lines; the checksums are of astral-sh/uv's
 # release archives uv-<arch>-unknown-linux-gnu.tar.gz.
-UV_VERSION = "0.12.23"
-UV_SHA256_X86_64 = "9167d72b3319674b6303c4cbe071854bba13ebdf3d76b1a7cbdc175471fb66d6"
-UV_SHA256_AARCH64 = "6524bd338177ed50d035d39354e12545e993bbeba2ecbddf0480c5b3a81d313f"
+UV_VERSION = "0.13.10"
+UV_SHA256_X86_64 = "bf65ac1a0af10f92c522d91ac096c7c0a39657647b155577e7836c2cbbb4526c"
+UV_SHA256_AARCH64 = "14590f644805a6234ffe071154340669e38137f38e60aa9629690119704107d2"
 ROOT = Path("/usr/libexec/claude-sandbox")
 
 # The installed interpreter is checked against what the package imports
