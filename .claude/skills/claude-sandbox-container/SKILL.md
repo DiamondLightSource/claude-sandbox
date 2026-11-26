@@ -181,10 +181,13 @@ already extended here:
   what stops uv re-downloading the baked interpreter each session;
   `tests/python/test_argv.py` `test_uv_dirs_reach_the_jail` guards it.
 - **Image-only Node (2026-09-11)**: node/npm/npx copied from
-  `node:22-slim` into `/usr/local` in the `claude-sandbox` stage — NOT
-  apt `npm` (npm 9 on EOL Node 18 + ~360 packages, and Playwright's npm
-  package refuses < 20). Enables `pi install npm:...` (persists on the
-  shared `~/.pi`). The apt `nodejs` 18 the installer installs
+  `node:24-slim` (`NODE_VERSION`; 22 until the resolute move, 2026-11-26)
+  into `/usr/local` in the `claude-sandbox` stage — NOT apt `npm` (npm 9 +
+  ~360 packages; on noble it also sat on EOL Node 18, and Playwright's npm
+  package refuses < 20). The build upgrades the bundled npm to the newest
+  of its own major (its deps lag fixes trivy flags). Enables `pi install
+  npm:...` (persists on the shared `~/.pi`). The apt `nodejs` (22 on
+  resolute) the installer installs
   (`installer/system.py` `APT_PACKAGES`) stays: guests may rely on it, and
   it is merely shadowed by PATH order in the image.
   Refuse: swapping `nodejs`→`npm` in `APT_PACKAGES`; moving the COPY into

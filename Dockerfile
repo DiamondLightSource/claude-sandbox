@@ -63,7 +63,8 @@ WORKDIR /opt/claude-sandbox
 # built (trivy otherwise flags libc, expat, krb5, ...).
 RUN bash .devcontainer/claude-sandbox/install.sh --image-build \
     && rm -rf /usr/libexec/claude-sandbox/uv \
-    && apt-get upgrade -y \
+    && DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y \
+       -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
     && apt-get install -y --no-install-recommends vim \
     && rm -rf /var/lib/apt/lists/*
 
@@ -120,19 +121,19 @@ RUN uv venv --no-python-downloads --managed-python /cache/venv \
 
 # Node.js LTS for the agent — IMAGE-ONLY, same reasoning as the Python
 # block. Copied from the official image like uv is from astral's: the
-# resolute base has no npm, and its apt `npm` is npm 9 on the end-of-life
-# Node 18 (Playwright's package wants >= 20) behind ~360 dependency
-# packages. This gives `pi install npm:...` (extensions land on the shared
+# resolute base has no npm, and its apt `npm` is npm 9 on Node 22 behind
+# ~360 dependency packages. This gives `pi install npm:...` (extensions land on the shared
 # ~/.pi, so they persist across containers), npx, and a current node.
 # /usr/local/bin precedes /usr/bin on the jail PATH, so the installer's
-# apt nodejs 18 is shadowed, not removed (guests still rely on it).
+# apt nodejs 22 is shadowed, not removed (guests still rely on it).
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
     # The npm bundled with the Node image lags its own dependency fixes
     # (trivy flags them); take the newest npm of the same major.
-    && npm install -g --no-fund --no-audit npm@11 \
+    && npm install -g --no-fund --no-audit --ignore-scripts \
+       "npm@$(npm --version | cut -d. -f1)" \
     && npm cache clean --force \
     # Lifecycle scripts off by default: `pi install npm:...` and `npx` then
     # run no postinstall inside the jail (pi passes no --ignore-scripts).

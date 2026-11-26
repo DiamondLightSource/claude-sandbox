@@ -4,7 +4,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -12,7 +12,7 @@ jobs:
           # hatch-vcs derives the version from git tags
           fetch-depth: 0
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.0.0
+        uses: astral-sh/setup-uv@v10.4.0
       - name: Build the wheel (wheel-only, the tree is force-included from the repo root)
         run: >
           export SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) &&

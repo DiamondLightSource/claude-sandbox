@@ -30,15 +30,15 @@ jobs:
       matrix:
         include:
           - arch: amd64
-            runner: ubuntu-latest
+            runner: ubuntu-26.04
           - arch: arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # the last release tag, below
 
@@ -60,16 +60,16 @@ jobs:
           test -n "$v"
           echo "LAUNCHER_VERSION=$v" >> "$GITHUB_ENV"
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE }}
 
       - name: Build image for testing
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: claude-sandbox
@@ -134,11 +134,11 @@ jobs:
           test -n "$label"
           test "$label" = "$LAUNCHER_VERSION"
 
-      # In-container bwrap needs unprivileged userns: ubuntu-24.04
+      # In-container bwrap needs unprivileged userns: ubuntu-26.04
       # runners restrict it (same workaround as ci.yml), and docker's
       # default seccomp/apparmor confinement must be lifted for the
       # nested sandbox in the e2e test below.
-      - name: Allow unprivileged userns on Ubuntu 24.04
+      - name: Allow unprivileged userns on Ubuntu 26.04
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
 
       # With the egress jail on (the default): a launch, the battery for each
@@ -200,7 +200,7 @@ jobs:
 
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -209,7 +209,7 @@ jobs:
       - name: Build and push by digest
         if: github.event_name != 'pull_request'
         id: push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: claude-sandbox
@@ -228,7 +228,7 @@ jobs:
 
       - name: Upload digest
         if: github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: digests-${{ matrix.arch }}
           path: ${{ runner.temp }}/digests/*
@@ -238,7 +238,7 @@ jobs:
   merge:
     if: github.event_name != 'pull_request'
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
       packages: write
@@ -247,17 +247,17 @@ jobs:
         run: echo "IMAGE=${IMAGE,,}" >> "$GITHUB_ENV"
 
       - name: Download digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: ${{ runner.temp }}/digests
           pattern: digests-*
           merge-multiple: true
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Extract metadata (tags)
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE }}
           tags: |
@@ -265,7 +265,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
