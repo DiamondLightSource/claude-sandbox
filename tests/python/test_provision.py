@@ -17,7 +17,7 @@ import pytest
 from claude_sandbox.installer import provision as p
 
 TRUE = Path(shutil.which("true") or "/bin/true").resolve()
-NAME = "cpython-3.13.16-linux-x86_64-gnu"
+NAME = "cpython-3.13.18-linux-x86_64-gnu"
 
 
 class FakeUv:
@@ -78,7 +78,7 @@ class FakeUv:
                     if self.home_in_venv != ""
                     else ""
                 )
-                (venv / "pyvenv.cfg").write_text(cfg + "version_info = 3.13.16\n")
+                (venv / "pyvenv.cfg").write_text(cfg + "version_info = 3.13.18\n")
             case _:
                 pass
         return ""
@@ -107,15 +107,15 @@ def test_provision_pins_prunes_and_hardens(tmp_path: Path) -> None:
     argvs = [argv for argv, _ in uv.calls]
     assert argvs[:3] == [
         ["/usr/bin/uv", "--version"],
-        ["/usr/bin/uv", "python", "install", "--no-bin", "3.13.16"],
-        ["/usr/bin/uv", "python", "find", "3.13.16"],
+        ["/usr/bin/uv", "python", "install", "--no-bin", "3.13.18"],
+        ["/usr/bin/uv", "python", "find", "3.13.18"],
     ]
     assert argvs[3] == [
         "/usr/bin/uv",
         "venv",
         "--clear",
         "--python",
-        "3.13.16",
+        "3.13.18",
         f"{root}/venv",
     ]
     assert argvs[4][:6] == [

@@ -10,9 +10,9 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install runtime deps
         run: |
@@ -20,12 +20,12 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends \
             bubblewrap jq
 
-      # Ubuntu 24.04 runners ship with
+      # Ubuntu 26.04 runners ship with
       # kernel.apparmor_restrict_unprivileged_userns=1, so plain bwrap
       # fails with "setting up uid map: Permission denied". Relax the
       # sysctl and install an unconfined AppArmor profile for bwrap so
       # downstream checks can spawn the sandbox.
-      - name: Allow unprivileged userns on Ubuntu 24.04
+      - name: Allow unprivileged userns on Ubuntu 26.04
         run: |
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           sudo tee /etc/apparmor.d/bwrap >/dev/null <<'PROFILE'
@@ -54,7 +54,7 @@ jobs:
       - name: Run install revision-selection tests
         run: sudo -E bash tests/install_ref.sh
 
-      # ubuntu-latest runners have $GITHUB_WORKSPACE living under
+      # ubuntu-26.04 runners have $GITHUB_WORKSPACE living under
       # $HOME=/home/runner. Anything that path-checks $HOME contains-X
       # gets tripped by the workspace bind — re-home to a clean dir first.
       # A smoke run starts the Python installer from the tree with the
@@ -81,17 +81,17 @@ jobs:
     # (test_bash_suites.py). Run on the requires-python floor and on 3.13,
     # the interpreter the sandbox installs: os.path.realpath and friends
     # differ between the two, and the argv must not.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       matrix:
         python: ["3.11", "3.13"]
     env:
       UV_PYTHON: ${{ matrix.python }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # hatch-vcs: version from git tags
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v10.4.0
 
       - name: Install the dev environment from uv.lock
         run: uv sync --locked
@@ -114,12 +114,12 @@ jobs:
     # pyproject.toml, prove the entry point runs the Python CLI at the wheel
     # version, and prove `install` refuses on a host (the runner is a VM, not
     # a container).
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # hatch-vcs: version from git tags
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v10.4.0
 
       - name: Build the wheel
         run: uv build --wheel -o dist
@@ -166,10 +166,10 @@ jobs:
     # the same tests inside the image; this job gates the release on them.
     permissions:
       contents: read
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.4.0
 
       - name: Install netns deps (passt + iproute2)
         run: |
@@ -180,23 +180,23 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends \
             passt iproute2 util-linux socat curl
 
-      # Ubuntu 24.04 runners ship kernel.apparmor_restrict_unprivileged_userns=1,
+      # Ubuntu 26.04 runners ship kernel.apparmor_restrict_unprivileged_userns=1,
       # which blocks the `unshare -rn` the holder needs. Relax it (mirrors the
       # `test` job's bwrap workaround). `|| true` keeps a runner whose sysctl name
       # has changed from failing HERE — the next step is where it must surface,
       # and under JAIL_NETNS_REQUIRE=1 it will: no caps means a failed job, not
       # a silent skip. That is deliberate. If this starts failing because GitHub
       # changed the runner image, fix the workaround — do not relax the require.
-      - name: Allow unprivileged userns on Ubuntu 24.04
+      - name: Allow unprivileged userns on Ubuntu 26.04
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
 
       - name: Run the egress jail and loopback relay tests in real namespaces
         run: bash tests/jail_python.sh
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install shellcheck
         run: |
