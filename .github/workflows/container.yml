@@ -119,7 +119,7 @@ jobs:
             case "$pythons" in /usr/libexec/claude-sandbox/python/*) ;; *) echo "$pythons"; exit 1 ;; esac
             test "$(find / -xdev -type f -name uv | wc -l)" = 1
             # Image-only Node LTS: node/npm/npx from the official image
-            case "$(node --version)" in v22.*) ;; *) echo "node is not v22: $(node --version)"; exit 1 ;; esac
+            case "$(node --version)" in v24.*) ;; *) echo "node is not v24: $(node --version)"; exit 1 ;; esac
             npm --version >/dev/null
             npx --version >/dev/null
             test "$(npm config get ignore-scripts)" = true

@@ -61,11 +61,19 @@ WORKDIR /opt/claude-sandbox
 # and the installer never has to trust the base image's unpinned one.
 # The upgrade picks up security fixes released since the base image was
 # built (trivy otherwise flags libc, expat, krb5, ...).
+# One Python in the image (issue #85): the resolute base ships Ubuntu's
+# python3, so it is purged, and what depends on it goes too (gdb, the apt
+# npm/node-gyp; the image's own npm is copied in below). vim-tiny, not vim:
+# Ubuntu's vim links libpython.
 RUN bash .devcontainer/claude-sandbox/install.sh --image-build \
     && rm -rf /usr/libexec/claude-sandbox/uv \
-    && DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y \
+    && export DEBIAN_FRONTEND=noninteractive \
+    && apt-get full-upgrade -y \
        -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
-    && apt-get install -y --no-install-recommends vim \
+    && apt-get purge -y --auto-remove \
+       $(dpkg-query -W -f '${db:Status-Abbrev} ${Package}\n' 'python3*' 'libpython3*' \
+         | awk '/^ii/ {print $2}') \
+    && apt-get install -y --no-install-recommends vim-tiny \
     && rm -rf /var/lib/apt/lists/*
 
 # Python for the agent — IMAGE-ONLY by design. The devcontainer stage and
