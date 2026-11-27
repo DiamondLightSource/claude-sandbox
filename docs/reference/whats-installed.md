@@ -102,7 +102,7 @@ recommended version, backing up changed files. See
 
 ## Optional tools
 
-The published image includes Python, uv, Node.js, npm and Vim. Custom
+The published image includes Python, uv, Node.js, npm and Vim (`vim-tiny`, as `vi`). Custom
 containers keep their own toolchain choices.
 
 The image's Python is the sandbox's own pinned interpreter, and uv there
